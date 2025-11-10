@@ -35,6 +35,15 @@ API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:8000/v1/chat/completion
 # Reasoning effort level (low, medium, high)
 REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", "high")
 
+# Print configuration on module load
+import sys
+if not hasattr(sys, '_agent_gpt_oss_config_printed'):
+    sys._agent_gpt_oss_config_printed = True
+    # Use original_print before we override it
+    _original_builtin_print = print
+    _original_builtin_print(f"[CONFIG] GPT_OSS API URL: {API_URL}")
+    _original_builtin_print(f"[CONFIG] Reasoning Effort: {REASONING_EFFORT}")
+
 # Global variables for logging
 _log_file = None
 original_print = print
