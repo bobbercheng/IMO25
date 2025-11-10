@@ -25,6 +25,7 @@ SOFTWARE.
 import os
 import sys
 import json
+import re
 import requests
 import argparse
 
@@ -302,6 +303,31 @@ def extract_text_from_response(response_data):
         print(json.dumps(response_data, indent=2))
         raise e
 
+def clean_reasoning_tags(content):
+    """
+    Removes sglang reasoning format tags from content.
+    Extracts only the final message content without special tags.
+    """
+    if not content:
+        return content
+
+    # Check if content contains sglang reasoning tags
+    if '<|channel|>' not in content:
+        return content
+
+    # Try to extract the final message (between last <|channel|>final<|message|> and end)
+    # Pattern: <|channel|>final<|message|>ACTUAL_CONTENT (may or may not end with <|end|>)
+
+    # Find the final channel message
+    final_match = re.search(r'<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>)?$', content, re.DOTALL)
+    if final_match:
+        return final_match.group(1).strip()
+
+    # If no final channel found, try to remove all tags
+    # Remove all instances of <|...| > tags
+    cleaned = re.sub(r'<\|[^|]+\|>', '', content)
+    return cleaned.strip()
+
 def build_assistant_message(response_data):
     """
     Builds an assistant message dict from API response, properly handling
@@ -309,9 +335,14 @@ def build_assistant_message(response_data):
     """
     try:
         message = response_data['choices'][0]['message']
+        raw_content = message.get('content', '')
+
+        # Clean reasoning tags from content for multi-turn conversations
+        cleaned_content = clean_reasoning_tags(raw_content)
+
         assistant_msg = {
             "role": "assistant",
-            "content": message.get('content', '')
+            "content": cleaned_content
         }
 
         # Include thinking field if present (for sglang reasoning support)
