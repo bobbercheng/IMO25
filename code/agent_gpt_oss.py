@@ -256,9 +256,10 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None):
 
     return payload
 
-def send_api_request(api_key, payload):
+def send_api_request(api_key, payload, stream=True):
     """
     Sends the request to the OpenAI-compatible API and returns the response.
+    Supports streaming for real-time output display.
     """
     headers = {
         "Content-Type": "application/json"
@@ -268,18 +269,113 @@ def send_api_request(api_key, payload):
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    # Enable streaming in payload
+    payload_with_stream = payload.copy()
+    payload_with_stream["stream"] = stream
+
     try:
-        response = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=3600)
+        response = requests.post(API_URL, headers=headers, data=json.dumps(payload_with_stream),
+                                timeout=3600, stream=stream)
         response.raise_for_status()
-        print(">>>>>>> Response:")
-        print(json.dumps(response.json(), indent=4))
-        return response.json()
+
+        if stream:
+            return _handle_streaming_response(response)
+        else:
+            print(">>>>>>> Response:")
+            print(json.dumps(response.json(), indent=4))
+            return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error during API request: {e}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"Status code: {e.response.status_code}")
             print(f"Raw API Response: {e.response.text}")
         raise e
+
+def _handle_streaming_response(response):
+    """
+    Handles streaming SSE response and displays content in real-time.
+    Returns the complete accumulated response in standard format.
+    """
+    print(">>>>>>> Streaming Response:")
+    print("=" * 80)
+
+    accumulated_content = ""
+    accumulated_thinking = ""
+    full_response = None
+
+    try:
+        for line in response.iter_lines():
+            if not line:
+                continue
+
+            line = line.decode('utf-8')
+
+            # SSE format: "data: {...}"
+            if line.startswith('data: '):
+                data_str = line[6:]  # Remove "data: " prefix
+
+                # Check for [DONE] marker
+                if data_str.strip() == '[DONE]':
+                    break
+
+                try:
+                    chunk = json.loads(data_str)
+
+                    # Extract delta content
+                    if 'choices' in chunk and len(chunk['choices']) > 0:
+                        delta = chunk['choices'][0].get('delta', {})
+
+                        # Handle content delta
+                        if 'content' in delta and delta['content']:
+                            content_chunk = delta['content']
+                            accumulated_content += content_chunk
+                            # Print in real-time without newline
+                            original_print(content_chunk, end='', flush=True)
+
+                        # Handle thinking/reasoning delta (if present)
+                        if 'thinking' in delta and delta['thinking']:
+                            accumulated_thinking += delta['thinking']
+
+                        # Save the last chunk for metadata
+                        full_response = chunk
+
+                except json.JSONDecodeError as e:
+                    print(f"\nWarning: Could not parse SSE chunk: {data_str[:100]}")
+                    continue
+
+        print()  # New line after streaming completes
+        print("=" * 80)
+
+        # Construct complete response in standard format
+        if full_response is None:
+            raise ValueError("No valid response chunks received")
+
+        # Build final response matching non-streaming format
+        final_response = {
+            "id": full_response.get("id", ""),
+            "object": "chat.completion",
+            "created": full_response.get("created", 0),
+            "model": full_response.get("model", ""),
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": accumulated_content
+                },
+                "finish_reason": full_response['choices'][0].get('finish_reason', 'stop')
+            }],
+            "usage": full_response.get("usage", {})
+        }
+
+        # Add thinking field if present
+        if accumulated_thinking:
+            final_response["choices"][0]["message"]["thinking"] = accumulated_thinking
+
+        return final_response
+
+    except Exception as e:
+        print(f"\nError handling streaming response: {e}")
+        raise
 
 def extract_text_from_response(response_data):
     """
