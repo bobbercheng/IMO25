@@ -275,9 +275,41 @@ def extract_text_from_response(response_data):
     Handles potential errors if the response format is unexpected.
     """
     try:
-        return response_data['choices'][0]['message']['content']
+        message = response_data['choices'][0]['message']
+        content = message.get('content', '')
+
+        # If there's a thinking field, combine it with content for display
+        if 'thinking' in message:
+            thinking = message['thinking']
+            return f"{thinking}\n\n{content}"
+
+        return content
     except (KeyError, IndexError, TypeError) as e:
         print("Error: Could not extract text from the API response.")
+        print(f"Reason: {e}")
+        print("Full API Response:")
+        print(json.dumps(response_data, indent=2))
+        raise e
+
+def build_assistant_message(response_data):
+    """
+    Builds an assistant message dict from API response, properly handling
+    thinking/reasoning content for multi-turn conversations.
+    """
+    try:
+        message = response_data['choices'][0]['message']
+        assistant_msg = {
+            "role": "assistant",
+            "content": message.get('content', '')
+        }
+
+        # Include thinking field if present (for sglang reasoning support)
+        if 'thinking' in message and message['thinking']:
+            assistant_msg['thinking'] = message['thinking']
+
+        return assistant_msg
+    except (KeyError, IndexError, TypeError) as e:
+        print("Error: Could not build assistant message from response.")
         print(f"Reason: {e}")
         print("Full API Response:")
         print(json.dumps(response_data, indent=2))
@@ -404,11 +436,8 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[]):
     print(json.dumps(output1, indent=4))
 
     print(f">>>>>>> Self improvement start:")
-    p1["messages"].append(
-        {"role": "assistant",
-        "content": output1
-        }
-    )
+    # Use build_assistant_message to properly handle thinking/content separation
+    p1["messages"].append(build_assistant_message(response1))
     p1["messages"].append(
         {"role": "user",
         "content": self_improvement_prompt
@@ -457,6 +486,8 @@ def agent(problem_statement, other_prompts=[]):
                     other_prompts=other_prompts
                 )
 
+                # Append previous solution as assistant message
+                # Note: solution is extracted text, should not contain thinking tags
                 p1["messages"].append(
                     {"role": "assistant",
                     "content": solution
