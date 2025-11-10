@@ -33,6 +33,53 @@ MODEL_NAME = "gpt_oss"
 # Use OpenAI-compatible API endpoint (e.g., sglang)
 API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:8000/v1/chat/completions")
 
+# Global variables for logging
+_log_file = None
+original_print = print
+
+def log_print(*args, **kwargs):
+    """
+    Custom print function that writes to both stdout and log file.
+    """
+    # Convert all arguments to strings and join them
+    message = ' '.join(str(arg) for arg in args)
+
+    # Add timestamp to lines starting with ">>>>>"
+    if message.startswith('>>>>>'):
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        message = f"[{timestamp}] {message}"
+
+    # Print to stdout
+    original_print(message)
+
+    # Also write to log file if specified
+    if _log_file is not None:
+        _log_file.write(message + '\n')
+        _log_file.flush()  # Ensure immediate writing
+
+# Replace the built-in print function
+print = log_print
+
+def set_log_file(log_file_path):
+    """Set the log file for output."""
+    global _log_file
+    if log_file_path:
+        try:
+            _log_file = open(log_file_path, 'w', encoding='utf-8')
+            return True
+        except Exception as e:
+            print(f"Error opening log file {log_file_path}: {e}")
+            return False
+    return True
+
+def close_log_file():
+    """Close the log file if it's open."""
+    global _log_file
+    if _log_file is not None:
+        _log_file.close()
+        _log_file = None
+
 step1_prompt = """
 ### Core Instructions ###
 
@@ -183,6 +230,9 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None):
         ],
         "model": MODEL_NAME,
         "temperature": 0.1,
+        "reasoning": {
+            "effort": "high"
+        }
     }
 
     if other_prompts:
@@ -457,6 +507,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='IMO Problem Solver Agent using GPT-OSS')
     parser.add_argument('problem_file', nargs='?', default='problem_statement.txt',
                        help='Path to the problem statement file (default: problem_statement.txt)')
+    parser.add_argument('--log', '-l', type=str, help='Path to log file (optional)')
     parser.add_argument('--other_prompts', '-o', type=str, help='Other prompts (optional)')
     parser.add_argument("--max_runs", '-m', type=int, default=10, help='Maximum number of runs (default: 10)')
 
@@ -471,6 +522,12 @@ if __name__ == "__main__":
     print(">>>>>>> Other prompts:")
     print(other_prompts)
 
+    # Set up logging if log file is specified
+    if args.log:
+        if not set_log_file(args.log):
+            sys.exit(1)
+        print(f"Logging to file: {args.log}")
+
     problem_statement = read_file_content(args.problem_file)
 
     for i in range(max_runs):
@@ -484,3 +541,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f">>>>>>> Error in run {i}: {e}")
             continue
+
+    # Close log file if it was opened
+    close_log_file()
