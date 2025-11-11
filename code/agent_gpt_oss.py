@@ -244,7 +244,11 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None):
         "temperature": 0.1,
         "reasoning": {
             "effort": REASONING_EFFORT
-        }
+        },
+        # Add repetition penalty to prevent loops
+        "repetition_penalty": 1.05,
+        # Set max tokens to prevent runaway generation
+        "max_tokens": 16384
     }
 
     if other_prompts:
@@ -295,6 +299,7 @@ def _handle_streaming_response(response):
     """
     Handles streaming SSE response and displays content in real-time.
     Returns the complete accumulated response in standard format.
+    Includes repetition detection to prevent infinite loops.
     """
     print(">>>>>>> Streaming Response:")
     print("=" * 80)
@@ -302,6 +307,33 @@ def _handle_streaming_response(response):
     accumulated_content = ""
     accumulated_thinking = ""
     full_response = None
+
+    # Repetition detection parameters
+    REPETITION_WINDOW = 50  # Check last N characters
+    REPETITION_THRESHOLD = 5  # Number of times a pattern can repeat
+    MAX_CONTENT_LENGTH = 50000  # Maximum content length before forcing stop
+
+    def detect_repetition(text, window_size=REPETITION_WINDOW):
+        """Detect if the same pattern repeats excessively at the end of text."""
+        if len(text) < window_size * 2:
+            return False
+
+        # Check last window against previous windows
+        last_segment = text[-window_size:]
+
+        # Count how many times this exact segment appears at the end
+        repeat_count = 0
+        check_pos = len(text) - window_size
+
+        while check_pos >= window_size:
+            check_segment = text[check_pos - window_size:check_pos]
+            if check_segment == last_segment:
+                repeat_count += 1
+                check_pos -= window_size
+            else:
+                break
+
+        return repeat_count >= REPETITION_THRESHOLD
 
     try:
         for line in response.iter_lines():
@@ -331,6 +363,16 @@ def _handle_streaming_response(response):
                             accumulated_content += content_chunk
                             # Print in real-time without newline
                             original_print(content_chunk, end='', flush=True)
+
+                            # Check for repetition
+                            if detect_repetition(accumulated_content):
+                                print("\n\n[WARNING] Repetitive pattern detected - stopping generation")
+                                break
+
+                            # Check for excessive length
+                            if len(accumulated_content) > MAX_CONTENT_LENGTH:
+                                print("\n\n[WARNING] Maximum content length exceeded - stopping generation")
+                                break
 
                         # Handle thinking/reasoning delta (if present)
                         if 'thinking' in delta and delta['thinking']:
