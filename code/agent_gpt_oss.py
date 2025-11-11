@@ -246,9 +246,7 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None):
             "effort": REASONING_EFFORT
         },
         # Add repetition penalty to prevent loops
-        "repetition_penalty": 1.05,
-        # Set max tokens to prevent runaway generation
-        "max_tokens": 16384
+        "repetition_penalty": 1.05
     }
 
     if other_prompts:
