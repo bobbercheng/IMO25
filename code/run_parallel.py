@@ -65,29 +65,46 @@ def _install_worker_signal_handlers():
     signal.signal(signal.SIGINT, _forward_signal)
     _signal_handlers_installed = True
 
-def run_agent(agent_id, problem_file, log_dir, timeout=None, other_prompts=[], agent_file='agent.py'):
+def run_agent(agent_id, problem_file, log_dir, timeout=None, other_prompts=[], agent_file='agent.py',
+               benchmark=None, level=None, benchmark_index=None):
     """
     Run a single agent instance with the specified parameters.
-    
+
     Args:
         agent_id: Unique identifier for this agent instance
-        problem_file: Path to the problem statement file
+        problem_file: Path to the problem statement file (optional if using benchmark)
         log_dir: Directory to store log files
         timeout: Timeout in seconds (None for no timeout)
         other_prompts: List of additional prompts to use
         agent_file: Path to the agent file to execute (default: agent.py)
-    
+        benchmark: Benchmark to use (gradingbench or proofbench, optional)
+        level: Level to filter by (Basic, Advanced, optional)
+        benchmark_index: Index of problem to load from benchmark (optional)
+
     Returns:
         tuple: (agent_id, return_code, stdout, stderr, solution_found)
     """
     log_file = os.path.join(log_dir, f"agent_{agent_id:02d}.log")
-    
-    cmd = [
-        sys.executable, agent_file, 
-        problem_file,
-        "--log", log_file,
-        "--other_prompts", f'\"{",".join(other_prompts)}\"'
-    ]
+
+    # Build command based on whether we're using a problem file or benchmark
+    if benchmark:
+        cmd = [
+            sys.executable, agent_file,
+            "--benchmark", benchmark,
+            "--log", log_file,
+            "--other_prompts", f'\"{",".join(other_prompts)}\"'
+        ]
+        if level:
+            cmd.extend(["--level", level])
+        if benchmark_index is not None:
+            cmd.extend(["--benchmark-index", str(benchmark_index)])
+    else:
+        cmd = [
+            sys.executable, agent_file,
+            problem_file,
+            "--log", log_file,
+            "--other_prompts", f'\"{",".join(other_prompts)}\"'
+        ]
     
     try:
         # Ensure worker can forward signals to child agent process
@@ -150,29 +167,48 @@ def print_status(agent_id, status, stdout="", stderr=""):
 
 def main():
     parser = argparse.ArgumentParser(description='Run multiple IMO agent instances in parallel')
-    parser.add_argument('problem_file', help='Path to the problem statement file')
-    parser.add_argument('--num-agents', '-n', type=int, default=10, 
+    parser.add_argument('problem_file', nargs='?', default=None,
+                       help='Path to the problem statement file (optional if using --benchmark)')
+    parser.add_argument('--num-agents', '-n', type=int, default=10,
                        help='Number of parallel agents to run (default: 10)')
-    parser.add_argument('--log-dir', '-d', default='logs', 
+    parser.add_argument('--log-dir', '-d', default='logs',
                        help='Directory to store log files (default: logs)')
     parser.add_argument('--timeout', '-t', type=int, default=None,
                        help='Timeout in seconds for each agent (default: no timeout)')
     parser.add_argument('--max-workers', '-w', type=int, default=None,
                        help='Maximum number of worker processes (default: number of agents)')
     parser.add_argument('--other_prompts', '-o', type=str, help='Other prompts (optional)')
-    parser.add_argument('--agent-file', '-a', type=str, default='agent.py', 
+    parser.add_argument('--agent-file', '-a', type=str, default='agent.py',
                        help='Path to the agent file to run (default: agent.py)')
     parser.add_argument('--exit-immediately', '-e', action='store_true',
                        help='Exit immediately when solution is found (default: graceful shutdown)')
-    
-    
+    parser.add_argument('--benchmark', '-b', type=str, choices=['gradingbench', 'proofbench'],
+                       help='Load problems from benchmark (gradingbench or proofbench)')
+    parser.add_argument('--level', type=str,
+                       help='Filter benchmark by level (Basic, Advanced). Case-insensitive.')
+    parser.add_argument('--benchmark-start-index', type=int, default=0,
+                       help='Starting index for benchmark problems (default: 0)')
+
+
     args = parser.parse_args()
+
+    # Validate that either problem_file or benchmark is specified
+    if not args.problem_file and not args.benchmark:
+        print("Error: Either problem_file or --benchmark must be specified")
+        parser.print_help()
+        sys.exit(1)
     
     # Create log directory if it doesn't exist
     os.makedirs(args.log_dir, exist_ok=True)
     
     print(f"Starting {args.num_agents} parallel agents...")
-    print(f"Problem file: {args.problem_file}")
+    if args.benchmark:
+        print(f"Benchmark: {args.benchmark}")
+        if args.level:
+            print(f"Level filter: {args.level}")
+        print(f"Starting from benchmark index: {args.benchmark_start_index}")
+    else:
+        print(f"Problem file: {args.problem_file}")
     print(f"Agent file: {args.agent_file}")
     print(f"Log directory: {args.log_dir}")
     print(f"Exit behavior: {'Immediate exit' if args.exit_immediately else 'Run all agents to completion'} when solution found")
@@ -199,10 +235,21 @@ def main():
     try:
         with ProcessPoolExecutor(max_workers=args.max_workers or args.num_agents) as executor:
             # Submit all agent tasks
-            future_to_agent = {
-                executor.submit(run_agent, i, args.problem_file, args.log_dir, args.timeout, other_prompts, args.agent_file): i 
-                for i in range(args.num_agents)
-            }
+            if args.benchmark:
+                # When using benchmark, each agent gets a different benchmark index
+                future_to_agent = {
+                    executor.submit(
+                        run_agent, i, args.problem_file, args.log_dir, args.timeout, other_prompts, args.agent_file,
+                        args.benchmark, args.level, args.benchmark_start_index + i
+                    ): i
+                    for i in range(args.num_agents)
+                }
+            else:
+                # When using a problem file, all agents work on the same problem
+                future_to_agent = {
+                    executor.submit(run_agent, i, args.problem_file, args.log_dir, args.timeout, other_prompts, args.agent_file): i
+                    for i in range(args.num_agents)
+                }
             
             # Process completed agents
             for future in as_completed(future_to_agent):
