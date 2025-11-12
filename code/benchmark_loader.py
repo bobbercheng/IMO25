@@ -112,7 +112,7 @@ class BenchmarkLoader:
         Args:
             csv_path: Path to the CSV file
             id_column: Column name containing the problem ID (for level extraction)
-            level: Level to filter by ('Basic', 'Advanced', or None)
+            level: Level to filter by (e.g., 'Basic', 'Advanced', 'pre-IMO', 'IMO-easy', etc.)
             limit: Maximum number of entries to return
 
         Returns:
@@ -130,8 +130,13 @@ class BenchmarkLoader:
             for row in reader:
                 # Apply level filter if specified
                 if level is not None and id_column is not None:
-                    problem_id = row.get(id_column, '')
-                    entry_level = self._extract_level_from_id(problem_id)
+                    # First check if there's a direct "Level" column
+                    if 'Level' in row:
+                        entry_level = row['Level']
+                    else:
+                        # Fall back to extracting from Problem ID
+                        problem_id = row.get(id_column, '')
+                        entry_level = self._extract_level_from_id(problem_id)
 
                     # Skip if level doesn't match (case-insensitive comparison)
                     if entry_level.lower() != level.lower():
@@ -190,8 +195,13 @@ class BenchmarkLoader:
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                problem_id = row.get(id_column, '')
-                level = self._extract_level_from_id(problem_id)
+                # First check if there's a direct "Level" column
+                if 'Level' in row:
+                    level = row['Level']
+                else:
+                    # Fall back to extracting from Problem ID
+                    problem_id = row.get(id_column, '')
+                    level = self._extract_level_from_id(problem_id)
                 if level:
                     levels.add(level)
 

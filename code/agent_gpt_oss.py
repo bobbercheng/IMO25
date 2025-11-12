@@ -623,7 +623,7 @@ if __name__ == "__main__":
     parser.add_argument('--benchmark', '-b', type=str, choices=['gradingbench', 'proofbench', 'answerbench'],
                        help='Load problem from benchmark (gradingbench, proofbench, or answerbench)')
     parser.add_argument('--level', type=str,
-                       help='Filter benchmark by level (Basic, Advanced). Case-insensitive. Not supported for answerbench.')
+                       help='Filter benchmark by level. For gradingbench: Basic, Advanced. For proofbench: pre-IMO, IMO-easy, IMO-medium, IMO-hard. Case-insensitive. Not supported for answerbench.')
     parser.add_argument('--benchmark-index', '-i', type=int, default=0,
                        help='Index of problem to load from filtered benchmark (default: 0)')
 
