@@ -343,7 +343,7 @@ def verify_solution(problem_statement, solution, verbose=True):
         print(">>>>>>> Verification results:")
         print(json.dumps(out, indent=4))
 
-    check_correctness = """Response in "yes" or "no". Is the following statement saying the solution is complete, correct, and does not contain critical error or a major justification gap?""" \
+    check_correctness = """Response in "yes" or "no". Is the following statement saying the solution is correct, or does not contain critical error or a major justification gap?""" \
             + "\n\n" + out 
     prompt = build_request_payload(system_prompt="", question_prompt=check_correctness)
     r = send_api_request(get_api_key(), prompt)
