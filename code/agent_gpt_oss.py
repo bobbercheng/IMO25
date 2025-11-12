@@ -424,7 +424,7 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
 
 def verify_solution(problem_statement, solution, verbose=True):
 
-    dsol = extract_detailed_solution(extract_solution(solution))
+    dsol = extract_detailed_solution(solution)
 
     newst = f"""
 ======================================================================
@@ -469,7 +469,7 @@ def verify_solution(problem_statement, solution, verbose=True):
     bug_report = ""
 
     if("yes" not in o.lower()):
-        bug_report = extract_detailed_solution(extract_solution(out), "Detailed Verification", False)
+        bug_report = extract_detailed_solution(out, "Detailed Verification", False)
 
     if(verbose):
         print(">>>>>>>Bug report:")
@@ -547,9 +547,9 @@ def agent(problem_statement, other_prompts=[]):
     correct_count = 1
     success = False
     for i in range(30):
-        try:
-            print(f"Number of iterations: {i}, number of corrects: {correct_count}, number of errors: {error_count}")
+        print(f"Number of iterations: {i}, number of corrects: {correct_count}, number of errors: {error_count}")
 
+        try:
             if("yes" not in good_verify.lower()):
                 # clear
                 correct_count = 0
