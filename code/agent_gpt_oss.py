@@ -42,7 +42,7 @@ from agent_oai import (
 # --- CONFIGURATION ---
 MODEL_NAME = "gpt_oss"
 # Use OpenAI-compatible API endpoint (e.g., sglang)
-API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:8000/v1/chat/completions")
+API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
 # Reasoning effort level (low, medium, high)
 REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", "high")
 
