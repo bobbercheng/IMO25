@@ -620,10 +620,10 @@ if __name__ == "__main__":
     parser.add_argument('--log', '-l', type=str, help='Path to log file (optional)')
     parser.add_argument('--other_prompts', '-o', type=str, help='Other prompts (optional)')
     parser.add_argument("--max_runs", '-m', type=int, default=10, help='Maximum number of runs (default: 10)')
-    parser.add_argument('--benchmark', '-b', type=str, choices=['gradingbench', 'proofbench'],
-                       help='Load problem from benchmark (gradingbench or proofbench)')
+    parser.add_argument('--benchmark', '-b', type=str, choices=['gradingbench', 'proofbench', 'answerbench'],
+                       help='Load problem from benchmark (gradingbench, proofbench, or answerbench)')
     parser.add_argument('--level', type=str,
-                       help='Filter benchmark by level (Basic, Advanced). Case-insensitive.')
+                       help='Filter benchmark by level (Basic, Advanced). Case-insensitive. Not supported for answerbench.')
     parser.add_argument('--benchmark-index', '-i', type=int, default=0,
                        help='Index of problem to load from filtered benchmark (default: 0)')
 
@@ -658,8 +658,12 @@ if __name__ == "__main__":
             # Load the appropriate benchmark
             if args.benchmark == 'gradingbench':
                 entries = loader.load_gradingbench(level=args.level)
-            else:  # proofbench
+            elif args.benchmark == 'proofbench':
                 entries = loader.load_proofbench(level=args.level)
+            else:  # answerbench
+                if args.level:
+                    print(f">>>>>>> Warning: Level filtering not supported for answerbench, ignoring --level argument")
+                entries = loader.load_answerbench()
 
             if not entries:
                 print(f">>>>>>> Error: No entries found in {args.benchmark} with the specified filters")
