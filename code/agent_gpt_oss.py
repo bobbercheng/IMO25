@@ -322,10 +322,14 @@ def extract_text_from_response(response_data):
     """
     Extracts the generated text from the API response JSON.
     Handles potential errors if the response format is unexpected.
+    Cleans reasoning tags from the content before returning.
     """
     try:
         message = response_data['choices'][0]['message']
         content = message.get('content', '')
+
+        # Clean reasoning tags from content
+        content = clean_reasoning_tags(content)
 
         # If there's a thinking field, combine it with content for display
         if 'thinking' in message:
@@ -352,18 +356,24 @@ def clean_reasoning_tags(content):
     if '<|channel|>' not in content:
         return content
 
+    print(">>>>>>> [DEBUG] Detected reasoning tags in content, cleaning...")
+
     # Try to extract the final message (between last <|channel|>final<|message|> and end)
     # Pattern: <|channel|>final<|message|>ACTUAL_CONTENT (may or may not end with <|end|>)
 
     # Find the final channel message
     final_match = re.search(r'<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>)?$', content, re.DOTALL)
     if final_match:
-        return final_match.group(1).strip()
+        cleaned = final_match.group(1).strip()
+        print(f">>>>>>> [DEBUG] Cleaned content (final channel): {cleaned[:100]}...")
+        return cleaned
 
     # If no final channel found, try to remove all tags
     # Remove all instances of <|...| > tags
     cleaned = re.sub(r'<\|[^|]+\|>', '', content)
-    return cleaned.strip()
+    cleaned = cleaned.strip()
+    print(f">>>>>>> [DEBUG] Cleaned content (all tags removed): {cleaned[:100]}...")
+    return cleaned
 
 def build_assistant_message(response_data):
     """
