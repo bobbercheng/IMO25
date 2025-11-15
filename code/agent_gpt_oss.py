@@ -28,6 +28,7 @@ import json
 import re
 import requests
 import argparse
+from benchmark_loader import BenchmarkLoader
 
 # Import shared prompts from agent_oai
 from agent_oai import (
@@ -321,10 +322,14 @@ def extract_text_from_response(response_data):
     """
     Extracts the generated text from the API response JSON.
     Handles potential errors if the response format is unexpected.
+    Cleans reasoning tags from the content before returning.
     """
     try:
         message = response_data['choices'][0]['message']
         content = message.get('content', '')
+
+        # Clean reasoning tags from content
+        content = clean_reasoning_tags(content)
 
         # If there's a thinking field, combine it with content for display
         if 'thinking' in message:
@@ -351,18 +356,24 @@ def clean_reasoning_tags(content):
     if '<|channel|>' not in content:
         return content
 
+    print(">>>>>>> [DEBUG] Detected reasoning tags in content, cleaning...")
+
     # Try to extract the final message (between last <|channel|>final<|message|> and end)
     # Pattern: <|channel|>final<|message|>ACTUAL_CONTENT (may or may not end with <|end|>)
 
     # Find the final channel message
     final_match = re.search(r'<\|channel\|>final<\|message\|>(.*?)(?:<\|end\|>)?$', content, re.DOTALL)
     if final_match:
-        return final_match.group(1).strip()
+        cleaned = final_match.group(1).strip()
+        print(f">>>>>>> [DEBUG] Cleaned content (final channel): {cleaned[:100]}...")
+        return cleaned
 
     # If no final channel found, try to remove all tags
     # Remove all instances of <|...| > tags
     cleaned = re.sub(r'<\|[^|]+\|>', '', content)
-    return cleaned.strip()
+    cleaned = cleaned.strip()
+    print(f">>>>>>> [DEBUG] Cleaned content (all tags removed): {cleaned[:100]}...")
+    return cleaned
 
 def build_assistant_message(response_data):
     """
@@ -424,7 +435,7 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
 
 def verify_solution(problem_statement, solution, verbose=True):
 
-    dsol = extract_detailed_solution(extract_solution(solution))
+    dsol = extract_detailed_solution(solution)
 
     newst = f"""
 ======================================================================
@@ -469,7 +480,7 @@ def verify_solution(problem_statement, solution, verbose=True):
     bug_report = ""
 
     if("yes" not in o.lower()):
-        bug_report = extract_detailed_solution(extract_solution(out), "Detailed Verification", False)
+        bug_report = extract_detailed_solution(out, "Detailed Verification", False)
 
     if(verbose):
         print(">>>>>>>Bug report:")
@@ -547,9 +558,9 @@ def agent(problem_statement, other_prompts=[]):
     correct_count = 1
     success = False
     for i in range(30):
-        try:
-            print(f"Number of iterations: {i}, number of corrects: {correct_count}, number of errors: {error_count}")
+        print(f"Number of iterations: {i}, number of corrects: {correct_count}, number of errors: {error_count}")
 
+        try:
             if("yes" not in good_verify.lower()):
                 # clear
                 correct_count = 0
@@ -614,11 +625,17 @@ def agent(problem_statement, other_prompts=[]):
 if __name__ == "__main__":
     # Set up argument parsing
     parser = argparse.ArgumentParser(description='IMO Problem Solver Agent using GPT-OSS')
-    parser.add_argument('problem_file', nargs='?', default='problem_statement.txt',
-                       help='Path to the problem statement file (default: problem_statement.txt)')
+    parser.add_argument('problem_file', nargs='?', default=None,
+                       help='Path to the problem statement file (optional if using --benchmark)')
     parser.add_argument('--log', '-l', type=str, help='Path to log file (optional)')
     parser.add_argument('--other_prompts', '-o', type=str, help='Other prompts (optional)')
     parser.add_argument("--max_runs", '-m', type=int, default=10, help='Maximum number of runs (default: 10)')
+    parser.add_argument('--benchmark', '-b', type=str, choices=['gradingbench', 'proofbench', 'answerbench'],
+                       help='Load problem from benchmark (gradingbench, proofbench, or answerbench)')
+    parser.add_argument('--level', type=str,
+                       help='Filter benchmark by level. For gradingbench: Basic, Advanced. For proofbench: pre-IMO, IMO-easy, IMO-medium, IMO-hard. Case-insensitive. Not supported for answerbench.')
+    parser.add_argument('--benchmark-index', '-i', type=int, default=0,
+                       help='Index of problem to load from filtered benchmark (default: 0)')
 
     args = parser.parse_args()
 
@@ -637,7 +654,54 @@ if __name__ == "__main__":
             sys.exit(1)
         print(f"Logging to file: {args.log}")
 
-    problem_statement = read_file_content(args.problem_file)
+    # Load problem statement from benchmark or file
+    if args.benchmark:
+        # Load from benchmark
+        print(f">>>>>>> Loading problem from benchmark: {args.benchmark}")
+        if args.level:
+            print(f">>>>>>> Filtering by level: {args.level}")
+        print(f">>>>>>> Benchmark index: {args.benchmark_index}")
+
+        try:
+            loader = BenchmarkLoader()
+
+            # Load the appropriate benchmark
+            if args.benchmark == 'gradingbench':
+                entries = loader.load_gradingbench(level=args.level)
+            elif args.benchmark == 'proofbench':
+                entries = loader.load_proofbench(level=args.level)
+            else:  # answerbench
+                if args.level:
+                    print(f">>>>>>> Warning: Level filtering not supported for answerbench, ignoring --level argument")
+                entries = loader.load_answerbench()
+
+            if not entries:
+                print(f">>>>>>> Error: No entries found in {args.benchmark} with the specified filters")
+                sys.exit(1)
+
+            if args.benchmark_index >= len(entries):
+                print(f">>>>>>> Error: Benchmark index {args.benchmark_index} is out of range (0-{len(entries)-1})")
+                sys.exit(1)
+
+            # Get the problem from the specified index
+            entry = entries[args.benchmark_index]
+            problem_statement = entry.get('Problem', '')
+            problem_id = entry.get('Problem ID', 'Unknown')
+
+            print(f">>>>>>> Loaded problem: {problem_id}")
+            print(f">>>>>>> Total entries in filtered benchmark: {len(entries)}")
+            print(f">>>>>>> Problem preview: {problem_statement[:200]}...")
+
+        except Exception as e:
+            print(f">>>>>>> Error loading from benchmark: {e}")
+            sys.exit(1)
+    elif args.problem_file:
+        # Load from file
+        problem_statement = read_file_content(args.problem_file)
+    else:
+        print(">>>>>>> Error: Either problem_file or --benchmark must be specified")
+        parser.print_help()
+        sys.exit(1)
 
     for i in range(max_runs):
         print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")

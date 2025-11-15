@@ -30,6 +30,7 @@ from textwrap import indent
 import requests
 import argparse
 import logging
+from benchmark_loader import BenchmarkLoader
 
 # --- CONFIGURATION ---
 # The model to use. "gemini-1.5-flash" is fast and capable.
@@ -606,27 +607,33 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
 if __name__ == "__main__":
     # Set up argument parsing
     parser = argparse.ArgumentParser(description='IMO Problem Solver Agent')
-    parser.add_argument('problem_file', nargs='?', default='problem_statement.txt', 
-                       help='Path to the problem statement file (default: problem_statement.txt)')
+    parser.add_argument('problem_file', nargs='?', default=None,
+                       help='Path to the problem statement file (optional if using --benchmark)')
     parser.add_argument('--log', '-l', type=str, help='Path to log file (optional)')
     parser.add_argument('--other_prompts', '-o', type=str, help='Other prompts (optional)')
     parser.add_argument("--max_runs", '-m', type=int, default=10, help='Maximum number of runs (default: 10)')
     parser.add_argument('--memory', '-mem', type=str, help='Path to memory file for saving/loading state (optional)')
     parser.add_argument('--resume', '-r', action='store_true', help='Resume from memory file if provided')
-    
+    parser.add_argument('--benchmark', '-b', type=str, choices=['gradingbench', 'proofbench'],
+                       help='Load problem from benchmark (gradingbench or proofbench)')
+    parser.add_argument('--level', type=str,
+                       help='Filter benchmark by level (Basic, Advanced). Case-insensitive.')
+    parser.add_argument('--benchmark-index', '-i', type=int, default=0,
+                       help='Index of problem to load from filtered benchmark (default: 0)')
+
     args = parser.parse_args()
 
     max_runs = args.max_runs
     memory_file = args.memory
     resume_from_memory = args.resume
-    
+
     other_prompts = []
     if args.other_prompts:
         other_prompts = args.other_prompts.split(',')
 
     print(">>>>>>> Other prompts:")
     print(other_prompts)
-    
+
     if memory_file:
         print(f"Memory file: {memory_file}")
         if resume_from_memory:
@@ -637,8 +644,51 @@ if __name__ == "__main__":
         if not set_log_file(args.log):
             sys.exit(1)
         print(f"Logging to file: {args.log}")
-    
-    problem_statement = read_file_content(args.problem_file)
+
+    # Load problem statement from benchmark or file
+    if args.benchmark:
+        # Load from benchmark
+        print(f">>>>>>> Loading problem from benchmark: {args.benchmark}")
+        if args.level:
+            print(f">>>>>>> Filtering by level: {args.level}")
+        print(f">>>>>>> Benchmark index: {args.benchmark_index}")
+
+        try:
+            loader = BenchmarkLoader()
+
+            # Load the appropriate benchmark
+            if args.benchmark == 'gradingbench':
+                entries = loader.load_gradingbench(level=args.level)
+            else:  # proofbench
+                entries = loader.load_proofbench(level=args.level)
+
+            if not entries:
+                print(f">>>>>>> Error: No entries found in {args.benchmark} with the specified filters")
+                sys.exit(1)
+
+            if args.benchmark_index >= len(entries):
+                print(f">>>>>>> Error: Benchmark index {args.benchmark_index} is out of range (0-{len(entries)-1})")
+                sys.exit(1)
+
+            # Get the problem from the specified index
+            entry = entries[args.benchmark_index]
+            problem_statement = entry.get('Problem', '')
+            problem_id = entry.get('Problem ID', 'Unknown')
+
+            print(f">>>>>>> Loaded problem: {problem_id}")
+            print(f">>>>>>> Total entries in filtered benchmark: {len(entries)}")
+            print(f">>>>>>> Problem preview: {problem_statement[:200]}...")
+
+        except Exception as e:
+            print(f">>>>>>> Error loading from benchmark: {e}")
+            sys.exit(1)
+    elif args.problem_file:
+        # Load from file
+        problem_statement = read_file_content(args.problem_file)
+    else:
+        print(">>>>>>> Error: Either problem_file or --benchmark must be specified")
+        parser.print_help()
+        sys.exit(1)
 
     for i in range(max_runs):
         print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")
