@@ -45,7 +45,8 @@ MODEL_NAME = "gpt_oss"
 # Use OpenAI-compatible API endpoint (e.g., sglang)
 API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
 # Reasoning effort level (low, medium, high)
-REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", "high")
+# Changed from "high" to "low" to reduce content overflow (Option A improvement)
+REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", "low")
 
 # Print configuration on module load
 import sys
@@ -145,9 +146,9 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None):
         "temperature": 0.1,
         "reasoning": {
             "effort": REASONING_EFFORT
-        },
-        # Add repetition penalty to prevent loops
-        "repetition_penalty": 1.05
+        }
+        # Removed repetition_penalty (Option A improvement)
+        # Allows natural token distribution for mathematical proofs
     }
 
     if other_prompts:
