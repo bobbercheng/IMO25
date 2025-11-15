@@ -35,7 +35,14 @@ class AgentProgressMonitor:
             'solution_lengths': [],
             'verification_scores': [],
             'bug_reports': [],
-            'timestamps': []
+            'timestamps': [],
+            # Enhanced indicators for remaining root causes
+            'format_compliance_scores': [],
+            'format_issues': [],
+            'justification_gaps': 0,
+            'critical_errors': 0,
+            'bug_report_lengths': [],
+            'repeated_bug_patterns': defaultdict(int)
         }
 
     def read_new_content(self) -> str:
@@ -91,6 +98,84 @@ class AgentProgressMonitor:
             timestamp = match.group(1)
             if timestamp not in self.metrics['timestamps']:
                 self.metrics['timestamps'].append(timestamp)
+
+        # ENHANCED: Track format compliance (Root Cause #2)
+        for match in re.finditer(r'Corrected solution:.*?"([^"]*)"', content, re.DOTALL):
+            solution = match.group(1)
+            if solution and len(solution) > 50:  # Ignore very short/empty
+                compliance, issues = self._validate_solution_format(solution)
+                self.metrics['format_compliance_scores'].append(compliance)
+                self.metrics['format_issues'].extend(issues)
+
+        # ENHANCED: Track bug reports and rigor issues (Root Cause #3)
+        for match in re.finditer(r'Bug report:(.*?)(?:>>>|$)', content, re.DOTALL):
+            bug = match.group(1).strip()
+            if bug and len(bug) > 20:
+                self.metrics['bug_reports'].append(bug)
+                self.metrics['bug_report_lengths'].append(len(bug))
+
+                # Count rigor issue types
+                if "Justification Gap" in bug:
+                    self.metrics['justification_gaps'] += 1
+                if "Critical Error" in bug:
+                    self.metrics['critical_errors'] += 1
+
+                # Track repeated patterns
+                for line in bug.split('\n')[:5]:  # First 5 lines usually have key info
+                    if "Location:" in line or "Issue:" in line:
+                        self.metrics['repeated_bug_patterns'][line[:100]] += 1
+
+    def _validate_solution_format(self, solution: str) -> Tuple[float, List[str]]:
+        """Validate solution format and return compliance score."""
+        issues = []
+
+        # Required sections
+        required_sections = [
+            "Summary",
+            "Detailed Solution"
+        ]
+
+        missing_sections = [sec for sec in required_sections if sec not in solution]
+        if missing_sections:
+            issues.append(f"Missing: {', '.join(missing_sections)}")
+
+        # Should have TeX math
+        if "$" not in solution and "\\[" not in solution:
+            issues.append("No TeX mathematics")
+
+        # Should have reasonable length
+        if len(solution) < 200:
+            issues.append(f"Too short: {len(solution)} chars")
+        elif len(solution) > 50000:
+            issues.append(f"Too long: {len(solution)} chars")
+
+        # Should have verdict or conclusion
+        if "Verdict" not in solution and "conclusion" not in solution.lower():
+            issues.append("No verdict/conclusion")
+
+        # Calculate compliance score (0-1)
+        total_checks = 4  # sections, math, length, verdict
+        passed_checks = total_checks - len(issues)
+        compliance = max(0, passed_checks / total_checks)
+
+        return compliance, issues
+
+    def _detect_stuck_pattern(self) -> str:
+        """Detect if agent is stuck making same mistake."""
+        if len(self.metrics['bug_reports']) < 5:
+            return ""
+
+        # Check for repeated bug patterns
+        stuck_patterns = [
+            pattern for pattern, count in self.metrics['repeated_bug_patterns'].items()
+            if count >= 3  # Same issue 3+ times
+        ]
+
+        if stuck_patterns:
+            # Show first stuck pattern
+            return f"⚠️  STUCK: Repeating '{stuck_patterns[0][:60]}...'"
+
+        return ""
 
     def calculate_health_score(self) -> Tuple[float, str]:
         """Calculate overall health score (0-100) and status."""
@@ -175,6 +260,49 @@ class AgentProgressMonitor:
                 score -= 15
                 reasons.append(f"❌ Solution length growing: +{growth_rate:.0%}")
 
+        # ENHANCED: Format compliance indicators (Root Cause #2)
+        if len(self.metrics['format_compliance_scores']) > 0:
+            avg_compliance = sum(self.metrics['format_compliance_scores']) / len(self.metrics['format_compliance_scores'])
+
+            if avg_compliance >= 0.8:  # ≥80% compliance
+                score += 10
+                reasons.append(f"✅ Good format compliance: {avg_compliance:.0%}")
+            elif avg_compliance >= 0.5:  # 50-80% compliance
+                reasons.append(f"🟡 Moderate format compliance: {avg_compliance:.0%}")
+            else:  # <50% compliance
+                score -= 15
+                reasons.append(f"❌ Low format compliance: {avg_compliance:.0%}")
+
+        # ENHANCED: Rigor indicators (Root Cause #3)
+        if len(self.metrics['bug_reports']) > 0:
+            total_bugs = len(self.metrics['bug_reports'])
+            gap_rate = self.metrics['justification_gaps'] / max(total_bugs, 1)
+            error_rate = self.metrics['critical_errors'] / max(total_bugs, 1)
+
+            if gap_rate > 0.7:  # >70% justification gaps
+                score -= 15
+                reasons.append(f"❌ High rigor issues: {gap_rate:.0%} gaps")
+            elif gap_rate > 0.4:  # 40-70% gaps
+                score -= 5
+                reasons.append(f"⚠️ Moderate rigor issues: {gap_rate:.0%} gaps")
+
+        # ENHANCED: Stuck pattern detection (Root Cause #4)
+        stuck_warning = self._detect_stuck_pattern()
+        if stuck_warning:
+            score -= 20
+            reasons.append(stuck_warning)
+
+        # ENHANCED: Learning progress indicator (Root Cause #4)
+        if len(self.metrics['bug_report_lengths']) >= 3:
+            recent_bug_lengths = self.metrics['bug_report_lengths'][-3:]
+            # Shorter bug reports = improving (less issues to fix)
+            if all(recent_bug_lengths[i] > recent_bug_lengths[i+1] for i in range(len(recent_bug_lengths)-1)):
+                score += 10
+                reasons.append("✅ Bug reports shortening (improving)")
+            elif all(recent_bug_lengths[i] < recent_bug_lengths[i+1] for i in range(len(recent_bug_lengths)-1)):
+                score -= 10
+                reasons.append("⚠️ Bug reports lengthening (degrading)")
+
         # Determine status
         if score >= 75:
             status = "🟢 HEALTHY"
@@ -227,6 +355,58 @@ class AgentProgressMonitor:
             end = datetime.strptime(self.metrics['timestamps'][-1], '%Y-%m-%d %H:%M:%S')
             elapsed = end - start
             print(f"{'TIME ELAPSED:':<20} {elapsed}")
+
+        # ENHANCED: Root Cause Indicators
+        print(f"\n{'═'*70}")
+        print(f"{'ROOT CAUSE INDICATORS':^70}")
+        print(f"{'═'*70}")
+
+        # Root Cause #2: Format Compliance
+        if len(self.metrics['format_compliance_scores']) > 0:
+            avg_compliance = sum(self.metrics['format_compliance_scores']) / len(self.metrics['format_compliance_scores'])
+            status_icon = "✅" if avg_compliance >= 0.8 else ("🟡" if avg_compliance >= 0.5 else "❌")
+            print(f"{status_icon} Format Compliance: {avg_compliance:.0%}")
+
+            # Show common issues
+            if self.metrics['format_issues']:
+                issue_counts = {}
+                for issue in self.metrics['format_issues']:
+                    issue_counts[issue] = issue_counts.get(issue, 0) + 1
+                # Show top 2 issues
+                top_issues = sorted(issue_counts.items(), key=lambda x: x[1], reverse=True)[:2]
+                for issue, count in top_issues:
+                    print(f"   • {issue} ({count}x)")
+
+        # Root Cause #3: Rigor Metrics
+        if len(self.metrics['bug_reports']) > 0:
+            total_bugs = len(self.metrics['bug_reports'])
+            gap_rate = self.metrics['justification_gaps'] / max(total_bugs, 1)
+            error_rate = self.metrics['critical_errors'] / max(total_bugs, 1)
+
+            status_icon = "✅" if gap_rate < 0.4 else ("🟡" if gap_rate < 0.7 else "❌")
+            print(f"{status_icon} Rigor Quality:")
+            print(f"   • Justification Gaps: {self.metrics['justification_gaps']} ({gap_rate:.0%})")
+            print(f"   • Critical Errors: {self.metrics['critical_errors']} ({error_rate:.0%})")
+
+        # Root Cause #4: Recovery Progress
+        if len(self.metrics['bug_report_lengths']) >= 2:
+            initial_length = self.metrics['bug_report_lengths'][0]
+            current_length = self.metrics['bug_report_lengths'][-1]
+            change = ((current_length - initial_length) / initial_length * 100) if initial_length > 0 else 0
+
+            if change < -20:  # Improving
+                print(f"✅ Learning Progress: Bug reports {abs(change):.0f}% shorter (improving)")
+            elif change > 20:  # Degrading
+                print(f"❌ Learning Progress: Bug reports {change:.0f}% longer (degrading)")
+            else:
+                print(f"🟡 Learning Progress: Bug reports stable")
+
+        # Stuck detection
+        stuck = self._detect_stuck_pattern()
+        if stuck:
+            print(f"\n{stuck}")
+
+        print(f"{'═'*70}")
 
         # Health Indicators
         print(f"\n{'HEALTH INDICATORS:':}")
