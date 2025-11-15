@@ -489,6 +489,42 @@ def verify_solution(problem_statement, solution, verbose=True):
 
     return bug_report, o
 
+def save_memory(memory_file, problem_statement, other_prompts, current_iteration, max_runs, solution=None, verify=None):
+    """
+    Save the current state to a memory file.
+    """
+    memory = {
+        "problem_statement": problem_statement,
+        "other_prompts": other_prompts,
+        "current_iteration": current_iteration,
+        "max_runs": max_runs,
+        "solution": solution,
+        "verify": verify,
+        "timestamp": __import__('datetime').datetime.now().isoformat()
+    }
+
+    try:
+        with open(memory_file, 'w', encoding='utf-8') as f:
+            json.dump(memory, f, indent=2, ensure_ascii=False)
+        print(f"Memory saved to {memory_file}")
+        return True
+    except Exception as e:
+        print(f"Error saving memory to {memory_file}: {e}")
+        return False
+
+def load_memory(memory_file):
+    """
+    Load the state from a memory file.
+    """
+    try:
+        with open(memory_file, 'r', encoding='utf-8') as f:
+            memory = json.load(f)
+        print(f"Memory loaded from {memory_file}")
+        return memory
+    except Exception as e:
+        print(f"Error loading memory from {memory_file}: {e}")
+        return None
+
 def check_if_solution_claimed_complete(solution):
     check_complete_prompt = f"""
 Is the following text claiming that the solution is complete?
@@ -548,17 +584,41 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[]):
 
     return p1, solution, verify, good_verify
 
-def agent(problem_statement, other_prompts=[]):
-    p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts)
+def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False):
+    if resume_from_memory and memory_file:
+        # Load memory and resume from previous state
+        memory = load_memory(memory_file)
+        if memory:
+            problem_statement = memory.get("problem_statement", problem_statement)
+            other_prompts = memory.get("other_prompts", other_prompts)
+            current_iteration = memory.get("current_iteration", 0)
+            solution = memory.get("solution", None)
+            verify = memory.get("verify", None)
+            print(f"Resuming from iteration {current_iteration}")
+        else:
+            print("Failed to load memory, starting fresh")
+            current_iteration = 0
+            solution = None
+            verify = None
+    else:
+        # Start fresh
+        current_iteration = 0
+        solution = None
+        verify = None
 
-    if(solution is None):
-        print(">>>>>>> Failed in finding a complete solution.")
-        return None
+    if solution is None:
+        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts)
+        if(solution is None):
+            print(">>>>>>> Failed in finding a complete solution.")
+            return None
+    else:
+        # We have a solution from memory, need to get good_verify
+        _, good_verify = verify_solution(problem_statement, solution)
 
     error_count = 0
     correct_count = 1
     success = False
-    for i in range(30):
+    for i in range(current_iteration, 30):
         print(f"Number of iterations: {i}, number of corrects: {correct_count}, number of errors: {error_count}")
 
         try:
@@ -606,6 +666,10 @@ def agent(problem_statement, other_prompts=[]):
                 correct_count += 1
                 error_count = 0
 
+            # Save memory every iteration
+            if memory_file:
+                save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify)
+
             if(correct_count >= 5):
                 print(">>>>>>> Correct solution found.")
                 print(json.dumps(solution, indent=4))
@@ -613,6 +677,9 @@ def agent(problem_statement, other_prompts=[]):
 
             elif(error_count >= 10):
                 print(">>>>>>> Failed in finding a correct solution.")
+                # Save final state before returning
+                if memory_file:
+                    save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify)
                 return None
 
         except Exception as e:
@@ -621,6 +688,9 @@ def agent(problem_statement, other_prompts=[]):
 
     if(not success):
         print(">>>>>>> Failed in finding a correct solution.")
+        # Save final state before returning
+        if memory_file:
+            save_memory(memory_file, problem_statement, other_prompts, 30, 30, solution, verify)
         return None
 
 if __name__ == "__main__":
@@ -637,10 +707,14 @@ if __name__ == "__main__":
                        help='Filter benchmark by level. For gradingbench: Basic, Advanced. For proofbench: pre-IMO, IMO-easy, IMO-medium, IMO-hard. Case-insensitive. Not supported for answerbench.')
     parser.add_argument('--benchmark-index', '-i', type=int, default=0,
                        help='Index of problem to load from filtered benchmark (default: 0)')
+    parser.add_argument('--memory', '-mem', type=str, help='Path to memory file for saving/loading state (optional)')
+    parser.add_argument('--resume', '-r', action='store_true', help='Resume from memory file if provided')
 
     args = parser.parse_args()
 
     max_runs = args.max_runs
+    memory_file = args.memory
+    resume_from_memory = args.resume
 
     other_prompts = []
     if args.other_prompts:
@@ -648,6 +722,11 @@ if __name__ == "__main__":
 
     print(">>>>>>> Other prompts:")
     print(other_prompts)
+
+    if memory_file:
+        print(f"Memory file: {memory_file}")
+        if resume_from_memory:
+            print("Resume mode: Will attempt to load from memory file")
 
     # Set up logging if log file is specified
     if args.log:
@@ -707,7 +786,7 @@ if __name__ == "__main__":
     for i in range(max_runs):
         print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")
         try:
-            sol = agent(problem_statement, other_prompts)
+            sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
