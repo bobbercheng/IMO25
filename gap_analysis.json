@@ -1,0 +1,34 @@
+{
+  "files": {
+    "failed": "run_log_gpt_oss/agent_gpt_oss_high_output_1.log",
+    "successful": "run_logs/solution_01_agent_08.log"
+  },
+  "metrics": {
+    "failed": {
+      "content_truncations": 122,
+      "empty_solutions": 52,
+      "verification_failures": 112,
+      "iterations": 10
+    },
+    "successful": {
+      "has_final_answer": true,
+      "has_complete_solution": true,
+      "verification_passed": true
+    }
+  },
+  "gaps": [
+    "CONTENT OVERFLOW: Model generated too much content (122 truncations). This suggests excessive exploration/reasoning without converging to a solution.",
+    "EMPTY SOLUTIONS: Generated 52 empty solutions. This indicates failure to recover from errors or produce structured output after self-correction.",
+    "VERIFICATION LOOP: Failed verification 112 times. This suggests inability to produce rigorous proofs or correct identified errors.",
+    "MODEL CAPABILITY GAP: The failed model may lack efficient reasoning, structured output generation, or error recovery mechanisms present in the successful model.",
+    "ITERATION INEFFICIENCY: Used 10 iterations but still failed, suggesting inefficient solution strategy."
+  ],
+  "timestamps": {
+    "failed_start": [
+      "2025-11-13 23:47:40"
+    ],
+    "failed_end": [
+      "2025-11-14 22:56:31"
+    ]
+  }
+}
