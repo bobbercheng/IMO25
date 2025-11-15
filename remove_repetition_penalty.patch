@@ -1,9 +1,0 @@
---- agent_gpt_oss_original.py
-+++ agent_gpt_oss_modified.py
-@@ -123,7 +123,6 @@
-         "model": "gpt_oss",
-         "temperature": 0.1,
--        "repetition_penalty": 1.05,
-         "reasoning": {
-             "effort": "low"  # Changed from "high" to "low"
-         }
