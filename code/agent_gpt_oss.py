@@ -59,6 +59,8 @@ REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", SOLUTION_REASONING_EFFO
 # Feedback Configuration
 # Show only top N errors to reduce cognitive load (0 = show all)
 FEEDBACK_TOP_N = int(os.getenv("GPT_OSS_FEEDBACK_TOP_N", "3"))
+# Feedback format: 'json' (structured), 'prose' (natural language), or 'both'
+FEEDBACK_FORMAT = os.getenv("GPT_OSS_FEEDBACK_FORMAT", "json")
 
 # Print configuration on module load
 import sys
@@ -71,6 +73,7 @@ if not hasattr(sys, '_agent_gpt_oss_config_printed'):
     _original_builtin_print(f"[CONFIG] Self-Improvement Reasoning Effort: {SELF_IMPROVEMENT_REASONING_EFFORT}")
     _original_builtin_print(f"[CONFIG] Verification Reasoning Effort: {VERIFICATION_REASONING_EFFORT}")
     _original_builtin_print(f"[CONFIG] Feedback Top-N Errors: {FEEDBACK_TOP_N} (0 = show all)")
+    _original_builtin_print(f"[CONFIG] Feedback Format: {FEEDBACK_FORMAT}")
 
 # Global variables for logging
 _log_file = None
@@ -592,7 +595,193 @@ def prioritize_and_filter_errors(bug_report, top_n=None):
 
     return formatted_output.strip()
 
-def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None, feedback_top_n=None):
+def convert_to_structured_json_feedback(bug_report):
+    """
+    Converts prose verification feedback to structured JSON format.
+
+    Benefits:
+    - Machine-readable and parseable
+    - Clear separation of concerns (location, error, fix)
+    - Easy for LLMs to consume and act on
+    - Enables programmatic error tracking
+
+    Args:
+        bug_report: Prose verification feedback
+
+    Returns:
+        JSON string with structured error information
+    """
+    if not bug_report or not bug_report.strip():
+        return json.dumps({"status": "passed", "errors": []}, indent=2)
+
+    # Parse the bug report to extract structured information
+    errors = []
+    lines = bug_report.split('\n')
+
+    current_error = {
+        "id": 0,
+        "priority": "MEDIUM",
+        "type": "unknown",
+        "location": {},
+        "description": "",
+        "claimed": None,
+        "actual": None,
+        "fix": None,
+        "why_wrong": None,
+        "impact": None
+    }
+
+    in_error_block = False
+    error_id = 0
+
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+
+        # Detect error start patterns
+        if any(pattern in line for pattern in ['ERROR #', 'Critical Error', 'Justification Gap', 'Issue in', 'Problem in']):
+            # Save previous error if exists
+            if in_error_block and current_error.get("description"):
+                errors.append(current_error.copy())
+
+            # Start new error
+            in_error_block = True
+            error_id += 1
+            current_error = {
+                "id": error_id,
+                "priority": "MEDIUM",
+                "type": "unknown",
+                "location": {},
+                "description": "",
+                "claimed": None,
+                "actual": None,
+                "fix": None,
+                "why_wrong": None,
+                "impact": None
+            }
+
+            # Extract priority from line
+            if 'PRIORITY: HIGHEST' in line:
+                current_error["priority"] = "HIGHEST"
+                current_error["impact"] = "blocks dependent steps"
+            elif 'PRIORITY: HIGH' in line:
+                current_error["priority"] = "HIGH"
+                current_error["impact"] = "critical error"
+            elif 'PRIORITY: MEDIUM' in line:
+                current_error["priority"] = "MEDIUM"
+
+            # Extract error type
+            if 'Critical Error' in line:
+                current_error["type"] = "critical_error"
+            elif 'Justification Gap' in line:
+                current_error["type"] = "justification_gap"
+            elif 'Error in' in line or 'Issue in' in line or 'Problem in' in line:
+                current_error["type"] = "error"
+
+            current_error["description"] += line_stripped + " "
+
+        elif in_error_block:
+            # Extract location information
+            if 'Lemma' in line and 'lemma' not in current_error.get("location", {}):
+                # Extract lemma number
+                import re
+                lemma_match = re.search(r'Lemma[_\s]+(\d+)', line)
+                if lemma_match:
+                    current_error["location"]["lemma"] = int(lemma_match.group(1))
+                    current_error["location"]["section"] = f"Lemma_{lemma_match.group(1)}"
+
+            if 'Step' in line and 'step' not in current_error.get("location", {}):
+                step_match = re.search(r'Step[_\s]+(\d+)', line)
+                if step_match:
+                    current_error["location"]["step"] = int(step_match.group(1))
+
+            if 'Line' in line and 'line' not in current_error.get("location", {}):
+                line_match = re.search(r'Line[_\s]+(\d+)', line)
+                if line_match:
+                    current_error["location"]["line"] = int(line_match.group(1))
+
+            # Extract claimed vs actual
+            if 'claimed' in line.lower() or 'claim' in line.lower():
+                claim_match = re.search(r'claim(?:ed)?[:\s]+["\']?([^"\']+)["\']?', line, re.IGNORECASE)
+                if claim_match:
+                    current_error["claimed"] = claim_match.group(1).strip()
+
+            if 'should be' in line.lower() or 'actual' in line.lower() or 'correct' in line.lower():
+                actual_match = re.search(r'(?:should be|actual|correct)[:\s]+["\']?([^"\']+)["\']?', line, re.IGNORECASE)
+                if actual_match:
+                    current_error["actual"] = actual_match.group(1).strip()
+
+            # Extract fix suggestion
+            if 'fix' in line.lower() or 'replace' in line.lower() or 'change' in line.lower():
+                current_error["fix"] = line_stripped
+
+            # Extract reasoning for why it's wrong
+            if 'because' in line.lower() or 'reason' in line.lower() or 'why wrong' in line.lower():
+                current_error["why_wrong"] = line_stripped
+
+            # Accumulate description
+            if line_stripped and not line_stripped.startswith('['):  # Skip footer
+                current_error["description"] += line_stripped + " "
+
+    # Don't forget the last error
+    if in_error_block and current_error.get("description"):
+        errors.append(current_error)
+
+    # Clean up descriptions
+    for error in errors:
+        error["description"] = error["description"].strip()
+        # Remove None values for cleaner JSON
+        error = {k: v for k, v in error.items() if v is not None and v != {} and v != ""}
+
+    # Build final structure
+    result = {
+        "status": "failed",
+        "total_errors": len(errors),
+        "errors": errors,
+        "guidance": "Fix errors in priority order. Start with HIGHEST priority errors that block dependent steps."
+    }
+
+    return json.dumps(result, indent=2)
+
+def format_feedback(bug_report, feedback_format=None, feedback_top_n=None):
+    """
+    Formats verification feedback according to specified format.
+
+    Args:
+        bug_report: Raw verification feedback (prose)
+        feedback_format: 'json', 'prose', or 'both'
+        feedback_top_n: Number of top errors to show (for prose format)
+
+    Returns:
+        Formatted feedback string
+    """
+    if not bug_report or not bug_report.strip():
+        return ""
+
+    # Use default if not specified
+    if feedback_format is None:
+        feedback_format = FEEDBACK_FORMAT
+
+    # Apply prioritization first (for prose)
+    prioritized_prose = prioritize_and_filter_errors(bug_report, feedback_top_n)
+
+    if feedback_format == "json":
+        # Convert prioritized prose to JSON
+        return convert_to_structured_json_feedback(prioritized_prose)
+
+    elif feedback_format == "prose":
+        # Return prioritized prose
+        return prioritized_prose
+
+    elif feedback_format == "both":
+        # Return both formats
+        json_output = convert_to_structured_json_feedback(prioritized_prose)
+        return f"=== STRUCTURED JSON ===\n{json_output}\n\n=== PROSE FORMAT ===\n{prioritized_prose}"
+
+    else:
+        # Default to JSON
+        return convert_to_structured_json_feedback(prioritized_prose)
+
+def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None, feedback_top_n=None, feedback_format=None):
     """
     Verifies a solution using the verification system.
 
@@ -603,6 +792,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         reasoning_effort: Override reasoning effort for verification
                          If None, uses VERIFICATION_REASONING_EFFORT (default: high)
         feedback_top_n: Number of top errors to show (0 = show all, None = use FEEDBACK_TOP_N)
+        feedback_format: Format for feedback - 'json' (structured), 'prose' (natural), or 'both'
     """
     dsol = extract_detailed_solution(solution)
 
@@ -658,9 +848,9 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     bug_report = ""
 
     if("yes" not in o.lower()):
-        bug_report = extract_detailed_solution(out, "Detailed Verification", False)
-        # Prioritize and filter errors to reduce cognitive load
-        bug_report = prioritize_and_filter_errors(bug_report, feedback_top_n)
+        raw_report = extract_detailed_solution(out, "Detailed Verification", False)
+        # Format feedback: prioritize errors and convert to requested format (JSON/prose/both)
+        bug_report = format_feedback(raw_report, feedback_format, feedback_top_n)
 
     if(verbose):
         print(">>>>>>>Bug report:")
@@ -758,7 +948,7 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], self_improvement_reasoning=None, feedback_top_n=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], self_improvement_reasoning=None, feedback_top_n=None, feedback_format=None):
     p1 = build_request_payload(
             system_prompt=step1_prompt,
             question_prompt=problem_statement,
@@ -795,7 +985,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], self_im
     print(json.dumps(solution, indent=4))
 
     print(f">>>>>>> Vefify the solution.")
-    verify, good_verify = verify_solution(problem_statement, solution, verbose, feedback_top_n=feedback_top_n)
+    verify, good_verify = verify_solution(problem_statement, solution, verbose, feedback_top_n=feedback_top_n, feedback_format=feedback_format)
 
     print(f">>>>>>> Initial verification:")
     print(json.dumps(verify, indent=4))
@@ -805,7 +995,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], self_im
 
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
-          feedback_top_n=None):
+          feedback_top_n=None, feedback_format=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -818,12 +1008,14 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         self_improvement_reasoning: Override self-improvement reasoning effort (low/medium/high)
         verification_reasoning: Override verification reasoning effort (low/medium/high)
         feedback_top_n: Number of top errors to show in feedback (0 = show all, None = use default)
+        feedback_format: Feedback format - 'json', 'prose', or 'both' (None = use default)
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
     self_imp_reasoning = self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT
     ver_reasoning = verification_reasoning or VERIFICATION_REASONING_EFFORT
     fdbk_top_n = feedback_top_n if feedback_top_n is not None else FEEDBACK_TOP_N
+    fdbk_format = feedback_format if feedback_format is not None else FEEDBACK_FORMAT
 
     if resume_from_memory and memory_file:
         # Load memory and resume from previous state
@@ -858,14 +1050,14 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"Starting fresh with solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
 
     if solution is None:
-        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning, fdbk_top_n)
+        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning, fdbk_top_n, fdbk_format)
         if(solution is None):
             print(">>>>>>> Failed in finding a complete solution.")
             return None
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort (potentially overridden to 'high')
-        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning, feedback_top_n=fdbk_top_n)
+        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning, feedback_top_n=fdbk_top_n, feedback_format=fdbk_format)
 
     error_count = 0
     correct_count = 1
@@ -911,7 +1103,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 print(json.dumps(solution, indent=4))
 
             print(f">>>>>>> Verify the solution.")
-            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning, feedback_top_n=fdbk_top_n)
+            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning, feedback_top_n=fdbk_top_n, feedback_format=fdbk_format)
 
             if("yes" in good_verify.lower()):
                 print(">>>>>>> Solution is good, verifying again ...")
@@ -972,6 +1164,8 @@ if __name__ == "__main__":
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
     parser.add_argument('--feedback-top-n', '-ftn', type=int, default=None,
                        help='Show only top N errors in feedback (default: 3, 0 = show all). Reduces cognitive load.')
+    parser.add_argument('--feedback-format', '-ff', type=str, choices=['json', 'prose', 'both'], default=None,
+                       help='Feedback format: json (structured, machine-readable), prose (natural language), or both (default: json). JSON format enables better LLM comprehension.')
 
     args = parser.parse_args()
 
@@ -982,6 +1176,7 @@ if __name__ == "__main__":
     self_improvement_reasoning = args.self_improvement_reasoning
     verification_reasoning = args.verification_reasoning
     feedback_top_n = args.feedback_top_n
+    feedback_format = args.feedback_format
 
     other_prompts = []
     if args.other_prompts:
@@ -1059,7 +1254,7 @@ if __name__ == "__main__":
         print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")
         try:
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
-                       solution_reasoning, self_improvement_reasoning, verification_reasoning, feedback_top_n)
+                       solution_reasoning, self_improvement_reasoning, verification_reasoning, feedback_top_n, feedback_format)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
