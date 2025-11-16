@@ -56,6 +56,10 @@ VERIFICATION_REASONING_EFFORT = os.getenv("GPT_OSS_VERIFICATION_REASONING", "hig
 # Legacy single reasoning effort (for backward compatibility)
 REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", SOLUTION_REASONING_EFFORT)
 
+# Feedback Configuration
+# Show only top N errors to reduce cognitive load (0 = show all)
+FEEDBACK_TOP_N = int(os.getenv("GPT_OSS_FEEDBACK_TOP_N", "3"))
+
 # Print configuration on module load
 import sys
 if not hasattr(sys, '_agent_gpt_oss_config_printed'):
@@ -66,6 +70,7 @@ if not hasattr(sys, '_agent_gpt_oss_config_printed'):
     _original_builtin_print(f"[CONFIG] Solution Reasoning Effort: {SOLUTION_REASONING_EFFORT}")
     _original_builtin_print(f"[CONFIG] Self-Improvement Reasoning Effort: {SELF_IMPROVEMENT_REASONING_EFFORT}")
     _original_builtin_print(f"[CONFIG] Verification Reasoning Effort: {VERIFICATION_REASONING_EFFORT}")
+    _original_builtin_print(f"[CONFIG] Feedback Top-N Errors: {FEEDBACK_TOP_N} (0 = show all)")
 
 # Global variables for logging
 _log_file = None
@@ -454,7 +459,140 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     else:
         return solution[:idx].strip()
 
-def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
+def prioritize_and_filter_errors(bug_report, top_n=None):
+    """
+    Prioritizes errors and shows only top N to reduce cognitive load.
+
+    Priority levels (based on impact):
+    - HIGHEST: Errors that block dependent steps or invalidate reasoning chains
+    - HIGH: Errors affecting final answer or major lemmas
+    - MEDIUM: Justification gaps or minor errors
+
+    Args:
+        bug_report: The detailed verification feedback
+        top_n: Number of top errors to show (0 or None = show all)
+
+    Returns:
+        Prioritized and filtered bug report
+    """
+    if not bug_report or top_n == 0:
+        return bug_report
+
+    # Use default from config if not specified
+    if top_n is None:
+        top_n = FEEDBACK_TOP_N
+
+    if top_n == 0:  # 0 means show all
+        return bug_report
+
+    # Split bug report into sections/errors
+    # Look for common error markers from verification output
+    lines = bug_report.split('\n')
+    errors = []
+    current_error = []
+    error_start_patterns = [
+        'Critical Error',
+        'Justification Gap',
+        'Error in',
+        'Issue in',
+        'Problem in',
+        'Step',
+        'Lemma',
+        'Line'
+    ]
+
+    for line in lines:
+        # Check if this line starts a new error
+        is_error_start = any(pattern in line for pattern in error_start_patterns)
+
+        if is_error_start and current_error:
+            # Save previous error
+            errors.append('\n'.join(current_error))
+            current_error = [line]
+        else:
+            current_error.append(line)
+
+    # Don't forget the last error
+    if current_error:
+        errors.append('\n'.join(current_error))
+
+    # If we couldn't parse into multiple errors, return original
+    if len(errors) <= 1:
+        return bug_report
+
+    # Assign priority scores to each error
+    def get_priority_score(error_text):
+        """Higher score = higher priority"""
+        score = 0
+        text_lower = error_text.lower()
+
+        # HIGHEST priority indicators
+        if 'invalidate' in text_lower or 'blocks' in text_lower:
+            score += 100
+        if 'breaks' in text_lower or 'fatal' in text_lower:
+            score += 90
+        if 'dependent' in text_lower or 'relies on' in text_lower:
+            score += 80
+
+        # HIGH priority indicators
+        if 'critical error' in text_lower:
+            score += 70
+        if 'final answer' in text_lower or 'conclusion' in text_lower:
+            score += 60
+        if 'lemma' in text_lower or 'theorem' in text_lower:
+            score += 50
+
+        # MEDIUM priority indicators
+        if 'justification gap' in text_lower or 'gap' in text_lower:
+            score += 40
+        if 'incomplete' in text_lower or 'missing' in text_lower:
+            score += 30
+
+        # Minor boost for errors with specific locations
+        if 'line' in text_lower or 'step' in text_lower:
+            score += 10
+
+        return score
+
+    # Score and sort errors by priority
+    scored_errors = [(get_priority_score(err), err) for err in errors if err.strip()]
+    scored_errors.sort(reverse=True, key=lambda x: x[0])
+
+    # Take top N
+    top_errors = scored_errors[:top_n]
+    total_errors = len(scored_errors)
+    hidden_errors = max(0, total_errors - top_n)
+
+    # Format output with priority labels
+    priority_labels = {
+        100: "PRIORITY: HIGHEST (blocks dependent steps)",
+        70: "PRIORITY: HIGH (critical error)",
+        40: "PRIORITY: MEDIUM (justification gap)"
+    }
+
+    def get_priority_label(score):
+        if score >= 100:
+            return "PRIORITY: HIGHEST (blocks dependent steps)"
+        elif score >= 70:
+            return "PRIORITY: HIGH (critical error)"
+        elif score >= 40:
+            return "PRIORITY: MEDIUM (justification gap)"
+        else:
+            return "PRIORITY: MEDIUM"
+
+    formatted_output = f"Showing TOP {top_n} CRITICAL errors ({total_errors} total errors found):\n\n"
+
+    for i, (score, error_text) in enumerate(top_errors, 1):
+        priority_label = get_priority_label(score)
+        formatted_output += f"ERROR #{i} ({priority_label}):\n"
+        formatted_output += f"{error_text.strip()}\n\n"
+
+    if hidden_errors > 0:
+        formatted_output += f"[{hidden_errors} other errors hidden - fix these top {top_n} first, then we'll show remaining]\n"
+
+    return formatted_output.strip()
+
+def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None, feedback_top_n=None):
     """
     Verifies a solution using the verification system.
 
@@ -464,6 +602,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         verbose: Print detailed verification steps
         reasoning_effort: Override reasoning effort for verification
                          If None, uses VERIFICATION_REASONING_EFFORT (default: high)
+        feedback_top_n: Number of top errors to show (0 = show all, None = use FEEDBACK_TOP_N)
     """
     dsol = extract_detailed_solution(solution)
 
@@ -520,6 +659,8 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 
     if("yes" not in o.lower()):
         bug_report = extract_detailed_solution(out, "Detailed Verification", False)
+        # Prioritize and filter errors to reduce cognitive load
+        bug_report = prioritize_and_filter_errors(bug_report, feedback_top_n)
 
     if(verbose):
         print(">>>>>>>Bug report:")
@@ -617,7 +758,7 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], self_improvement_reasoning=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], self_improvement_reasoning=None, feedback_top_n=None):
     p1 = build_request_payload(
             system_prompt=step1_prompt,
             question_prompt=problem_statement,
@@ -654,7 +795,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], self_im
     print(json.dumps(solution, indent=4))
 
     print(f">>>>>>> Vefify the solution.")
-    verify, good_verify = verify_solution(problem_statement, solution, verbose)
+    verify, good_verify = verify_solution(problem_statement, solution, verbose, feedback_top_n=feedback_top_n)
 
     print(f">>>>>>> Initial verification:")
     print(json.dumps(verify, indent=4))
@@ -663,7 +804,8 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], self_im
     return p1, solution, verify, good_verify
 
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
-          solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
+          solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
+          feedback_top_n=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -675,11 +817,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         solution_reasoning: Override solution reasoning effort (low/medium/high)
         self_improvement_reasoning: Override self-improvement reasoning effort (low/medium/high)
         verification_reasoning: Override verification reasoning effort (low/medium/high)
+        feedback_top_n: Number of top errors to show in feedback (0 = show all, None = use default)
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
     self_imp_reasoning = self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT
     ver_reasoning = verification_reasoning or VERIFICATION_REASONING_EFFORT
+    fdbk_top_n = feedback_top_n if feedback_top_n is not None else FEEDBACK_TOP_N
 
     if resume_from_memory and memory_file:
         # Load memory and resume from previous state
@@ -714,14 +858,14 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"Starting fresh with solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
 
     if solution is None:
-        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning)
+        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning, fdbk_top_n)
         if(solution is None):
             print(">>>>>>> Failed in finding a complete solution.")
             return None
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort (potentially overridden to 'high')
-        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning, feedback_top_n=fdbk_top_n)
 
     error_count = 0
     correct_count = 1
@@ -767,7 +911,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 print(json.dumps(solution, indent=4))
 
             print(f">>>>>>> Verify the solution.")
-            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning, feedback_top_n=fdbk_top_n)
 
             if("yes" in good_verify.lower()):
                 print(">>>>>>> Solution is good, verifying again ...")
@@ -826,6 +970,8 @@ if __name__ == "__main__":
                        help='Override self-improvement reasoning effort (low/medium/high). Use "high" for proactive error detection (recommended).')
     parser.add_argument('--verification-reasoning', '-vr', type=str, choices=['low', 'medium', 'high'],
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
+    parser.add_argument('--feedback-top-n', '-ftn', type=int, default=None,
+                       help='Show only top N errors in feedback (default: 3, 0 = show all). Reduces cognitive load.')
 
     args = parser.parse_args()
 
@@ -835,6 +981,7 @@ if __name__ == "__main__":
     solution_reasoning = args.solution_reasoning
     self_improvement_reasoning = args.self_improvement_reasoning
     verification_reasoning = args.verification_reasoning
+    feedback_top_n = args.feedback_top_n
 
     other_prompts = []
     if args.other_prompts:
@@ -912,7 +1059,7 @@ if __name__ == "__main__":
         print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")
         try:
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
-                       solution_reasoning, self_improvement_reasoning, verification_reasoning)
+                       solution_reasoning, self_improvement_reasoning, verification_reasoning, feedback_top_n)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
