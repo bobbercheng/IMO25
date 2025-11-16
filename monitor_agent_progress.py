@@ -22,9 +22,11 @@ from typing import Dict, List, Tuple
 class AgentProgressMonitor:
     """Monitor agent progress and provide early success indicators."""
 
-    def __init__(self, log_file: str):
+    def __init__(self, log_file: str, start_from_end: bool = False):
         self.log_file = Path(log_file)
         self.last_position = 0
+        self.first_read = True
+        self.start_from_end = start_from_end
         self.metrics = {
             'iterations': 0,
             'truncations': 0,
@@ -49,6 +51,14 @@ class AgentProgressMonitor:
         """Read only new content since last check."""
         try:
             with open(self.log_file, 'r', encoding='utf-8') as f:
+                # On first read, optionally start from end if monitoring ongoing run
+                if self.first_read and self.start_from_end:
+                    f.seek(0, 2)  # Seek to end of file
+                    self.last_position = f.tell()
+                    self.first_read = False
+                    return ""  # No content on first read when starting from end
+
+                self.first_read = False
                 f.seek(self.last_position)
                 new_content = f.read()
                 self.last_position = f.tell()
@@ -520,10 +530,14 @@ def main():
         '--export', '-e', type=str,
         help='Export metrics to JSON file'
     )
+    parser.add_argument(
+        '--follow', '-f', action='store_true',
+        help='Follow mode: start from end of file for ongoing runs (ignore historical data)'
+    )
 
     args = parser.parse_args()
 
-    monitor = AgentProgressMonitor(args.log_file)
+    monitor = AgentProgressMonitor(args.log_file, start_from_end=args.follow)
 
     if args.once:
         # Single check
