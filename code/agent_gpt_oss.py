@@ -885,7 +885,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 p1 = build_request_payload(
                     system_prompt=step1_prompt,
                     question_prompt=problem_statement,
-                    other_prompts=other_prompts
+                    other_prompts=other_prompts,
+                    reasoning_effort=sol_reasoning  # Use CLI-specified solution reasoning
                 )
 
                 # Append previous solution as assistant message
