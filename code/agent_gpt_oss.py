@@ -48,6 +48,8 @@ API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completio
 # Asymmetric Reasoning Effort Configuration
 # Solution generation: Uses low reasoning to prevent truncation and maintain efficiency
 SOLUTION_REASONING_EFFORT = os.getenv("GPT_OSS_SOLUTION_REASONING", "low")
+# Self-improvement: Uses high reasoning for proactive error detection and prevention
+SELF_IMPROVEMENT_REASONING_EFFORT = os.getenv("GPT_OSS_SELF_IMPROVEMENT_REASONING", "high")
 # Verification: Uses high reasoning for rigorous checking and catching subtle errors
 VERIFICATION_REASONING_EFFORT = os.getenv("GPT_OSS_VERIFICATION_REASONING", "high")
 
@@ -62,6 +64,7 @@ if not hasattr(sys, '_agent_gpt_oss_config_printed'):
     _original_builtin_print = print
     _original_builtin_print(f"[CONFIG] GPT_OSS API URL: {API_URL}")
     _original_builtin_print(f"[CONFIG] Solution Reasoning Effort: {SOLUTION_REASONING_EFFORT}")
+    _original_builtin_print(f"[CONFIG] Self-Improvement Reasoning Effort: {SELF_IMPROVEMENT_REASONING_EFFORT}")
     _original_builtin_print(f"[CONFIG] Verification Reasoning Effort: {VERIFICATION_REASONING_EFFORT}")
 
 # Global variables for logging
@@ -525,7 +528,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     return bug_report, o
 
 def save_memory(memory_file, problem_statement, other_prompts, current_iteration, max_runs,
-                solution=None, verify=None, solution_reasoning=None, verification_reasoning=None):
+                solution=None, verify=None, solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
     """
     Save the current state to a memory file.
 
@@ -538,6 +541,7 @@ def save_memory(memory_file, problem_statement, other_prompts, current_iteration
         solution: Current solution (if any)
         verify: Current verification result (if any)
         solution_reasoning: Reasoning effort for solution generation
+        self_improvement_reasoning: Reasoning effort for self-improvement
         verification_reasoning: Reasoning effort for verification
     """
     memory = {
@@ -548,6 +552,7 @@ def save_memory(memory_file, problem_statement, other_prompts, current_iteration
         "solution": solution,
         "verify": verify,
         "solution_reasoning": solution_reasoning or SOLUTION_REASONING_EFFORT,
+        "self_improvement_reasoning": self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT,
         "verification_reasoning": verification_reasoning or VERIFICATION_REASONING_EFFORT,
         "timestamp": __import__('datetime').datetime.now().isoformat()
     }
@@ -612,7 +617,7 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[]):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], self_improvement_reasoning=None):
     p1 = build_request_payload(
             system_prompt=step1_prompt,
             question_prompt=problem_statement,
@@ -637,6 +642,12 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[]):
         }
     )
 
+    # Use high reasoning for self-improvement (proactive error prevention)
+    # This catches errors BEFORE verification, saving 5-7 correction iterations
+    improvement_effort = self_improvement_reasoning if self_improvement_reasoning is not None else SELF_IMPROVEMENT_REASONING_EFFORT
+    p1["reasoning"]["effort"] = improvement_effort
+    print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
+
     response2 = send_api_request(get_api_key(), p1)
     solution = extract_solution(extract_text_from_response(response2))
     print(f">>>>>>> Corrected solution:")
@@ -652,7 +663,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[]):
     return p1, solution, verify, good_verify
 
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
-          solution_reasoning=None, verification_reasoning=None):
+          solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -662,10 +673,12 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         memory_file: Path to memory file for saving/loading state
         resume_from_memory: If True, load state from memory_file
         solution_reasoning: Override solution reasoning effort (low/medium/high)
+        self_improvement_reasoning: Override self-improvement reasoning effort (low/medium/high)
         verification_reasoning: Override verification reasoning effort (low/medium/high)
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
+    self_imp_reasoning = self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT
     ver_reasoning = verification_reasoning or VERIFICATION_REASONING_EFFORT
 
     if resume_from_memory and memory_file:
@@ -681,11 +694,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             # Load reasoning settings from memory if not overridden by CLI
             if solution_reasoning is None and 'solution_reasoning' in memory:
                 sol_reasoning = memory['solution_reasoning']
+            if self_improvement_reasoning is None and 'self_improvement_reasoning' in memory:
+                self_imp_reasoning = memory['self_improvement_reasoning']
             if verification_reasoning is None and 'verification_reasoning' in memory:
                 ver_reasoning = memory['verification_reasoning']
 
             print(f"Resuming from iteration {current_iteration}")
-            print(f"Using solution reasoning: {sol_reasoning}, verification reasoning: {ver_reasoning}")
+            print(f"Using solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
         else:
             print("Failed to load memory, starting fresh")
             current_iteration = 0
@@ -696,10 +711,10 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         current_iteration = 0
         solution = None
         verify = None
-        print(f"Starting fresh with solution reasoning: {sol_reasoning}, verification reasoning: {ver_reasoning}")
+        print(f"Starting fresh with solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
 
     if solution is None:
-        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts)
+        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning)
         if(solution is None):
             print(">>>>>>> Failed in finding a complete solution.")
             return None
@@ -762,7 +777,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             # Save memory every iteration
             if memory_file:
                 save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
-                           sol_reasoning, ver_reasoning)
+                           sol_reasoning, self_imp_reasoning, ver_reasoning)
 
             if(correct_count >= 5):
                 print(">>>>>>> Correct solution found.")
@@ -774,7 +789,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 # Save final state before returning
                 if memory_file:
                     save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
-                               sol_reasoning, ver_reasoning)
+                               sol_reasoning, self_imp_reasoning, ver_reasoning)
                 return None
 
         except Exception as e:
@@ -786,7 +801,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         # Save final state before returning
         if memory_file:
             save_memory(memory_file, problem_statement, other_prompts, 30, 30, solution, verify,
-                       sol_reasoning, ver_reasoning)
+                       sol_reasoning, self_imp_reasoning, ver_reasoning)
         return None
 
 if __name__ == "__main__":
@@ -807,6 +822,8 @@ if __name__ == "__main__":
     parser.add_argument('--resume', '-r', action='store_true', help='Resume from memory file if provided')
     parser.add_argument('--solution-reasoning', '-sr', type=str, choices=['low', 'medium', 'high'],
                        help='Override solution generation reasoning effort (low/medium/high)')
+    parser.add_argument('--self-improvement-reasoning', '-sir', type=str, choices=['low', 'medium', 'high'],
+                       help='Override self-improvement reasoning effort (low/medium/high). Use "high" for proactive error detection (recommended).')
     parser.add_argument('--verification-reasoning', '-vr', type=str, choices=['low', 'medium', 'high'],
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
 
@@ -816,6 +833,7 @@ if __name__ == "__main__":
     memory_file = args.memory
     resume_from_memory = args.resume
     solution_reasoning = args.solution_reasoning
+    self_improvement_reasoning = args.self_improvement_reasoning
     verification_reasoning = args.verification_reasoning
 
     other_prompts = []
@@ -894,7 +912,7 @@ if __name__ == "__main__":
         print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")
         try:
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
-                       solution_reasoning, verification_reasoning)
+                       solution_reasoning, self_improvement_reasoning, verification_reasoning)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
