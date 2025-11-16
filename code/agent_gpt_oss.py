@@ -683,7 +683,6 @@ def convert_to_structured_json_feedback(bug_report):
             # Extract location information
             if 'Lemma' in line and 'lemma' not in current_error.get("location", {}):
                 # Extract lemma number
-                import re
                 lemma_match = re.search(r'Lemma[_\s]+(\d+)', line)
                 if lemma_match:
                     current_error["location"]["lemma"] = int(lemma_match.group(1))
