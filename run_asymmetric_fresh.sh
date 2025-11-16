@@ -52,7 +52,7 @@ python code/agent_gpt_oss.py "$PROBLEM_FILE" \
     --verification-reasoning high \
     --memory "$MEMORY_FILE" \
     --log "$LOG_FILE" \
-    --max-runs 1
+    --max_runs 1
 
 echo ""
 echo "========================================="
