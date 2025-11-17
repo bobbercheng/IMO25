@@ -663,8 +663,42 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], self_im
 
     return p1, solution, verify, good_verify
 
+def calculate_solution_score(verify, good_verify):
+    """
+    Score a solution based on verification feedback.
+    Higher score = better solution.
+
+    Args:
+        verify: Verification feedback text
+        good_verify: "yes" or "no" indicating if solution passed
+
+    Returns:
+        float: Score (higher is better)
+    """
+    score = 0.0
+
+    # Perfect verification
+    if "yes" in good_verify.lower():
+        score += 100.0
+
+    # Penalize by number of errors
+    if verify:
+        # Count error markers
+        error_count = verify.lower().count('critical error')
+        error_count += verify.lower().count('justification gap') * 0.5
+        score -= error_count * 10
+
+        # Reward shorter bug reports (fewer issues)
+        score -= len(verify) / 100
+    else:
+        # No errors found
+        score += 50.0
+
+    return score
+
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
-          solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
+          solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
+          num_initial_attempts=1):
     """
     Main agent function for solving mathematical problems.
 
@@ -676,6 +710,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         solution_reasoning: Override solution reasoning effort (low/medium/high)
         self_improvement_reasoning: Override self-improvement reasoning effort (low/medium/high)
         verification_reasoning: Override verification reasoning effort (low/medium/high)
+        num_initial_attempts: Generate N diverse initial solutions and pick best (default: 1)
+                             Use 3-5 for BFS exploration to escape local minima
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
@@ -715,10 +751,64 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"Starting fresh with solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
 
     if solution is None:
-        p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning)
-        if(solution is None):
-            print(">>>>>>> Failed in finding a complete solution.")
-            return None
+        # QUICK WIN BFS: Generate multiple initial solutions if requested
+        if num_initial_attempts > 1:
+            print(f">>>>>>> BFS: Generating {num_initial_attempts} diverse initial solutions...")
+            best_solution = None
+            best_score = -999999
+            best_verify = None
+            best_good_verify = None
+
+            for attempt in range(num_initial_attempts):
+                print(f">>>>>>> BFS: Initial attempt {attempt+1}/{num_initial_attempts}...")
+
+                # Add diversity to prompt
+                diverse_prompts = other_prompts.copy()
+                if attempt > 0:
+                    diversity_hints = [
+                        "Try a different approach or proof strategy.",
+                        "Consider an alternative construction or method.",
+                        "Explore a different perspective on the problem.",
+                        "Use a different proof technique (e.g., contradiction, induction, direct proof).",
+                        "Look for algebraic, geometric, or combinatorial insights."
+                    ]
+                    diverse_prompts.append(f"Note: This is attempt {attempt+1} of {num_initial_attempts}. {diversity_hints[attempt % len(diversity_hints)]}")
+
+                try:
+                    p1, sol, ver, good_ver = init_explorations(
+                        problem_statement, True, diverse_prompts,
+                        self_imp_reasoning
+                    )
+
+                    if sol:
+                        # Score this solution
+                        score = calculate_solution_score(ver, good_ver)
+                        print(f">>>>>>> BFS: Attempt {attempt+1} score: {score:.2f}")
+
+                        if score > best_score:
+                            best_score = score
+                            best_solution = sol
+                            best_verify = ver
+                            best_good_verify = good_ver
+                            print(f">>>>>>> BFS: New best solution (attempt {attempt+1})")
+                except Exception as e:
+                    print(f">>>>>>> BFS: Attempt {attempt+1} failed: {e}")
+                    continue
+
+            if best_solution:
+                print(f">>>>>>> BFS: Best initial solution selected (score: {best_score:.2f})")
+                solution = best_solution
+                verify = best_verify
+                good_verify = best_good_verify
+            else:
+                print(">>>>>>> BFS: All initial attempts failed")
+                return None
+        else:
+            # Original single-path initialization
+            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning)
+            if(solution is None):
+                print(">>>>>>> Failed in finding a complete solution.")
+                return None
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort (potentially overridden to 'high')
@@ -828,6 +918,8 @@ if __name__ == "__main__":
                        help='Override self-improvement reasoning effort (low/medium/high). Use "high" for proactive error detection (recommended).')
     parser.add_argument('--verification-reasoning', '-vr', type=str, choices=['low', 'medium', 'high'],
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
+    parser.add_argument('--num-initial-attempts', '-nia', type=int, default=1,
+                       help='Generate N diverse initial solutions and pick best (default: 1). Use 3-5 for BFS exploration to escape local minima.')
 
     args = parser.parse_args()
 
@@ -837,6 +929,7 @@ if __name__ == "__main__":
     solution_reasoning = args.solution_reasoning
     self_improvement_reasoning = args.self_improvement_reasoning
     verification_reasoning = args.verification_reasoning
+    num_initial_attempts = args.num_initial_attempts
 
     other_prompts = []
     if args.other_prompts:
@@ -914,7 +1007,8 @@ if __name__ == "__main__":
         print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")
         try:
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
-                       solution_reasoning, self_improvement_reasoning, verification_reasoning)
+                       solution_reasoning, self_improvement_reasoning, verification_reasoning,
+                       num_initial_attempts)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
