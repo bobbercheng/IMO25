@@ -618,11 +618,12 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], self_improvement_reasoning=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None):
     p1 = build_request_payload(
             system_prompt=step1_prompt,
             question_prompt=problem_statement,
-            other_prompts=other_prompts
+            other_prompts=other_prompts,
+            reasoning_effort=reasoning_effort
         )
 
     print(f">>>>>> Initial prompt.")
@@ -655,7 +656,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], self_im
     print(json.dumps(solution, indent=4))
 
     print(f">>>>>>> Vefify the solution.")
-    verify, good_verify = verify_solution(problem_statement, solution, verbose)
+    verify, good_verify = verify_solution(problem_statement, solution, verbose, verification_reasoning)
 
     print(f">>>>>>> Initial verification:")
     print(json.dumps(verify, indent=4))
@@ -777,7 +778,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 try:
                     p1, sol, ver, good_ver = init_explorations(
                         problem_statement, True, diverse_prompts,
-                        self_imp_reasoning
+                        sol_reasoning, self_imp_reasoning, ver_reasoning
                     )
 
                     if sol:
@@ -805,7 +806,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 return None
         else:
             # Original single-path initialization
-            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, self_imp_reasoning)
+            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning)
             if(solution is None):
                 print(">>>>>>> Failed in finding a complete solution.")
                 return None
