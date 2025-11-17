@@ -528,6 +528,152 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 
     return bug_report, o
 
+def translate_verification_feedback(bug_report, problem_statement, solution,
+                                   translation_reasoning="medium", verbose=True):
+    """
+    Translate high-reasoning verification feedback into actionable guidance
+    for low-reasoning generation.
+
+    Uses medium reasoning as a "translation layer" to convert PhD-level
+    mathematical critique into undergraduate-level actionable steps.
+
+    Args:
+        bug_report: High-reasoning verification output (complex feedback)
+        problem_statement: Original problem statement
+        solution: Current solution attempt
+        translation_reasoning: Reasoning level for translation (default: medium)
+        verbose: Print detailed translation process
+
+    Returns:
+        simplified_feedback: Actionable guidance for correction
+    """
+    if verbose:
+        print("\n" + "="*80)
+        print(">>>>>>> [TRANSLATION] Starting verification feedback translation")
+        print("="*80)
+
+    # Analyze complexity of original feedback
+    original_length = len(bug_report)
+    error_count = bug_report.lower().count('error')
+    critical_count = bug_report.lower().count('critical')
+    gap_count = bug_report.lower().count('gap')
+
+    if verbose:
+        print(f">>>>>>> [TRANSLATION] Original feedback metrics:")
+        print(f">>>>>>> [TRANSLATION]   - Length: {original_length} characters")
+        print(f">>>>>>> [TRANSLATION]   - Total errors mentioned: {error_count}")
+        print(f">>>>>>> [TRANSLATION]   - Critical errors: {critical_count}")
+        print(f">>>>>>> [TRANSLATION]   - Justification gaps: {gap_count}")
+        print(f">>>>>>> [TRANSLATION]   - Complexity: {'HIGH' if original_length > 2000 else 'MEDIUM' if original_length > 500 else 'LOW'}")
+
+    # Extract detailed solution for context
+    detailed_sol = extract_detailed_solution(solution)
+
+    translation_prompt = f"""You are a teaching assistant helping a student understand expert feedback on their mathematical solution.
+
+### Original Problem ###
+{problem_statement}
+
+### Student's Solution ###
+{detailed_sol[:1000]}{'...' if len(detailed_sol) > 1000 else ''}
+
+### Expert Verification Feedback (PhD-level) ###
+{bug_report}
+
+### Your Task ###
+The expert feedback is too sophisticated for the student to understand. Translate it into SIMPLE, ACTIONABLE guidance.
+
+**Requirements:**
+1. **Identify Top 3 Errors**: List only the 3 MOST CRITICAL errors in order of severity
+2. **Simplify Each Error**: For each error, provide:
+   - ONE SENTENCE explaining what's wrong (use simple language)
+   - ONE SENTENCE explaining why it's wrong (explain the mathematical reason)
+   - ONE CONCRETE FIX suggestion (specific action: "Add X", "Change Y to Z", "Prove that...")
+3. **Avoid Complex Terminology**: Use undergraduate-level language
+   - Replace "injective map" with "one-to-one function"
+   - Replace "well-ordering principle" with "smallest element exists"
+   - Replace "non-trivial" with "important" or "meaningful"
+4. **Focus on Actions**: Tell the student WHAT to change, not just WHAT is wrong
+
+### Output Format ###
+**Top 3 Critical Issues to Fix:**
+
+**Issue 1 (Most Critical):**
+- What's wrong: [one simple sentence]
+- Why it's wrong: [one sentence with mathematical reason]
+- How to fix: [concrete action to take]
+
+**Issue 2:**
+- What's wrong: [one simple sentence]
+- Why it's wrong: [one sentence with mathematical reason]
+- How to fix: [concrete action to take]
+
+**Issue 3:**
+- What's wrong: [one simple sentence]
+- Why it's wrong: [one sentence with mathematical reason]
+- How to fix: [concrete action to take]
+
+**Summary:** [One sentence describing the overall fix strategy]
+"""
+
+    if verbose:
+        print(f"\n>>>>>>> [TRANSLATION] Translation prompt constructed")
+        print(f">>>>>>> [TRANSLATION] Translation reasoning level: {translation_reasoning}")
+        print(f">>>>>>> [TRANSLATION] Sending translation request...")
+
+    payload = build_request_payload(
+        system_prompt="You are a helpful teaching assistant translating expert feedback into simple guidance.",
+        question_prompt=translation_prompt,
+        reasoning_effort=translation_reasoning
+    )
+
+    if verbose:
+        print(f">>>>>>> [TRANSLATION] API request built")
+        print(f">>>>>>> [TRANSLATION] Payload size: {len(json.dumps(payload))} characters")
+
+    try:
+        response = send_api_request(get_api_key(), payload, stream=True)
+        simplified_feedback = extract_text_from_response(response)
+
+        # Analyze simplified feedback
+        simplified_length = len(simplified_feedback)
+        simplified_issues = simplified_feedback.lower().count('issue')
+
+        if verbose:
+            print(f"\n>>>>>>> [TRANSLATION] Translation complete!")
+            print(f">>>>>>> [TRANSLATION] Simplified feedback metrics:")
+            print(f">>>>>>> [TRANSLATION]   - Length: {simplified_length} characters")
+            print(f">>>>>>> [TRANSLATION]   - Reduction: {original_length - simplified_length} characters ({100*(original_length - simplified_length)/original_length:.1f}%)")
+            print(f">>>>>>> [TRANSLATION]   - Issues identified: {simplified_issues}")
+            print(f">>>>>>> [TRANSLATION]   - Average chars per issue: {simplified_length // max(simplified_issues, 1)}")
+
+        # Check translation quality
+        has_format = "Issue 1" in simplified_feedback or "**Issue 1" in simplified_feedback
+        has_fix = "How to fix" in simplified_feedback or "fix:" in simplified_feedback.lower()
+
+        if verbose:
+            print(f"\n>>>>>>> [TRANSLATION] Quality checks:")
+            print(f">>>>>>> [TRANSLATION]   - Proper format: {'✓' if has_format else '✗'}")
+            print(f">>>>>>> [TRANSLATION]   - Contains fixes: {'✓' if has_fix else '✗'}")
+            print(f">>>>>>> [TRANSLATION]   - Quality: {'GOOD' if has_format and has_fix else 'NEEDS_REVIEW'}")
+
+        # Log before/after comparison
+        if verbose:
+            print(f"\n>>>>>>> [TRANSLATION] BEFORE (original expert feedback, first 300 chars):")
+            print(f">>>>>>> {bug_report[:300]}...")
+            print(f"\n>>>>>>> [TRANSLATION] AFTER (simplified feedback, first 500 chars):")
+            print(f">>>>>>> {simplified_feedback[:500]}...")
+            print(f"\n" + "="*80)
+            print(">>>>>>> [TRANSLATION] Translation complete")
+            print("="*80 + "\n")
+
+        return simplified_feedback
+
+    except Exception as e:
+        print(f"\n>>>>>>> [TRANSLATION] ERROR during translation: {e}")
+        print(f">>>>>>> [TRANSLATION] Falling back to original feedback")
+        return bug_report
+
 def save_memory(memory_file, problem_statement, other_prompts, current_iteration, max_runs,
                 solution=None, verify=None, solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
     """
@@ -699,7 +845,7 @@ def calculate_solution_score(verify, good_verify):
 
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
-          num_initial_attempts=1):
+          num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414):
     """
     Main agent function for solving mathematical problems.
 
@@ -713,6 +859,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         verification_reasoning: Override verification reasoning effort (low/medium/high)
         num_initial_attempts: Generate N diverse initial solutions and pick best (default: 1)
                              Use 3-5 for BFS exploration to escape local minima
+        use_mcts: If True, use MCTS-guided exploration instead of simple BFS (default: False)
+        mcts_simulations: Number of MCTS simulations if use_mcts=True (default: 5)
+        mcts_exploration: MCTS exploration constant for UCB1 (default: 1.414)
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
@@ -752,8 +901,50 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"Starting fresh with solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
 
     if solution is None:
+        # MCTS-guided exploration if requested
+        if use_mcts:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> MCTS MODE ACTIVATED")
+            print(f">>>>>>> Running {mcts_simulations} MCTS-guided simulations")
+            print(f">>>>>>> Exploration constant: {mcts_exploration}")
+            print(f"{'='*80}\n")
+
+            # Import MCTS module
+            try:
+                from mcts_bfs import mcts_bfs_search
+
+                # Run MCTS search
+                mcts_result = mcts_bfs_search(
+                    problem_statement=problem_statement,
+                    num_simulations=mcts_simulations,
+                    generate_solution_func=init_explorations,
+                    verify_solution_func=verify_solution,
+                    sol_reasoning=sol_reasoning,
+                    self_imp_reasoning=self_imp_reasoning,
+                    ver_reasoning=ver_reasoning,
+                    exploration_constant=mcts_exploration,
+                    max_depth=2,
+                    save_tree_path=f"{memory_file.replace('.json', '_mcts_tree.json')}" if memory_file else None
+                )
+
+                if mcts_result:
+                    solution = mcts_result['solution']
+                    verify = mcts_result['verify']
+                    good_verify = mcts_result['good_verify']
+                    print(f"\n>>>>>>> MCTS search completed successfully")
+                    print(f">>>>>>> Best strategy: {mcts_result.get('strategy', 'unknown')}")
+                    print(f">>>>>>> Score: {mcts_result.get('score', 0):.2f}")
+                else:
+                    print(f"\n>>>>>>> MCTS search failed to find solution")
+                    return None
+
+            except ImportError as e:
+                print(f">>>>>>> ERROR: Could not import MCTS module: {e}")
+                print(f">>>>>>> Falling back to standard BFS")
+                use_mcts = False
+
         # QUICK WIN BFS: Generate multiple initial solutions if requested
-        if num_initial_attempts > 1:
+        if not use_mcts and num_initial_attempts > 1:
             print(f">>>>>>> BFS: Generating {num_initial_attempts} diverse initial solutions...")
             best_solution = None
             best_score = -999999
@@ -804,7 +995,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             else:
                 print(">>>>>>> BFS: All initial attempts failed")
                 return None
-        else:
+        if not use_mcts and num_initial_attempts <= 1:
             # Original single-path initialization
             p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning)
             if(solution is None):
@@ -845,11 +1036,36 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     }
                 )
 
-                p1["messages"].append(
-                    {"role": "user",
-                    "content": correction_prompt + "\n\n" + verify
-                    }
-                )
+                # Use translation layer if enabled and reasoning levels are asymmetric
+                USE_TRANSLATION = os.getenv("GPT_OSS_USE_TRANSLATION", "false").lower() == "true"
+                is_asymmetric = (sol_reasoning == "low" and ver_reasoning in ["medium", "high"])
+
+                if USE_TRANSLATION and is_asymmetric and verify:
+                    # Translate high-level verification feedback to actionable guidance
+                    print(f">>>>>>> Asymmetric reasoning detected ({sol_reasoning} gen / {ver_reasoning} ver)")
+                    print(f">>>>>>> Activating translation layer...")
+
+                    simplified_verify = translate_verification_feedback(
+                        verify, problem_statement, solution,
+                        translation_reasoning="medium",  # Use medium as translator
+                        verbose=True
+                    )
+
+                    p1["messages"].append(
+                        {"role": "user",
+                        "content": correction_prompt + "\n\n" + simplified_verify
+                        }
+                    )
+                else:
+                    # Use original verification feedback
+                    if USE_TRANSLATION:
+                        print(f">>>>>>> Translation layer available but not needed (symmetric reasoning: {sol_reasoning}/{ver_reasoning})")
+
+                    p1["messages"].append(
+                        {"role": "user",
+                        "content": correction_prompt + "\n\n" + verify
+                        }
+                    )
 
                 print(">>>>>>> New prompt:")
                 print(json.dumps(p1, indent=4))
@@ -921,6 +1137,14 @@ if __name__ == "__main__":
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
     parser.add_argument('--num-initial-attempts', '-nia', type=int, default=1,
                        help='Generate N diverse initial solutions and pick best (default: 1). Use 3-5 for BFS exploration to escape local minima.')
+    parser.add_argument('--use-mcts', action='store_true',
+                       help='Use MCTS-guided exploration instead of simple BFS')
+    parser.add_argument('--mcts-simulations', type=int, default=5,
+                       help='Number of MCTS simulations (default: 5)')
+    parser.add_argument('--mcts-exploration', type=float, default=1.414,
+                       help='MCTS exploration constant for UCB1 (default: 1.414, sqrt(2))')
+    parser.add_argument('--use-translation', action='store_true',
+                       help='Enable translation layer for asymmetric reasoning (low gen / high ver)')
 
     args = parser.parse_args()
 
@@ -931,6 +1155,16 @@ if __name__ == "__main__":
     self_improvement_reasoning = args.self_improvement_reasoning
     verification_reasoning = args.verification_reasoning
     num_initial_attempts = args.num_initial_attempts
+    use_mcts = args.use_mcts
+    mcts_simulations = args.mcts_simulations
+    mcts_exploration = args.mcts_exploration
+
+    # Set translation environment variable if flag is provided
+    if args.use_translation:
+        os.environ["GPT_OSS_USE_TRANSLATION"] = "true"
+        print(f">>>>>>> Translation layer ENABLED")
+    else:
+        os.environ["GPT_OSS_USE_TRANSLATION"] = "false"
 
     other_prompts = []
     if args.other_prompts:
@@ -1009,7 +1243,7 @@ if __name__ == "__main__":
         try:
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
                        solution_reasoning, self_improvement_reasoning, verification_reasoning,
-                       num_initial_attempts)
+                       num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
