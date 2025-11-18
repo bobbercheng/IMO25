@@ -20,7 +20,7 @@ echo "  - Success: Find correct solution k ∈ {0,1} or k ∈ {0,1,...,n}"
 echo "  - No hangs: Safeguards prevent verification deadlocks"
 echo ""
 
-PROBLEM_FILE="problems/imo_p1.txt"
+PROBLEM_FILE="problems/imo01.txt"
 LOG_DIR="test_baseline_logs"
 LOG_FILE="$LOG_DIR/baseline_restoration.log"
 MEMORY_FILE="$LOG_DIR/baseline_memory.json"
