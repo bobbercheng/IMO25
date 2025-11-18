@@ -126,7 +126,7 @@ class MCTSExplorer:
         print(f">>>>>>> [MCTS] Initialized with exploration_constant={exploration_constant}, max_depth={max_depth}")
 
     def _initialize_strategy_tree(self):
-        """Initialize root node with common proof strategies."""
+        """Initialize root node with common proof strategies and hybrid approaches."""
         common_strategies = [
             "Mathematical induction",
             "Direct proof / construction",
@@ -138,10 +138,20 @@ class MCTSExplorer:
             "Extremal principle"
         ]
 
-        for strategy in common_strategies:
+        # Add hybrid strategies that combine multiple approaches
+        hybrid_strategies = [
+            "Induction with extremal principle",
+            "Contradiction with pigeonhole principle",
+            "Construction with algebraic manipulation",
+            "Combinatorial with geometric insight"
+        ]
+
+        all_strategies = common_strategies + hybrid_strategies
+
+        for strategy in all_strategies:
             self.root.add_child(strategy)
 
-        print(f">>>>>>> [MCTS] Initialized with {len(common_strategies)} base strategies")
+        print(f">>>>>>> [MCTS] Initialized with {len(common_strategies)} base + {len(hybrid_strategies)} hybrid strategies")
 
     def select(self) -> MCTSNode:
         """
@@ -284,7 +294,7 @@ class MCTSExplorer:
 
     def search(self, problem_statement: str, num_simulations: int,
                generate_solution_func, verify_solution_func,
-               sol_reasoning: str, self_imp_reasoning: str, ver_reasoning: str) -> Dict:
+               sol_reasoning: str, self_imp_reasoning: str, ver_reasoning: str) -> Tuple[Dict, List[Dict]]:
         """
         Run MCTS search for the given number of simulations.
 
@@ -298,13 +308,14 @@ class MCTSExplorer:
             ver_reasoning: Verification reasoning level
 
         Returns:
-            Best solution found across all simulations
+            Tuple of (best_solution, all_solutions_sorted_by_score)
         """
         print(f">>>>>>> [MCTS] Starting search with {num_simulations} simulations")
         print(f">>>>>>> [MCTS] Reasoning levels: solution={sol_reasoning}, self_imp={self_imp_reasoning}, verification={ver_reasoning}")
 
         best_solution = None
         best_score = -999999.0
+        all_solutions = []  # Collect all solutions for Best-of-N
 
         for sim_num in range(num_simulations):
             print(f"\n>>>>>>> [MCTS] ===== Simulation {sim_num + 1}/{num_simulations} =====")
@@ -319,6 +330,10 @@ class MCTSExplorer:
             )
             self.backpropagate(expanded_node, score, solution)
 
+            # Collect solution if valid
+            if solution and 'solution' in solution:
+                all_solutions.append(solution)
+
             # Track best solution
             if score > best_score:
                 best_score = score
@@ -327,10 +342,14 @@ class MCTSExplorer:
 
             self.total_simulations += 1
 
+        # Sort all solutions by score (descending)
+        all_solutions_sorted = sorted(all_solutions, key=lambda s: s.get('score', -999999), reverse=True)
+
         print(f"\n>>>>>>> [MCTS] Search complete. Best score: {best_score:.2f}")
         print(f">>>>>>> [MCTS] Best strategy: {best_solution.get('strategy', 'unknown') if best_solution else 'none'}")
+        print(f">>>>>>> [MCTS] Total valid solutions collected: {len(all_solutions_sorted)}")
 
-        return best_solution
+        return best_solution, all_solutions_sorted
 
     def get_best_strategies(self, top_k: int = 3) -> List[Tuple[str, float]]:
         """
@@ -476,9 +495,17 @@ class MCTSExplorer:
             # Create hybrid strategies from successful children
             successful_children = [c for c in node.children if c.avg_score() > 60]
             if len(successful_children) >= 2:
-                refinements = [
-                    f"Hybrid: {successful_children[0].strategy} + {successful_children[1].strategy}"
-                ]
+                # Generate multiple hybrid combinations from top performers
+                refinements = []
+                for i in range(min(2, len(successful_children) - 1)):
+                    refinements.append(
+                        f"Hybrid: {successful_children[i].strategy} + {successful_children[i+1].strategy}"
+                    )
+                # Also try combining the best with the third-best for diversity
+                if len(successful_children) >= 3:
+                    refinements.append(
+                        f"Hybrid: {successful_children[0].strategy} + {successful_children[2].strategy}"
+                    )
 
         return refinements
 
@@ -488,23 +515,25 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
                    sol_reasoning: str = "low",
                    self_imp_reasoning: str = "high",
                    ver_reasoning: str = "high",
-                   exploration_constant: float = 1.414,
-                   max_depth: int = 2,
-                   save_tree_path: Optional[str] = None) -> Optional[Dict]:
+                   exploration_constant: float = 1.6,
+                   max_depth: int = 3,
+                   save_tree_path: Optional[str] = None,
+                   best_of_n: int = 0) -> Optional[Dict]:
     """
     Perform MCTS-guided BFS exploration for mathematical problem solving.
 
     Args:
         problem_statement: Problem to solve
-        num_simulations: Number of MCTS simulations
+        num_simulations: Number of MCTS simulations (default: 8 for optimal coverage)
         generate_solution_func: Solution generation function (init_explorations)
         verify_solution_func: Solution verification function
-        sol_reasoning: Solution generation reasoning level
-        self_imp_reasoning: Self-improvement reasoning level
-        ver_reasoning: Verification reasoning level
-        exploration_constant: UCB1 exploration parameter
-        max_depth: Maximum tree depth
+        sol_reasoning: Solution generation reasoning level (default: "low")
+        self_imp_reasoning: Self-improvement reasoning level (default: "high")
+        ver_reasoning: Verification reasoning level (default: "high")
+        exploration_constant: UCB1 exploration parameter (default: 1.6 for more diversity)
+        max_depth: Maximum tree depth (default: 3 for deeper strategy refinement)
         save_tree_path: Path to save MCTS tree (optional)
+        best_of_n: If > 0, verify top N solutions and return first verified (default: 0)
 
     Returns:
         Best solution dictionary or None if no solution found
@@ -524,7 +553,7 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
     )
 
     # Run MCTS search
-    best_solution = explorer.search(
+    best_solution, all_solutions = explorer.search(
         problem_statement=problem_statement,
         num_simulations=num_simulations,
         generate_solution_func=generate_solution_func,
@@ -541,6 +570,52 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
     for idx, (strategy, avg_score) in enumerate(top_strategies, 1):
         print(f">>>>>>> [MCTS-BFS]   {idx}. {strategy}: {avg_score:.2f}")
     print(f"{'='*80}\n")
+
+    # Best-of-N sampling: Try verifying top N solutions
+    if best_of_n > 0 and len(all_solutions) > 0:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [BEST-OF-N] Enabled with N={best_of_n}")
+        print(f">>>>>>> [BEST-OF-N] Verifying top {min(best_of_n, len(all_solutions))} solutions")
+        print(f"{'='*80}\n")
+
+        # Take top N solutions by score
+        top_n_solutions = all_solutions[:min(best_of_n, len(all_solutions))]
+
+        for idx, solution_dict in enumerate(top_n_solutions, 1):
+            print(f"\n>>>>>>> [BEST-OF-N] Verifying solution {idx}/{len(top_n_solutions)}")
+            print(f">>>>>>> [BEST-OF-N] Strategy: {solution_dict.get('strategy', 'unknown')}")
+            print(f">>>>>>> [BEST-OF-N] Score: {solution_dict.get('score', 0):.2f}")
+
+            # Re-verify with high reasoning to double-check
+            solution_text = solution_dict.get('solution', '')
+            if solution_text:
+                verify_result, good_verify = verify_solution_func(
+                    problem_statement,
+                    solution_text,
+                    reasoning_effort=ver_reasoning
+                )
+
+                print(f">>>>>>> [BEST-OF-N] Verification result: {good_verify}")
+
+                if "yes" in good_verify.lower():
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [BEST-OF-N] ✓ VERIFIED SOLUTION FOUND (solution {idx})")
+                    print(f">>>>>>> [BEST-OF-N] Strategy: {solution_dict.get('strategy', 'unknown')}")
+                    print(f">>>>>>> [BEST-OF-N] Returning verified solution")
+                    print(f"{'='*80}\n")
+
+                    # Update solution dict with fresh verification
+                    solution_dict['verify'] = verify_result
+                    solution_dict['good_verify'] = good_verify
+
+                    # Save tree before returning
+                    if save_tree_path:
+                        explorer.save_tree(save_tree_path)
+
+                    return solution_dict
+
+        print(f"\n>>>>>>> [BEST-OF-N] No verified solution found in top {len(top_n_solutions)}")
+        print(f">>>>>>> [BEST-OF-N] Falling back to best-scoring solution")
 
     # Save tree if requested
     if save_tree_path:

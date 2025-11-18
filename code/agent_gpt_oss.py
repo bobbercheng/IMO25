@@ -674,6 +674,298 @@ The expert feedback is too sophisticated for the student to understand. Translat
         print(f">>>>>>> [TRANSLATION] Falling back to original feedback")
         return bug_report
 
+# ============================================================================
+# PROOF SKETCH PHASE ARCHITECTURE
+# ============================================================================
+
+def generate_proof_sketch(problem_statement, reasoning_effort="low", verbose=True):
+    """
+    Phase 1: Generate high-level proof outline/sketch.
+
+    Uses low reasoning to quickly generate the structural outline of the proof
+    without getting bogged down in detailed calculations.
+
+    Args:
+        problem_statement: The mathematical problem
+        reasoning_effort: Reasoning level (default: "low")
+        verbose: Print detailed logs
+
+    Returns:
+        proof_sketch: High-level outline of the proof strategy
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [PROOF SKETCH] Phase 1: Generating proof outline")
+        print(f">>>>>>> [PROOF SKETCH] Using reasoning: {reasoning_effort}")
+        print(f"{'='*80}\n")
+
+    sketch_prompt = """You are a mathematician creating a PROOF OUTLINE (NOT a complete proof).
+
+Your task: Write a high-level structural outline for solving this problem.
+
+**Requirements:**
+1. **Main Strategy**: One sentence describing your overall approach (e.g., "Use induction on n")
+2. **Key Steps** (3-6 steps): List the LOGICAL FLOW only, no calculations
+   - For each step, write ONE SENTENCE describing what you'll prove/show
+   - Number them: Step 1, Step 2, etc.
+3. **Dependencies**: Note if any step depends on previous steps
+4. **Edge Cases**: Mention any special cases to handle
+
+**DO NOT:**
+- Include detailed calculations or algebraic manipulations
+- Write the full proof
+- Include specific numerical examples (unless critical to structure)
+
+**Example Format:**
+Main Strategy: Proof by strong induction on n
+
+Step 1: Establish base case for n=1
+Step 2: Assume statement holds for all k < n (induction hypothesis)
+Step 3: Construct a line through point (a_k, b_k) for some k < n
+Step 4: Show this line satisfies the required properties
+Step 5: Conclude by induction principle
+
+Dependencies: Steps 3-4 depend on Step 2
+Edge Cases: Need to handle n=1 separately
+
+Now create a proof outline for this problem:
+"""
+
+    payload = build_request_payload(
+        system_prompt="You are a mathematician skilled at planning proof strategies.",
+        question_prompt=problem_statement,
+        other_prompts=[sketch_prompt],
+        reasoning_effort=reasoning_effort
+    )
+
+    response = send_api_request(get_api_key(), payload)
+    proof_sketch = extract_text_from_response(response)
+
+    if verbose:
+        print(f">>>>>>> [PROOF SKETCH] Generated outline:")
+        print(proof_sketch)
+        print(f"\n{'='*80}\n")
+
+    return proof_sketch
+
+def verify_proof_structure(problem_statement, proof_sketch, reasoning_effort="medium", verbose=True):
+    """
+    Phase 2: Verify the STRUCTURE of the proof outline.
+
+    Uses medium reasoning to check logical flow, dependencies, and structural soundness
+    WITHOUT verifying detailed mathematics (which comes later).
+
+    Args:
+        problem_statement: The mathematical problem
+        proof_sketch: The proof outline to verify
+        reasoning_effort: Reasoning level (default: "medium")
+        verbose: Print detailed logs
+
+    Returns:
+        Tuple of (verification_result, is_structurally_sound)
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [PROOF SKETCH] Phase 2: Verifying proof structure")
+        print(f">>>>>>> [PROOF SKETCH] Using reasoning: {reasoning_effort}")
+        print(f"{'='*80}\n")
+
+    structure_prompt = f"""You are reviewing the LOGICAL STRUCTURE of a proof outline (NOT the mathematical details).
+
+**Proof Outline:**
+{proof_sketch}
+
+**Your Task:** Check the STRUCTURE ONLY (not the math):
+
+1. **Logical Flow**: Do the steps follow a logical order?
+2. **Circular Reasoning**: Does any step assume what it's trying to prove?
+3. **Completeness**: Are all necessary steps present? (Don't need calculations, just steps)
+4. **Dependencies**: Are dependencies clear and non-circular?
+5. **Edge Cases**: Are special cases addressed?
+
+**Output Format:**
+STRUCTURAL ISSUES FOUND: [Yes/No]
+
+If Yes, list issues:
+- Issue 1: [Brief description]
+- Issue 2: [Brief description]
+...
+
+If No:
+"No structural issues found. The proof outline has sound logical flow."
+
+**IMPORTANT**: Focus ONLY on structure. Don't check if calculations are correct (that comes later).
+"""
+
+    payload = build_request_payload(
+        system_prompt="You are a mathematician checking proof structure for logical soundness.",
+        question_prompt=problem_statement,
+        other_prompts=[structure_prompt],
+        reasoning_effort=reasoning_effort
+    )
+
+    response = send_api_request(get_api_key(), payload)
+    verification_result = extract_text_from_response(response)
+
+    # Check if structurally sound
+    is_sound = ("no structural issues" in verification_result.lower() or
+                "structural issues found: no" in verification_result.lower())
+
+    if verbose:
+        print(f">>>>>>> [PROOF SKETCH] Structure verification:")
+        print(verification_result)
+        print(f">>>>>>> [PROOF SKETCH] Structurally sound: {is_sound}")
+        print(f"\n{'='*80}\n")
+
+    return verification_result, is_sound
+
+def expand_proof_details(problem_statement, proof_sketch, reasoning_effort="low", verbose=True):
+    """
+    Phase 3: Expand the proof outline into a complete proof with details.
+
+    Uses low reasoning to fill in calculations and details for a structurally
+    verified outline, avoiding the verbosity of medium/high reasoning.
+
+    Args:
+        problem_statement: The mathematical problem
+        proof_sketch: The structurally verified proof outline
+        reasoning_effort: Reasoning level (default: "low")
+        verbose: Print detailed logs
+
+    Returns:
+        complete_proof: Full proof with calculations
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [PROOF SKETCH] Phase 3: Expanding proof details")
+        print(f">>>>>>> [PROOF SKETCH] Using reasoning: {reasoning_effort}")
+        print(f"{'='*80}\n")
+
+    expansion_prompt = f"""You have a structurally sound proof outline. Now fill in the DETAILS.
+
+**Proof Outline (VERIFIED structure):**
+{proof_sketch}
+
+**Your Task:** Expand this outline into a COMPLETE PROOF by:
+
+1. **Follow the outline exactly** - don't change the structure
+2. **Add calculations** for each step
+3. **Add justifications** for each claim
+4. **Handle edge cases** mentioned in outline
+5. **Write clearly** but concisely
+
+**Format:** Write the proof in standard mathematical style with:
+- Clear statement of what you're proving at each step
+- Detailed calculations where needed
+- Logical connectives (therefore, hence, thus)
+- Proper mathematical notation
+
+Begin writing the complete proof now:
+"""
+
+    payload = build_request_payload(
+        system_prompt=step1_prompt,  # Use standard solution prompt
+        question_prompt=problem_statement,
+        other_prompts=[expansion_prompt],
+        reasoning_effort=reasoning_effort
+    )
+
+    response = send_api_request(get_api_key(), payload)
+    complete_proof = extract_solution(extract_text_from_response(response))
+
+    if verbose:
+        print(f">>>>>>> [PROOF SKETCH] Complete proof generated")
+        print(f">>>>>>> [PROOF SKETCH] Length: {len(complete_proof)} characters")
+        print(f"\n{'='*80}\n")
+
+    return complete_proof
+
+def proof_sketch_pipeline(problem_statement, sol_reasoning="low", ver_reasoning="high", verbose=True):
+    """
+    Execute the full Proof Sketch pipeline.
+
+    Phase 1: Generate outline (low reasoning)
+    Phase 2: Verify structure (medium reasoning)
+    Phase 3: Expand details (low reasoning)
+    Phase 4: Verify mathematics (high reasoning)
+
+    Args:
+        problem_statement: The mathematical problem
+        sol_reasoning: Reasoning for generation phases (default: "low")
+        ver_reasoning: Reasoning for verification (default: "high")
+        verbose: Print detailed logs
+
+    Returns:
+        Tuple of (complete_proof, verify_result, good_verify, pipeline_success)
+    """
+    print(f"\n{'='*80}")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Starting 4-phase proof sketch architecture")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Generation: {sol_reasoning}, Verification: {ver_reasoning}")
+    print(f"{'='*80}\n")
+
+    # Phase 1: Generate outline
+    proof_sketch = generate_proof_sketch(problem_statement, reasoning_effort=sol_reasoning, verbose=verbose)
+
+    # Phase 2: Verify structure
+    structure_verify, is_sound = verify_proof_structure(
+        problem_statement, proof_sketch,
+        reasoning_effort="medium",  # Always use medium for structure checking
+        verbose=verbose
+    )
+
+    if not is_sound:
+        print(f">>>>>>> [PROOF SKETCH PIPELINE] ⚠️  Structural issues detected")
+        print(f">>>>>>> [PROOF SKETCH PIPELINE] Attempting to fix structure...")
+
+        # Try to fix structure (one retry)
+        fix_prompt = f"""The proof outline has structural issues:
+
+{structure_verify}
+
+Please revise the proof outline to fix these structural issues while keeping the same general approach."""
+
+        # Regenerate with structure feedback
+        payload = build_request_payload(
+            system_prompt="You are a mathematician revising a proof outline to fix structural issues.",
+            question_prompt=problem_statement,
+            other_prompts=[fix_prompt],
+            reasoning_effort=sol_reasoning
+        )
+
+        response = send_api_request(get_api_key(), payload)
+        proof_sketch = extract_text_from_response(response)
+
+        # Re-verify
+        structure_verify, is_sound = verify_proof_structure(
+            problem_statement, proof_sketch,
+            reasoning_effort="medium",
+            verbose=verbose
+        )
+
+        if not is_sound:
+            print(f">>>>>>> [PROOF SKETCH PIPELINE] ❌ Structure still unsound after retry")
+            print(f">>>>>>> [PROOF SKETCH PIPELINE] Aborting pipeline")
+            return None, structure_verify, "No - structural issues", False
+
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] ✓ Structure verified")
+
+    # Phase 3: Expand details
+    complete_proof = expand_proof_details(problem_statement, proof_sketch, reasoning_effort=sol_reasoning, verbose=verbose)
+
+    # Phase 4: Verify mathematics
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Phase 4: Verifying mathematics")
+    verify_result, good_verify = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
+
+    success = "yes" in good_verify.lower()
+
+    print(f"\n{'='*80}")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Pipeline complete")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Verification: {good_verify}")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Success: {success}")
+    print(f"{'='*80}\n")
+
+    return complete_proof, verify_result, good_verify, success
+
 def save_memory(memory_file, problem_statement, other_prompts, current_iteration, max_runs,
                 solution=None, verify=None, solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
     """
@@ -990,7 +1282,8 @@ def detect_stuck_pattern(correct_history, error_history, current_iteration, thre
 
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
-          num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414):
+          num_initial_attempts=1, use_mcts=False, mcts_simulations=8, mcts_exploration=1.6, best_of_n=0,
+          use_proof_sketch=False):
     """
     Main agent function for solving mathematical problems.
 
@@ -1046,8 +1339,35 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"Starting fresh with solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
 
     if solution is None:
+        # Proof Sketch pipeline if requested
+        if use_proof_sketch:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> PROOF SKETCH MODE ACTIVATED")
+            print(f">>>>>>> Using 4-phase proof sketch architecture")
+            print(f"{'='*80}\n")
+
+            try:
+                # Run proof sketch pipeline
+                solution, verify, good_verify, success = proof_sketch_pipeline(
+                    problem_statement=problem_statement,
+                    sol_reasoning=sol_reasoning,
+                    ver_reasoning=ver_reasoning,
+                    verbose=True
+                )
+
+                if not success or solution is None:
+                    print(f"\n>>>>>>> PROOF SKETCH PIPELINE failed to generate verified solution")
+                    return None
+
+                print(f"\n>>>>>>> PROOF SKETCH PIPELINE succeeded!")
+
+            except Exception as e:
+                print(f">>>>>>> ERROR in proof sketch pipeline: {e}")
+                print(f">>>>>>> Falling back to standard approach")
+                use_proof_sketch = False
+
         # MCTS-guided exploration if requested
-        if use_mcts:
+        elif use_mcts:
             print(f"\n{'='*80}")
             print(f">>>>>>> MCTS MODE ACTIVATED")
             print(f">>>>>>> Running {mcts_simulations} MCTS-guided simulations")
@@ -1068,8 +1388,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     self_imp_reasoning=self_imp_reasoning,
                     ver_reasoning=ver_reasoning,
                     exploration_constant=mcts_exploration,
-                    max_depth=2,
-                    save_tree_path=f"{memory_file.replace('.json', '_mcts_tree.json')}" if memory_file else None
+                    max_depth=3,
+                    save_tree_path=f"{memory_file.replace('.json', '_mcts_tree.json')}" if memory_file else None,
+                    best_of_n=best_of_n
                 )
 
                 if mcts_result:
@@ -1335,10 +1656,14 @@ if __name__ == "__main__":
                        help='Generate N diverse initial solutions and pick best (default: 1). Use 3-5 for BFS exploration to escape local minima.')
     parser.add_argument('--use-mcts', action='store_true',
                        help='Use MCTS-guided exploration instead of simple BFS')
-    parser.add_argument('--mcts-simulations', type=int, default=5,
-                       help='Number of MCTS simulations (default: 5)')
-    parser.add_argument('--mcts-exploration', type=float, default=1.414,
-                       help='MCTS exploration constant for UCB1 (default: 1.414, sqrt(2))')
+    parser.add_argument('--mcts-simulations', type=int, default=8,
+                       help='Number of MCTS simulations (default: 8, optimized for coverage)')
+    parser.add_argument('--mcts-exploration', type=float, default=1.6,
+                       help='MCTS exploration constant for UCB1 (default: 1.6, tuned for diversity)')
+    parser.add_argument('--best-of-n', type=int, default=0,
+                       help='If > 0, verify top N MCTS solutions and return first verified (default: 0=disabled). Recommended: 3-5 for higher success rate.')
+    parser.add_argument('--use-proof-sketch', action='store_true',
+                       help='Use Proof Sketch architecture: outline → verify structure → expand details → verify math')
     parser.add_argument('--use-translation', action='store_true',
                        help='Enable translation layer for asymmetric reasoning (low gen / high ver)')
 
@@ -1354,6 +1679,8 @@ if __name__ == "__main__":
     use_mcts = args.use_mcts
     mcts_simulations = args.mcts_simulations
     mcts_exploration = args.mcts_exploration
+    best_of_n = args.best_of_n
+    use_proof_sketch = args.use_proof_sketch
 
     # Set translation environment variable if flag is provided
     if args.use_translation:
@@ -1439,7 +1766,8 @@ if __name__ == "__main__":
         try:
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
                        solution_reasoning, self_improvement_reasoning, verification_reasoning,
-                       num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration)
+                       num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
+                       use_proof_sketch)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
