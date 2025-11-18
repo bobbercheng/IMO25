@@ -231,7 +231,7 @@ def _handle_streaming_response(response):
     # Repetition detection parameters
     REPETITION_WINDOW = 50  # Check last N characters
     REPETITION_THRESHOLD = 5  # Number of times a pattern can repeat
-    MAX_CONTENT_LENGTH = 50000  # Maximum content length before forcing stop
+    MAX_CONTENT_LENGTH = 50000*2  # Maximum content length before forcing stop
 
     def detect_repetition(text, window_size=REPETITION_WINDOW):
         """Detect if the same pattern repeats excessively at the end of text."""
@@ -1093,7 +1093,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     print(f">>>>>>> Corrected solution:")
     print(json.dumps(solution, indent=4))
 
-    print(f">>>>>>> Vefify the solution.")
+    print(f">>>>>>> Verify the solution.")
     verify, good_verify = verify_solution(problem_statement, solution, verbose, verification_reasoning)
 
     print(f">>>>>>> Initial verification:")
