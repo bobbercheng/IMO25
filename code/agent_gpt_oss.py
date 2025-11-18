@@ -71,6 +71,11 @@ if not hasattr(sys, '_agent_gpt_oss_config_printed'):
 _log_file = None
 original_print = print
 
+# Global variables for verification safeguards
+VERIFICATION_TIMEOUT = 600  # 10 minutes default
+VERIFICATION_MAX_ATTEMPTS = 3  # Max attempts before fallback
+VERIFICATION_SAFEGUARDS_ENABLED = True  # Enable by default to prevent hangs
+
 def log_print(*args, **kwargs):
     """
     Custom print function that writes to both stdout and log file.
@@ -453,6 +458,134 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
         return solution[idx + len(marker):].strip()
     else:
         return solution[:idx].strip()
+
+def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_effort=None,
+                         max_attempts=None, timeout_seconds=None, fallback_reasoning="medium"):
+    """
+    Safely verifies a solution with timeout, retry, and fallback mechanisms.
+
+    Args:
+        problem_statement: The original problem
+        solution: The solution to verify
+        verbose: Print detailed verification steps
+        reasoning_effort: Override reasoning effort for verification
+        max_attempts: Maximum verification attempts before fallback (default: uses VERIFICATION_MAX_ATTEMPTS global)
+        timeout_seconds: Timeout per attempt in seconds (default: uses VERIFICATION_TIMEOUT global)
+        fallback_reasoning: Reasoning level to fall back to on repeated failures (default: "medium")
+
+    Returns:
+        Tuple of (bug_report, good_verify) or raises exception after all attempts fail
+    """
+    import time
+
+    # Use global defaults if not specified
+    if max_attempts is None:
+        max_attempts = VERIFICATION_MAX_ATTEMPTS
+    if timeout_seconds is None:
+        timeout_seconds = VERIFICATION_TIMEOUT
+
+    # Check if safeguards are disabled
+    if not VERIFICATION_SAFEGUARDS_ENABLED:
+        if verbose:
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Safeguards disabled, using direct verification")
+        return verify_solution(problem_statement, solution, verbose, reasoning_effort)
+
+    current_reasoning = reasoning_effort if reasoning_effort is not None else VERIFICATION_REASONING_EFFORT
+
+    for attempt in range(max_attempts):
+        if verbose:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Attempt {attempt + 1}/{max_attempts}")
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Reasoning: {current_reasoning}")
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Timeout: {timeout_seconds}s")
+            print(f"{'='*80}\n")
+
+        try:
+            # Set a timeout for this verification attempt
+            import signal
+
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Verification timeout after {timeout_seconds} seconds")
+
+            # Only use signal on Unix systems
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_seconds)
+
+            try:
+                # Attempt verification
+                bug_report, good_verify = verify_solution(
+                    problem_statement, solution, verbose, current_reasoning
+                )
+
+                # Cancel alarm if set
+                if hasattr(signal, 'SIGALRM'):
+                    signal.alarm(0)
+
+                if verbose:
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] ✓ Attempt {attempt + 1} completed successfully")
+
+                return bug_report, good_verify
+
+            except TimeoutError as e:
+                # Cancel alarm
+                if hasattr(signal, 'SIGALRM'):
+                    signal.alarm(0)
+
+                if verbose:
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] ⚠️  TIMEOUT on attempt {attempt + 1}")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] Error: {e}")
+                    print(f"{'='*80}\n")
+
+                # Exponential backoff: 2s, 4s, 8s
+                if attempt < max_attempts - 1:
+                    backoff_time = 2 ** (attempt + 1)
+                    if verbose:
+                        print(f">>>>>>> [VERIFICATION SAFEGUARD] Waiting {backoff_time}s before retry...")
+                    time.sleep(backoff_time)
+
+                    # On last attempt, fall back to lower reasoning
+                    if attempt == max_attempts - 2:
+                        current_reasoning = fallback_reasoning
+                        if verbose:
+                            print(f">>>>>>> [VERIFICATION SAFEGUARD] Falling back to {fallback_reasoning} reasoning")
+                else:
+                    raise
+
+        except Exception as e:
+            if verbose:
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [VERIFICATION SAFEGUARD] ❌ ERROR on attempt {attempt + 1}")
+                print(f">>>>>>> [VERIFICATION SAFEGUARD] Error type: {type(e).__name__}")
+                print(f">>>>>>> [VERIFICATION SAFEGUARD] Error: {e}")
+                print(f"{'='*80}\n")
+
+            # Exponential backoff on errors too
+            if attempt < max_attempts - 1:
+                backoff_time = 2 ** (attempt + 1)
+                if verbose:
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] Waiting {backoff_time}s before retry...")
+                time.sleep(backoff_time)
+
+                # On last attempt, fall back to lower reasoning
+                if attempt == max_attempts - 2:
+                    current_reasoning = fallback_reasoning
+                    if verbose:
+                        print(f">>>>>>> [VERIFICATION SAFEGUARD] Falling back to {fallback_reasoning} reasoning")
+            else:
+                # All attempts failed
+                if verbose:
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] ❌ ALL ATTEMPTS FAILED")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] Returning failure state")
+                    print(f"{'='*80}\n")
+
+                # Return a safe failure state instead of raising
+                return "VERIFICATION FAILED: All attempts exhausted", "No - verification system failure"
+
+    # Should never reach here, but just in case
+    return "VERIFICATION FAILED: Unexpected error", "No - verification system failure"
 
 def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
     """
@@ -1282,7 +1415,7 @@ def detect_stuck_pattern(correct_history, error_history, current_iteration, thre
 
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
-          num_initial_attempts=1, use_mcts=False, mcts_simulations=8, mcts_exploration=1.6, best_of_n=0,
+          num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
           use_proof_sketch=False):
     """
     Main agent function for solving mathematical problems.
@@ -1388,7 +1521,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     self_imp_reasoning=self_imp_reasoning,
                     ver_reasoning=ver_reasoning,
                     exploration_constant=mcts_exploration,
-                    max_depth=3,
+                    max_depth=2,
                     save_tree_path=f"{memory_file.replace('.json', '_mcts_tree.json')}" if memory_file else None,
                     best_of_n=best_of_n
                 )
@@ -1470,7 +1603,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort (potentially overridden to 'high')
-        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+        _, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
 
     error_count = 0
     correct_count = 1
@@ -1568,7 +1701,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Answer narrowing detected - extra scrutiny required")
 
             print(f">>>>>>> Verify the solution.")
-            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+            verify, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
 
             # Calculate and track score for this iteration
             current_score = calculate_solution_score(verify, good_verify)
@@ -1656,16 +1789,22 @@ if __name__ == "__main__":
                        help='Generate N diverse initial solutions and pick best (default: 1). Use 3-5 for BFS exploration to escape local minima.')
     parser.add_argument('--use-mcts', action='store_true',
                        help='Use MCTS-guided exploration instead of simple BFS')
-    parser.add_argument('--mcts-simulations', type=int, default=8,
-                       help='Number of MCTS simulations (default: 8, optimized for coverage)')
-    parser.add_argument('--mcts-exploration', type=float, default=1.6,
-                       help='MCTS exploration constant for UCB1 (default: 1.6, tuned for diversity)')
+    parser.add_argument('--mcts-simulations', type=int, default=5,
+                       help='Number of MCTS simulations (default: 5, baseline proven config)')
+    parser.add_argument('--mcts-exploration', type=float, default=1.414,
+                       help='MCTS exploration constant for UCB1 (default: 1.414, sqrt(2) baseline)')
     parser.add_argument('--best-of-n', type=int, default=0,
                        help='If > 0, verify top N MCTS solutions and return first verified (default: 0=disabled). Recommended: 3-5 for higher success rate.')
     parser.add_argument('--use-proof-sketch', action='store_true',
                        help='Use Proof Sketch architecture: outline → verify structure → expand details → verify math')
     parser.add_argument('--use-translation', action='store_true',
                        help='Enable translation layer for asymmetric reasoning (low gen / high ver)')
+    parser.add_argument('--verification-timeout', type=int, default=600,
+                       help='Timeout for verification in seconds (default: 600 = 10 min). Prevents hangs.')
+    parser.add_argument('--verification-max-attempts', type=int, default=3,
+                       help='Max verification attempts with exponential backoff before fallback (default: 3)')
+    parser.add_argument('--disable-verification-safeguards', action='store_true',
+                       help='Disable verification timeout and retry safeguards (not recommended)')
 
     args = parser.parse_args()
 
@@ -1681,6 +1820,12 @@ if __name__ == "__main__":
     mcts_exploration = args.mcts_exploration
     best_of_n = args.best_of_n
     use_proof_sketch = args.use_proof_sketch
+
+    # Set verification safeguard globals
+    global VERIFICATION_TIMEOUT, VERIFICATION_MAX_ATTEMPTS, VERIFICATION_SAFEGUARDS_ENABLED
+    VERIFICATION_TIMEOUT = args.verification_timeout
+    VERIFICATION_MAX_ATTEMPTS = args.verification_max_attempts
+    VERIFICATION_SAFEGUARDS_ENABLED = not args.disable_verification_safeguards
 
     # Set translation environment variable if flag is provided
     if args.use_translation:

@@ -515,8 +515,8 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
                    sol_reasoning: str = "low",
                    self_imp_reasoning: str = "high",
                    ver_reasoning: str = "high",
-                   exploration_constant: float = 1.6,
-                   max_depth: int = 3,
+                   exploration_constant: float = 1.414,
+                   max_depth: int = 2,
                    save_tree_path: Optional[str] = None,
                    best_of_n: int = 0) -> Optional[Dict]:
     """
@@ -524,14 +524,14 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
 
     Args:
         problem_statement: Problem to solve
-        num_simulations: Number of MCTS simulations (default: 8 for optimal coverage)
+        num_simulations: Number of MCTS simulations (default: 5, baseline proven config)
         generate_solution_func: Solution generation function (init_explorations)
         verify_solution_func: Solution verification function
         sol_reasoning: Solution generation reasoning level (default: "low")
         self_imp_reasoning: Self-improvement reasoning level (default: "high")
         ver_reasoning: Verification reasoning level (default: "high")
-        exploration_constant: UCB1 exploration parameter (default: 1.6 for more diversity)
-        max_depth: Maximum tree depth (default: 3 for deeper strategy refinement)
+        exploration_constant: UCB1 exploration parameter (default: 1.414, sqrt(2) baseline)
+        max_depth: Maximum tree depth (default: 2, baseline proven config)
         save_tree_path: Path to save MCTS tree (optional)
         best_of_n: If > 0, verify top N solutions and return first verified (default: 0)
 
