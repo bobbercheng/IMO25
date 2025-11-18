@@ -1821,8 +1821,7 @@ if __name__ == "__main__":
     best_of_n = args.best_of_n
     use_proof_sketch = args.use_proof_sketch
 
-    # Set verification safeguard globals
-    global VERIFICATION_TIMEOUT, VERIFICATION_MAX_ATTEMPTS, VERIFICATION_SAFEGUARDS_ENABLED
+    # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
     VERIFICATION_MAX_ATTEMPTS = args.verification_max_attempts
     VERIFICATION_SAFEGUARDS_ENABLED = not args.disable_verification_safeguards
