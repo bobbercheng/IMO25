@@ -843,6 +843,151 @@ def calculate_solution_score(verify, good_verify):
 
     return score
 
+def extract_answer_from_solution(solution):
+    """
+    Extract the mathematical answer from a solution (e.g., k ∈ {0,1,...,n}).
+
+    Args:
+        solution: Solution text
+
+    Returns:
+        str: Extracted answer or None if not found
+    """
+    if not solution:
+        return None
+
+    # Look for common answer patterns
+    import re
+
+    # Pattern 1: k ∈ {explicit set}
+    match = re.search(r'k\s*[∈∊∈]\s*\{([^}]+)\}', solution)
+    if match:
+        return f"k ∈ {{{match.group(1)}}}"
+
+    # Pattern 2: k = specific values
+    match = re.search(r'k\s*=\s*([^.\n]+)', solution)
+    if match:
+        return f"k = {match.group(1).strip()}"
+
+    # Pattern 3: "answer is" or "therefore k"
+    match = re.search(r'(?:answer is|therefore\s+k)\s*[:\s]+([^.\n]+)', solution, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    return None
+
+def validate_answer_change(prev_solution, new_solution, iteration, verbose=True):
+    """
+    Validate that answer changes are not regressions (narrowing without justification).
+
+    Args:
+        prev_solution: Previous solution text
+        new_solution: New solution text
+        iteration: Current iteration number
+        verbose: Print validation warnings
+
+    Returns:
+        dict: Validation result with warning flags
+    """
+    prev_answer = extract_answer_from_solution(prev_solution)
+    new_answer = extract_answer_from_solution(new_solution)
+
+    result = {
+        'prev_answer': prev_answer,
+        'new_answer': new_answer,
+        'changed': False,
+        'narrowed': False,
+        'warning': None
+    }
+
+    if prev_answer and new_answer and prev_answer != new_answer:
+        result['changed'] = True
+
+        # Check for common narrowing patterns
+        if verbose:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [ANSWER VALIDATION] Answer change detected at iteration {iteration}")
+            print(f">>>>>>> [ANSWER VALIDATION] Previous: {prev_answer}")
+            print(f">>>>>>> [ANSWER VALIDATION] New:      {new_answer}")
+
+        # Pattern detection: {0,...,n} → {0,...,⌊n/2⌋} is narrowing
+        if '{0' in prev_answer and '{0' in new_answer:
+            # Extract upper bounds
+            import re
+            prev_match = re.search(r'\.\.\.\s*,?\s*([^}]+)', prev_answer)
+            new_match = re.search(r'\.\.\.\s*,?\s*([^}]+)', new_answer)
+
+            if prev_match and new_match:
+                prev_upper = prev_match.group(1).strip()
+                new_upper = new_match.group(1).strip()
+
+                # Check if new bound appears more restrictive
+                if 'n' in prev_upper and ('/' in new_upper or '⌊' in new_upper or '⌈' in new_upper):
+                    result['narrowed'] = True
+                    result['warning'] = f"Answer space narrowed from {prev_upper} to {new_upper}"
+
+                    if verbose:
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Answer space narrowed!")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  From upper bound: {prev_upper}")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  To upper bound:   {new_upper}")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  This requires STRONG justification")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Verify that the restriction is proven, not assumed")
+
+        # Pattern detection: full set → partial set
+        if '...' in prev_answer and '...' not in new_answer:
+            result['narrowed'] = True
+            result['warning'] = "Changed from range to specific values"
+
+            if verbose:
+                print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Changed from range to specific values")
+                print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Verify this restriction is proven")
+
+        if verbose:
+            print(f"{'='*80}\n")
+
+    return result
+
+def detect_stuck_pattern(correct_history, error_history, current_iteration, threshold=3, verbose=True):
+    """
+    Detect if agent is stuck in an error loop with no improvement.
+
+    Args:
+        correct_history: List of correct_count values over recent iterations
+        error_history: List of error_count values over recent iterations
+        current_iteration: Current iteration number
+        threshold: Number of iterations with 0 progress before declaring stuck
+        verbose: Print stuck detection warnings
+
+    Returns:
+        bool: True if stuck pattern detected
+    """
+    if len(correct_history) < threshold:
+        return False
+
+    # Check last N iterations
+    recent_corrects = correct_history[-threshold:]
+    recent_errors = error_history[-threshold:]
+
+    # Stuck if: all recent corrects are 0 AND errors are increasing or staying high
+    all_zero_corrects = all(c == 0 for c in recent_corrects)
+    errors_not_decreasing = all(recent_errors[i] >= recent_errors[0] for i in range(len(recent_errors)))
+
+    if all_zero_corrects and errors_not_decreasing:
+        if verbose:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [STUCK DETECTION] Stuck pattern detected at iteration {current_iteration}")
+            print(f">>>>>>> [STUCK DETECTION] Last {threshold} iterations:")
+            for i, (c, e) in enumerate(zip(recent_corrects, recent_errors)):
+                iter_num = current_iteration - threshold + i + 1
+                print(f">>>>>>> [STUCK DETECTION]   Iteration {iter_num}: {c} corrects, {e} errors")
+            print(f">>>>>>> [STUCK DETECTION] ⚠️  No improvement in {threshold} iterations")
+            print(f">>>>>>> [STUCK DETECTION] ⚠️  Recommendation: Stop or escalate reasoning effort")
+            print(f"{'='*80}\n")
+
+        return True
+
+    return False
+
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414):
@@ -1009,8 +1154,28 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     error_count = 0
     correct_count = 1
     success = False
+
+    # Track history for stuck detection and score tracking
+    correct_history = []
+    error_history = []
+    score_history = []
+    previous_solution = solution
+
+    # Calculate initial score
+    initial_score = calculate_solution_score(verify, good_verify)
+    score_history.append(initial_score)
+    print(f">>>>>>> [SCORE] Initial solution score: {initial_score:.2f}")
+
     for i in range(current_iteration, 30):
-        print(f"Number of iterations: {i}, number of corrects: {correct_count}, number of errors: {error_count}")
+        print(f"\n{'='*80}")
+        print(f">>>>>>> Iteration {i}: corrects={correct_count}, errors={error_count}")
+        if score_history:
+            print(f">>>>>>> [SCORE] Current score: {score_history[-1]:.2f}")
+            if len(score_history) > 1:
+                score_delta = score_history[-1] - score_history[-2]
+                trend = "↑" if score_delta > 0 else "↓" if score_delta < 0 else "="
+                print(f">>>>>>> [SCORE] Score change: {score_delta:+.2f} {trend}")
+        print(f"{'='*80}\n")
 
         try:
             if("yes" not in good_verify.lower()):
@@ -1075,13 +1240,44 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 print(">>>>>>> Corrected solution:")
                 print(json.dumps(solution, indent=4))
 
+                # Validate answer change if solution was corrected
+                if previous_solution:
+                    answer_validation = validate_answer_change(previous_solution, solution, i, verbose=True)
+                    if answer_validation['narrowed']:
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Answer narrowing detected - extra scrutiny required")
+
             print(f">>>>>>> Verify the solution.")
             verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+
+            # Calculate and track score for this iteration
+            current_score = calculate_solution_score(verify, good_verify)
+            score_history.append(current_score)
+            print(f">>>>>>> [SCORE] Iteration {i} score: {current_score:.2f}")
 
             if("yes" in good_verify.lower()):
                 print(">>>>>>> Solution is good, verifying again ...")
                 correct_count += 1
                 error_count = 0
+            else:
+                correct_count = 0
+                error_count += 1
+
+            # Track history for stuck detection
+            correct_history.append(correct_count)
+            error_history.append(error_count)
+
+            # Detect stuck pattern
+            if detect_stuck_pattern(correct_history, error_history, i, threshold=3, verbose=True):
+                print(f">>>>>>> [STUCK DETECTION] Stopping due to stuck pattern")
+                print(f">>>>>>> [STUCK DETECTION] Recommendation: Try different reasoning level or approach")
+                # Save final state before stopping
+                if memory_file:
+                    save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
+                               sol_reasoning, self_imp_reasoning, ver_reasoning)
+                return None
+
+            # Update previous solution for next iteration
+            previous_solution = solution
 
             # Save memory every iteration
             if memory_file:
