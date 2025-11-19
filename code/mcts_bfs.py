@@ -139,19 +139,20 @@ class MCTSExplorer:
         ]
 
         # Add hybrid strategies that combine multiple approaches
-        hybrid_strategies = [
-            "Induction with extremal principle",
-            "Contradiction with pigeonhole principle",
-            "Construction with algebraic manipulation",
-            "Combinatorial with geometric insight"
-        ]
+        # DISABLED: Reverted to baseline (8 strategies only, no hybrids)
+        # hybrid_strategies = [
+        #     "Induction with extremal principle",
+        #     "Contradiction with pigeonhole principle",
+        #     "Construction with algebraic manipulation",
+        #     "Combinatorial with geometric insight"
+        # ]
 
-        all_strategies = common_strategies + hybrid_strategies
+        all_strategies = common_strategies  # Baseline: 8 strategies only
 
         for strategy in all_strategies:
             self.root.add_child(strategy)
 
-        print(f">>>>>>> [MCTS] Initialized with {len(common_strategies)} base + {len(hybrid_strategies)} hybrid strategies")
+        print(f">>>>>>> [MCTS] Initialized with {len(all_strategies)} strategies (baseline configuration)")
 
     def select(self) -> MCTSNode:
         """

@@ -236,7 +236,7 @@ def _handle_streaming_response(response):
     # Repetition detection parameters
     REPETITION_WINDOW = 50  # Check last N characters
     REPETITION_THRESHOLD = 5  # Number of times a pattern can repeat
-    MAX_CONTENT_LENGTH = 50000*2  # Maximum content length before forcing stop
+    MAX_CONTENT_LENGTH = 50000  # Maximum content length before forcing stop (baseline)
 
     def detect_repetition(text, window_size=REPETITION_WINDOW):
         """Detect if the same pattern repeats excessively at the end of text."""
@@ -1511,12 +1511,12 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             try:
                 from mcts_bfs import mcts_bfs_search
 
-                # Run MCTS search
+                # Run MCTS search with verification safeguards
                 mcts_result = mcts_bfs_search(
                     problem_statement=problem_statement,
                     num_simulations=mcts_simulations,
                     generate_solution_func=init_explorations,
-                    verify_solution_func=verify_solution,
+                    verify_solution_func=verify_solution_safe,  # Use safeguards (timeout, retry, fallback)
                     sol_reasoning=sol_reasoning,
                     self_imp_reasoning=self_imp_reasoning,
                     ver_reasoning=ver_reasoning,
