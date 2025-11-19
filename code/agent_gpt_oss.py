@@ -71,6 +71,11 @@ if not hasattr(sys, '_agent_gpt_oss_config_printed'):
 _log_file = None
 original_print = print
 
+# Global variables for verification safeguards
+VERIFICATION_TIMEOUT = 600  # 10 minutes default
+VERIFICATION_MAX_ATTEMPTS = 3  # Max attempts before fallback
+VERIFICATION_SAFEGUARDS_ENABLED = True  # Enable by default to prevent hangs
+
 def log_print(*args, **kwargs):
     """
     Custom print function that writes to both stdout and log file.
@@ -231,7 +236,7 @@ def _handle_streaming_response(response):
     # Repetition detection parameters
     REPETITION_WINDOW = 50  # Check last N characters
     REPETITION_THRESHOLD = 5  # Number of times a pattern can repeat
-    MAX_CONTENT_LENGTH = 50000  # Maximum content length before forcing stop
+    MAX_CONTENT_LENGTH = 50000*2  # Maximum content length before forcing stop
 
     def detect_repetition(text, window_size=REPETITION_WINDOW):
         """Detect if the same pattern repeats excessively at the end of text."""
@@ -454,6 +459,134 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     else:
         return solution[:idx].strip()
 
+def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_effort=None,
+                         max_attempts=None, timeout_seconds=None, fallback_reasoning="medium"):
+    """
+    Safely verifies a solution with timeout, retry, and fallback mechanisms.
+
+    Args:
+        problem_statement: The original problem
+        solution: The solution to verify
+        verbose: Print detailed verification steps
+        reasoning_effort: Override reasoning effort for verification
+        max_attempts: Maximum verification attempts before fallback (default: uses VERIFICATION_MAX_ATTEMPTS global)
+        timeout_seconds: Timeout per attempt in seconds (default: uses VERIFICATION_TIMEOUT global)
+        fallback_reasoning: Reasoning level to fall back to on repeated failures (default: "medium")
+
+    Returns:
+        Tuple of (bug_report, good_verify) or raises exception after all attempts fail
+    """
+    import time
+
+    # Use global defaults if not specified
+    if max_attempts is None:
+        max_attempts = VERIFICATION_MAX_ATTEMPTS
+    if timeout_seconds is None:
+        timeout_seconds = VERIFICATION_TIMEOUT
+
+    # Check if safeguards are disabled
+    if not VERIFICATION_SAFEGUARDS_ENABLED:
+        if verbose:
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Safeguards disabled, using direct verification")
+        return verify_solution(problem_statement, solution, verbose, reasoning_effort)
+
+    current_reasoning = reasoning_effort if reasoning_effort is not None else VERIFICATION_REASONING_EFFORT
+
+    for attempt in range(max_attempts):
+        if verbose:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Attempt {attempt + 1}/{max_attempts}")
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Reasoning: {current_reasoning}")
+            print(f">>>>>>> [VERIFICATION SAFEGUARD] Timeout: {timeout_seconds}s")
+            print(f"{'='*80}\n")
+
+        try:
+            # Set a timeout for this verification attempt
+            import signal
+
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Verification timeout after {timeout_seconds} seconds")
+
+            # Only use signal on Unix systems
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_seconds)
+
+            try:
+                # Attempt verification
+                bug_report, good_verify = verify_solution(
+                    problem_statement, solution, verbose, current_reasoning
+                )
+
+                # Cancel alarm if set
+                if hasattr(signal, 'SIGALRM'):
+                    signal.alarm(0)
+
+                if verbose:
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] ✓ Attempt {attempt + 1} completed successfully")
+
+                return bug_report, good_verify
+
+            except TimeoutError as e:
+                # Cancel alarm
+                if hasattr(signal, 'SIGALRM'):
+                    signal.alarm(0)
+
+                if verbose:
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] ⚠️  TIMEOUT on attempt {attempt + 1}")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] Error: {e}")
+                    print(f"{'='*80}\n")
+
+                # Exponential backoff: 2s, 4s, 8s
+                if attempt < max_attempts - 1:
+                    backoff_time = 2 ** (attempt + 1)
+                    if verbose:
+                        print(f">>>>>>> [VERIFICATION SAFEGUARD] Waiting {backoff_time}s before retry...")
+                    time.sleep(backoff_time)
+
+                    # On last attempt, fall back to lower reasoning
+                    if attempt == max_attempts - 2:
+                        current_reasoning = fallback_reasoning
+                        if verbose:
+                            print(f">>>>>>> [VERIFICATION SAFEGUARD] Falling back to {fallback_reasoning} reasoning")
+                else:
+                    raise
+
+        except Exception as e:
+            if verbose:
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [VERIFICATION SAFEGUARD] ❌ ERROR on attempt {attempt + 1}")
+                print(f">>>>>>> [VERIFICATION SAFEGUARD] Error type: {type(e).__name__}")
+                print(f">>>>>>> [VERIFICATION SAFEGUARD] Error: {e}")
+                print(f"{'='*80}\n")
+
+            # Exponential backoff on errors too
+            if attempt < max_attempts - 1:
+                backoff_time = 2 ** (attempt + 1)
+                if verbose:
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] Waiting {backoff_time}s before retry...")
+                time.sleep(backoff_time)
+
+                # On last attempt, fall back to lower reasoning
+                if attempt == max_attempts - 2:
+                    current_reasoning = fallback_reasoning
+                    if verbose:
+                        print(f">>>>>>> [VERIFICATION SAFEGUARD] Falling back to {fallback_reasoning} reasoning")
+            else:
+                # All attempts failed
+                if verbose:
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] ❌ ALL ATTEMPTS FAILED")
+                    print(f">>>>>>> [VERIFICATION SAFEGUARD] Returning failure state")
+                    print(f"{'='*80}\n")
+
+                # Return a safe failure state instead of raising
+                return "VERIFICATION FAILED: All attempts exhausted", "No - verification system failure"
+
+    # Should never reach here, but just in case
+    return "VERIFICATION FAILED: Unexpected error", "No - verification system failure"
+
 def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
     """
     Verifies a solution using the verification system.
@@ -527,6 +660,444 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         print(json.dumps(bug_report, indent=4))
 
     return bug_report, o
+
+def translate_verification_feedback(bug_report, problem_statement, solution,
+                                   translation_reasoning="medium", verbose=True):
+    """
+    Translate high-reasoning verification feedback into actionable guidance
+    for low-reasoning generation.
+
+    Uses medium reasoning as a "translation layer" to convert PhD-level
+    mathematical critique into undergraduate-level actionable steps.
+
+    Args:
+        bug_report: High-reasoning verification output (complex feedback)
+        problem_statement: Original problem statement
+        solution: Current solution attempt
+        translation_reasoning: Reasoning level for translation (default: medium)
+        verbose: Print detailed translation process
+
+    Returns:
+        simplified_feedback: Actionable guidance for correction
+    """
+    if verbose:
+        print("\n" + "="*80)
+        print(">>>>>>> [TRANSLATION] Starting verification feedback translation")
+        print("="*80)
+
+    # Analyze complexity of original feedback
+    original_length = len(bug_report)
+    error_count = bug_report.lower().count('error')
+    critical_count = bug_report.lower().count('critical')
+    gap_count = bug_report.lower().count('gap')
+
+    if verbose:
+        print(f">>>>>>> [TRANSLATION] Original feedback metrics:")
+        print(f">>>>>>> [TRANSLATION]   - Length: {original_length} characters")
+        print(f">>>>>>> [TRANSLATION]   - Total errors mentioned: {error_count}")
+        print(f">>>>>>> [TRANSLATION]   - Critical errors: {critical_count}")
+        print(f">>>>>>> [TRANSLATION]   - Justification gaps: {gap_count}")
+        print(f">>>>>>> [TRANSLATION]   - Complexity: {'HIGH' if original_length > 2000 else 'MEDIUM' if original_length > 500 else 'LOW'}")
+
+    # Extract detailed solution for context
+    detailed_sol = extract_detailed_solution(solution)
+
+    translation_prompt = f"""You are a teaching assistant helping a student understand expert feedback on their mathematical solution.
+
+### Original Problem ###
+{problem_statement}
+
+### Student's Solution ###
+{detailed_sol[:1000]}{'...' if len(detailed_sol) > 1000 else ''}
+
+### Expert Verification Feedback (PhD-level) ###
+{bug_report}
+
+### Your Task ###
+The expert feedback is too sophisticated for the student to understand. Translate it into SIMPLE, ACTIONABLE guidance.
+
+**Requirements:**
+1. **Identify Top 3 Errors**: List only the 3 MOST CRITICAL errors in order of severity
+2. **Simplify Each Error**: For each error, provide:
+   - ONE SENTENCE explaining what's wrong (use simple language)
+   - ONE SENTENCE explaining why it's wrong (explain the mathematical reason)
+   - ONE CONCRETE FIX suggestion (specific action: "Add X", "Change Y to Z", "Prove that...")
+3. **Avoid Complex Terminology**: Use undergraduate-level language
+   - Replace "injective map" with "one-to-one function"
+   - Replace "well-ordering principle" with "smallest element exists"
+   - Replace "non-trivial" with "important" or "meaningful"
+4. **Focus on Actions**: Tell the student WHAT to change, not just WHAT is wrong
+
+### Output Format ###
+**Top 3 Critical Issues to Fix:**
+
+**Issue 1 (Most Critical):**
+- What's wrong: [one simple sentence]
+- Why it's wrong: [one sentence with mathematical reason]
+- How to fix: [concrete action to take]
+
+**Issue 2:**
+- What's wrong: [one simple sentence]
+- Why it's wrong: [one sentence with mathematical reason]
+- How to fix: [concrete action to take]
+
+**Issue 3:**
+- What's wrong: [one simple sentence]
+- Why it's wrong: [one sentence with mathematical reason]
+- How to fix: [concrete action to take]
+
+**Summary:** [One sentence describing the overall fix strategy]
+"""
+
+    if verbose:
+        print(f"\n>>>>>>> [TRANSLATION] Translation prompt constructed")
+        print(f">>>>>>> [TRANSLATION] Translation reasoning level: {translation_reasoning}")
+        print(f">>>>>>> [TRANSLATION] Sending translation request...")
+
+    payload = build_request_payload(
+        system_prompt="You are a helpful teaching assistant translating expert feedback into simple guidance.",
+        question_prompt=translation_prompt,
+        reasoning_effort=translation_reasoning
+    )
+
+    if verbose:
+        print(f">>>>>>> [TRANSLATION] API request built")
+        print(f">>>>>>> [TRANSLATION] Payload size: {len(json.dumps(payload))} characters")
+
+    try:
+        response = send_api_request(get_api_key(), payload, stream=True)
+        simplified_feedback = extract_text_from_response(response)
+
+        # Analyze simplified feedback
+        simplified_length = len(simplified_feedback)
+        simplified_issues = simplified_feedback.lower().count('issue')
+
+        if verbose:
+            print(f"\n>>>>>>> [TRANSLATION] Translation complete!")
+            print(f">>>>>>> [TRANSLATION] Simplified feedback metrics:")
+            print(f">>>>>>> [TRANSLATION]   - Length: {simplified_length} characters")
+            print(f">>>>>>> [TRANSLATION]   - Reduction: {original_length - simplified_length} characters ({100*(original_length - simplified_length)/original_length:.1f}%)")
+            print(f">>>>>>> [TRANSLATION]   - Issues identified: {simplified_issues}")
+            print(f">>>>>>> [TRANSLATION]   - Average chars per issue: {simplified_length // max(simplified_issues, 1)}")
+
+        # Check translation quality
+        has_format = "Issue 1" in simplified_feedback or "**Issue 1" in simplified_feedback
+        has_fix = "How to fix" in simplified_feedback or "fix:" in simplified_feedback.lower()
+
+        if verbose:
+            print(f"\n>>>>>>> [TRANSLATION] Quality checks:")
+            print(f">>>>>>> [TRANSLATION]   - Proper format: {'✓' if has_format else '✗'}")
+            print(f">>>>>>> [TRANSLATION]   - Contains fixes: {'✓' if has_fix else '✗'}")
+            print(f">>>>>>> [TRANSLATION]   - Quality: {'GOOD' if has_format and has_fix else 'NEEDS_REVIEW'}")
+
+        # Log before/after comparison
+        if verbose:
+            print(f"\n>>>>>>> [TRANSLATION] BEFORE (original expert feedback, first 300 chars):")
+            print(f">>>>>>> {bug_report[:300]}...")
+            print(f"\n>>>>>>> [TRANSLATION] AFTER (simplified feedback, first 500 chars):")
+            print(f">>>>>>> {simplified_feedback[:500]}...")
+            print(f"\n" + "="*80)
+            print(">>>>>>> [TRANSLATION] Translation complete")
+            print("="*80 + "\n")
+
+        return simplified_feedback
+
+    except Exception as e:
+        print(f"\n>>>>>>> [TRANSLATION] ERROR during translation: {e}")
+        print(f">>>>>>> [TRANSLATION] Falling back to original feedback")
+        return bug_report
+
+# ============================================================================
+# PROOF SKETCH PHASE ARCHITECTURE
+# ============================================================================
+
+def generate_proof_sketch(problem_statement, reasoning_effort="low", verbose=True):
+    """
+    Phase 1: Generate high-level proof outline/sketch.
+
+    Uses low reasoning to quickly generate the structural outline of the proof
+    without getting bogged down in detailed calculations.
+
+    Args:
+        problem_statement: The mathematical problem
+        reasoning_effort: Reasoning level (default: "low")
+        verbose: Print detailed logs
+
+    Returns:
+        proof_sketch: High-level outline of the proof strategy
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [PROOF SKETCH] Phase 1: Generating proof outline")
+        print(f">>>>>>> [PROOF SKETCH] Using reasoning: {reasoning_effort}")
+        print(f"{'='*80}\n")
+
+    sketch_prompt = """You are a mathematician creating a PROOF OUTLINE (NOT a complete proof).
+
+Your task: Write a high-level structural outline for solving this problem.
+
+**Requirements:**
+1. **Main Strategy**: One sentence describing your overall approach (e.g., "Use induction on n")
+2. **Key Steps** (3-6 steps): List the LOGICAL FLOW only, no calculations
+   - For each step, write ONE SENTENCE describing what you'll prove/show
+   - Number them: Step 1, Step 2, etc.
+3. **Dependencies**: Note if any step depends on previous steps
+4. **Edge Cases**: Mention any special cases to handle
+
+**DO NOT:**
+- Include detailed calculations or algebraic manipulations
+- Write the full proof
+- Include specific numerical examples (unless critical to structure)
+
+**Example Format:**
+Main Strategy: Proof by strong induction on n
+
+Step 1: Establish base case for n=1
+Step 2: Assume statement holds for all k < n (induction hypothesis)
+Step 3: Construct a line through point (a_k, b_k) for some k < n
+Step 4: Show this line satisfies the required properties
+Step 5: Conclude by induction principle
+
+Dependencies: Steps 3-4 depend on Step 2
+Edge Cases: Need to handle n=1 separately
+
+Now create a proof outline for this problem:
+"""
+
+    payload = build_request_payload(
+        system_prompt="You are a mathematician skilled at planning proof strategies.",
+        question_prompt=problem_statement,
+        other_prompts=[sketch_prompt],
+        reasoning_effort=reasoning_effort
+    )
+
+    response = send_api_request(get_api_key(), payload)
+    proof_sketch = extract_text_from_response(response)
+
+    if verbose:
+        print(f">>>>>>> [PROOF SKETCH] Generated outline:")
+        print(proof_sketch)
+        print(f"\n{'='*80}\n")
+
+    return proof_sketch
+
+def verify_proof_structure(problem_statement, proof_sketch, reasoning_effort="medium", verbose=True):
+    """
+    Phase 2: Verify the STRUCTURE of the proof outline.
+
+    Uses medium reasoning to check logical flow, dependencies, and structural soundness
+    WITHOUT verifying detailed mathematics (which comes later).
+
+    Args:
+        problem_statement: The mathematical problem
+        proof_sketch: The proof outline to verify
+        reasoning_effort: Reasoning level (default: "medium")
+        verbose: Print detailed logs
+
+    Returns:
+        Tuple of (verification_result, is_structurally_sound)
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [PROOF SKETCH] Phase 2: Verifying proof structure")
+        print(f">>>>>>> [PROOF SKETCH] Using reasoning: {reasoning_effort}")
+        print(f"{'='*80}\n")
+
+    structure_prompt = f"""You are reviewing the LOGICAL STRUCTURE of a proof outline (NOT the mathematical details).
+
+**Proof Outline:**
+{proof_sketch}
+
+**Your Task:** Check the STRUCTURE ONLY (not the math):
+
+1. **Logical Flow**: Do the steps follow a logical order?
+2. **Circular Reasoning**: Does any step assume what it's trying to prove?
+3. **Completeness**: Are all necessary steps present? (Don't need calculations, just steps)
+4. **Dependencies**: Are dependencies clear and non-circular?
+5. **Edge Cases**: Are special cases addressed?
+
+**Output Format:**
+STRUCTURAL ISSUES FOUND: [Yes/No]
+
+If Yes, list issues:
+- Issue 1: [Brief description]
+- Issue 2: [Brief description]
+...
+
+If No:
+"No structural issues found. The proof outline has sound logical flow."
+
+**IMPORTANT**: Focus ONLY on structure. Don't check if calculations are correct (that comes later).
+"""
+
+    payload = build_request_payload(
+        system_prompt="You are a mathematician checking proof structure for logical soundness.",
+        question_prompt=problem_statement,
+        other_prompts=[structure_prompt],
+        reasoning_effort=reasoning_effort
+    )
+
+    response = send_api_request(get_api_key(), payload)
+    verification_result = extract_text_from_response(response)
+
+    # Check if structurally sound
+    is_sound = ("no structural issues" in verification_result.lower() or
+                "structural issues found: no" in verification_result.lower())
+
+    if verbose:
+        print(f">>>>>>> [PROOF SKETCH] Structure verification:")
+        print(verification_result)
+        print(f">>>>>>> [PROOF SKETCH] Structurally sound: {is_sound}")
+        print(f"\n{'='*80}\n")
+
+    return verification_result, is_sound
+
+def expand_proof_details(problem_statement, proof_sketch, reasoning_effort="low", verbose=True):
+    """
+    Phase 3: Expand the proof outline into a complete proof with details.
+
+    Uses low reasoning to fill in calculations and details for a structurally
+    verified outline, avoiding the verbosity of medium/high reasoning.
+
+    Args:
+        problem_statement: The mathematical problem
+        proof_sketch: The structurally verified proof outline
+        reasoning_effort: Reasoning level (default: "low")
+        verbose: Print detailed logs
+
+    Returns:
+        complete_proof: Full proof with calculations
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [PROOF SKETCH] Phase 3: Expanding proof details")
+        print(f">>>>>>> [PROOF SKETCH] Using reasoning: {reasoning_effort}")
+        print(f"{'='*80}\n")
+
+    expansion_prompt = f"""You have a structurally sound proof outline. Now fill in the DETAILS.
+
+**Proof Outline (VERIFIED structure):**
+{proof_sketch}
+
+**Your Task:** Expand this outline into a COMPLETE PROOF by:
+
+1. **Follow the outline exactly** - don't change the structure
+2. **Add calculations** for each step
+3. **Add justifications** for each claim
+4. **Handle edge cases** mentioned in outline
+5. **Write clearly** but concisely
+
+**Format:** Write the proof in standard mathematical style with:
+- Clear statement of what you're proving at each step
+- Detailed calculations where needed
+- Logical connectives (therefore, hence, thus)
+- Proper mathematical notation
+
+Begin writing the complete proof now:
+"""
+
+    payload = build_request_payload(
+        system_prompt=step1_prompt,  # Use standard solution prompt
+        question_prompt=problem_statement,
+        other_prompts=[expansion_prompt],
+        reasoning_effort=reasoning_effort
+    )
+
+    response = send_api_request(get_api_key(), payload)
+    complete_proof = extract_solution(extract_text_from_response(response))
+
+    if verbose:
+        print(f">>>>>>> [PROOF SKETCH] Complete proof generated")
+        print(f">>>>>>> [PROOF SKETCH] Length: {len(complete_proof)} characters")
+        print(f"\n{'='*80}\n")
+
+    return complete_proof
+
+def proof_sketch_pipeline(problem_statement, sol_reasoning="low", ver_reasoning="high", verbose=True):
+    """
+    Execute the full Proof Sketch pipeline.
+
+    Phase 1: Generate outline (low reasoning)
+    Phase 2: Verify structure (medium reasoning)
+    Phase 3: Expand details (low reasoning)
+    Phase 4: Verify mathematics (high reasoning)
+
+    Args:
+        problem_statement: The mathematical problem
+        sol_reasoning: Reasoning for generation phases (default: "low")
+        ver_reasoning: Reasoning for verification (default: "high")
+        verbose: Print detailed logs
+
+    Returns:
+        Tuple of (complete_proof, verify_result, good_verify, pipeline_success)
+    """
+    print(f"\n{'='*80}")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Starting 4-phase proof sketch architecture")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Generation: {sol_reasoning}, Verification: {ver_reasoning}")
+    print(f"{'='*80}\n")
+
+    # Phase 1: Generate outline
+    proof_sketch = generate_proof_sketch(problem_statement, reasoning_effort=sol_reasoning, verbose=verbose)
+
+    # Phase 2: Verify structure
+    structure_verify, is_sound = verify_proof_structure(
+        problem_statement, proof_sketch,
+        reasoning_effort="medium",  # Always use medium for structure checking
+        verbose=verbose
+    )
+
+    if not is_sound:
+        print(f">>>>>>> [PROOF SKETCH PIPELINE] ⚠️  Structural issues detected")
+        print(f">>>>>>> [PROOF SKETCH PIPELINE] Attempting to fix structure...")
+
+        # Try to fix structure (one retry)
+        fix_prompt = f"""The proof outline has structural issues:
+
+{structure_verify}
+
+Please revise the proof outline to fix these structural issues while keeping the same general approach."""
+
+        # Regenerate with structure feedback
+        payload = build_request_payload(
+            system_prompt="You are a mathematician revising a proof outline to fix structural issues.",
+            question_prompt=problem_statement,
+            other_prompts=[fix_prompt],
+            reasoning_effort=sol_reasoning
+        )
+
+        response = send_api_request(get_api_key(), payload)
+        proof_sketch = extract_text_from_response(response)
+
+        # Re-verify
+        structure_verify, is_sound = verify_proof_structure(
+            problem_statement, proof_sketch,
+            reasoning_effort="medium",
+            verbose=verbose
+        )
+
+        if not is_sound:
+            print(f">>>>>>> [PROOF SKETCH PIPELINE] ❌ Structure still unsound after retry")
+            print(f">>>>>>> [PROOF SKETCH PIPELINE] Aborting pipeline")
+            return None, structure_verify, "No - structural issues", False
+
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] ✓ Structure verified")
+
+    # Phase 3: Expand details
+    complete_proof = expand_proof_details(problem_statement, proof_sketch, reasoning_effort=sol_reasoning, verbose=verbose)
+
+    # Phase 4: Verify mathematics
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Phase 4: Verifying mathematics")
+    verify_result, good_verify = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
+
+    success = "yes" in good_verify.lower()
+
+    print(f"\n{'='*80}")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Pipeline complete")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Verification: {good_verify}")
+    print(f">>>>>>> [PROOF SKETCH PIPELINE] Success: {success}")
+    print(f"{'='*80}\n")
+
+    return complete_proof, verify_result, good_verify, success
 
 def save_memory(memory_file, problem_statement, other_prompts, current_iteration, max_runs,
                 solution=None, verify=None, solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
@@ -655,7 +1226,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     print(f">>>>>>> Corrected solution:")
     print(json.dumps(solution, indent=4))
 
-    print(f">>>>>>> Vefify the solution.")
+    print(f">>>>>>> Verify the solution.")
     verify, good_verify = verify_solution(problem_statement, solution, verbose, verification_reasoning)
 
     print(f">>>>>>> Initial verification:")
@@ -697,9 +1268,155 @@ def calculate_solution_score(verify, good_verify):
 
     return score
 
+def extract_answer_from_solution(solution):
+    """
+    Extract the mathematical answer from a solution (e.g., k ∈ {0,1,...,n}).
+
+    Args:
+        solution: Solution text
+
+    Returns:
+        str: Extracted answer or None if not found
+    """
+    if not solution:
+        return None
+
+    # Look for common answer patterns
+    import re
+
+    # Pattern 1: k ∈ {explicit set}
+    match = re.search(r'k\s*[∈∊∈]\s*\{([^}]+)\}', solution)
+    if match:
+        return f"k ∈ {{{match.group(1)}}}"
+
+    # Pattern 2: k = specific values
+    match = re.search(r'k\s*=\s*([^.\n]+)', solution)
+    if match:
+        return f"k = {match.group(1).strip()}"
+
+    # Pattern 3: "answer is" or "therefore k"
+    match = re.search(r'(?:answer is|therefore\s+k)\s*[:\s]+([^.\n]+)', solution, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    return None
+
+def validate_answer_change(prev_solution, new_solution, iteration, verbose=True):
+    """
+    Validate that answer changes are not regressions (narrowing without justification).
+
+    Args:
+        prev_solution: Previous solution text
+        new_solution: New solution text
+        iteration: Current iteration number
+        verbose: Print validation warnings
+
+    Returns:
+        dict: Validation result with warning flags
+    """
+    prev_answer = extract_answer_from_solution(prev_solution)
+    new_answer = extract_answer_from_solution(new_solution)
+
+    result = {
+        'prev_answer': prev_answer,
+        'new_answer': new_answer,
+        'changed': False,
+        'narrowed': False,
+        'warning': None
+    }
+
+    if prev_answer and new_answer and prev_answer != new_answer:
+        result['changed'] = True
+
+        # Check for common narrowing patterns
+        if verbose:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [ANSWER VALIDATION] Answer change detected at iteration {iteration}")
+            print(f">>>>>>> [ANSWER VALIDATION] Previous: {prev_answer}")
+            print(f">>>>>>> [ANSWER VALIDATION] New:      {new_answer}")
+
+        # Pattern detection: {0,...,n} → {0,...,⌊n/2⌋} is narrowing
+        if '{0' in prev_answer and '{0' in new_answer:
+            # Extract upper bounds
+            import re
+            prev_match = re.search(r'\.\.\.\s*,?\s*([^}]+)', prev_answer)
+            new_match = re.search(r'\.\.\.\s*,?\s*([^}]+)', new_answer)
+
+            if prev_match and new_match:
+                prev_upper = prev_match.group(1).strip()
+                new_upper = new_match.group(1).strip()
+
+                # Check if new bound appears more restrictive
+                if 'n' in prev_upper and ('/' in new_upper or '⌊' in new_upper or '⌈' in new_upper):
+                    result['narrowed'] = True
+                    result['warning'] = f"Answer space narrowed from {prev_upper} to {new_upper}"
+
+                    if verbose:
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Answer space narrowed!")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  From upper bound: {prev_upper}")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  To upper bound:   {new_upper}")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  This requires STRONG justification")
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Verify that the restriction is proven, not assumed")
+
+        # Pattern detection: full set → partial set
+        if '...' in prev_answer and '...' not in new_answer:
+            result['narrowed'] = True
+            result['warning'] = "Changed from range to specific values"
+
+            if verbose:
+                print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Changed from range to specific values")
+                print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Verify this restriction is proven")
+
+        if verbose:
+            print(f"{'='*80}\n")
+
+    return result
+
+def detect_stuck_pattern(correct_history, error_history, current_iteration, threshold=3, verbose=True):
+    """
+    Detect if agent is stuck in an error loop with no improvement.
+
+    Args:
+        correct_history: List of correct_count values over recent iterations
+        error_history: List of error_count values over recent iterations
+        current_iteration: Current iteration number
+        threshold: Number of iterations with 0 progress before declaring stuck
+        verbose: Print stuck detection warnings
+
+    Returns:
+        bool: True if stuck pattern detected
+    """
+    if len(correct_history) < threshold:
+        return False
+
+    # Check last N iterations
+    recent_corrects = correct_history[-threshold:]
+    recent_errors = error_history[-threshold:]
+
+    # Stuck if: all recent corrects are 0 AND errors are increasing or staying high
+    all_zero_corrects = all(c == 0 for c in recent_corrects)
+    errors_not_decreasing = all(recent_errors[i] >= recent_errors[0] for i in range(len(recent_errors)))
+
+    if all_zero_corrects and errors_not_decreasing:
+        if verbose:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [STUCK DETECTION] Stuck pattern detected at iteration {current_iteration}")
+            print(f">>>>>>> [STUCK DETECTION] Last {threshold} iterations:")
+            for i, (c, e) in enumerate(zip(recent_corrects, recent_errors)):
+                iter_num = current_iteration - threshold + i + 1
+                print(f">>>>>>> [STUCK DETECTION]   Iteration {iter_num}: {c} corrects, {e} errors")
+            print(f">>>>>>> [STUCK DETECTION] ⚠️  No improvement in {threshold} iterations")
+            print(f">>>>>>> [STUCK DETECTION] ⚠️  Recommendation: Stop or escalate reasoning effort")
+            print(f"{'='*80}\n")
+
+        return True
+
+    return False
+
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
-          num_initial_attempts=1):
+          num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
+          use_proof_sketch=False):
     """
     Main agent function for solving mathematical problems.
 
@@ -713,6 +1430,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         verification_reasoning: Override verification reasoning effort (low/medium/high)
         num_initial_attempts: Generate N diverse initial solutions and pick best (default: 1)
                              Use 3-5 for BFS exploration to escape local minima
+        use_mcts: If True, use MCTS-guided exploration instead of simple BFS (default: False)
+        mcts_simulations: Number of MCTS simulations if use_mcts=True (default: 5)
+        mcts_exploration: MCTS exploration constant for UCB1 (default: 1.414)
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
@@ -752,8 +1472,78 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"Starting fresh with solution reasoning: {sol_reasoning}, self-improvement reasoning: {self_imp_reasoning}, verification reasoning: {ver_reasoning}")
 
     if solution is None:
+        # Proof Sketch pipeline if requested
+        if use_proof_sketch:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> PROOF SKETCH MODE ACTIVATED")
+            print(f">>>>>>> Using 4-phase proof sketch architecture")
+            print(f"{'='*80}\n")
+
+            try:
+                # Run proof sketch pipeline
+                solution, verify, good_verify, success = proof_sketch_pipeline(
+                    problem_statement=problem_statement,
+                    sol_reasoning=sol_reasoning,
+                    ver_reasoning=ver_reasoning,
+                    verbose=True
+                )
+
+                if not success or solution is None:
+                    print(f"\n>>>>>>> PROOF SKETCH PIPELINE failed to generate verified solution")
+                    return None
+
+                print(f"\n>>>>>>> PROOF SKETCH PIPELINE succeeded!")
+
+            except Exception as e:
+                print(f">>>>>>> ERROR in proof sketch pipeline: {e}")
+                print(f">>>>>>> Falling back to standard approach")
+                use_proof_sketch = False
+
+        # MCTS-guided exploration if requested
+        if use_mcts:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> MCTS MODE ACTIVATED")
+            print(f">>>>>>> Running {mcts_simulations} MCTS-guided simulations")
+            print(f">>>>>>> Exploration constant: {mcts_exploration}")
+            print(f"{'='*80}\n")
+
+            # Import MCTS module
+            try:
+                from mcts_bfs import mcts_bfs_search
+
+                # Run MCTS search
+                mcts_result = mcts_bfs_search(
+                    problem_statement=problem_statement,
+                    num_simulations=mcts_simulations,
+                    generate_solution_func=init_explorations,
+                    verify_solution_func=verify_solution,
+                    sol_reasoning=sol_reasoning,
+                    self_imp_reasoning=self_imp_reasoning,
+                    ver_reasoning=ver_reasoning,
+                    exploration_constant=mcts_exploration,
+                    max_depth=2,
+                    save_tree_path=f"{memory_file.replace('.json', '_mcts_tree.json')}" if memory_file else None,
+                    best_of_n=best_of_n
+                )
+
+                if mcts_result:
+                    solution = mcts_result['solution']
+                    verify = mcts_result['verify']
+                    good_verify = mcts_result['good_verify']
+                    print(f"\n>>>>>>> MCTS search completed successfully")
+                    print(f">>>>>>> Best strategy: {mcts_result.get('strategy', 'unknown')}")
+                    print(f">>>>>>> Score: {mcts_result.get('score', 0):.2f}")
+                else:
+                    print(f"\n>>>>>>> MCTS search failed to find solution")
+                    return None
+
+            except ImportError as e:
+                print(f">>>>>>> ERROR: Could not import MCTS module: {e}")
+                print(f">>>>>>> Falling back to standard BFS")
+                use_mcts = False
+
         # QUICK WIN BFS: Generate multiple initial solutions if requested
-        if num_initial_attempts > 1:
+        if not use_mcts and num_initial_attempts > 1:
             print(f">>>>>>> BFS: Generating {num_initial_attempts} diverse initial solutions...")
             best_solution = None
             best_score = -999999
@@ -804,7 +1594,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             else:
                 print(">>>>>>> BFS: All initial attempts failed")
                 return None
-        else:
+        if not use_mcts and num_initial_attempts <= 1:
             # Original single-path initialization
             p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning)
             if(solution is None):
@@ -813,13 +1603,33 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort (potentially overridden to 'high')
-        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+        _, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
 
     error_count = 0
     correct_count = 1
     success = False
+
+    # Track history for stuck detection and score tracking
+    correct_history = []
+    error_history = []
+    score_history = []
+    previous_solution = solution
+
+    # Calculate initial score
+    initial_score = calculate_solution_score(verify, good_verify)
+    score_history.append(initial_score)
+    print(f">>>>>>> [SCORE] Initial solution score: {initial_score:.2f}")
+
     for i in range(current_iteration, 30):
-        print(f"Number of iterations: {i}, number of corrects: {correct_count}, number of errors: {error_count}")
+        print(f"\n{'='*80}")
+        print(f">>>>>>> Iteration {i}: corrects={correct_count}, errors={error_count}")
+        if score_history:
+            print(f">>>>>>> [SCORE] Current score: {score_history[-1]:.2f}")
+            if len(score_history) > 1:
+                score_delta = score_history[-1] - score_history[-2]
+                trend = "↑" if score_delta > 0 else "↓" if score_delta < 0 else "="
+                print(f">>>>>>> [SCORE] Score change: {score_delta:+.2f} {trend}")
+        print(f"{'='*80}\n")
 
         try:
             if("yes" not in good_verify.lower()):
@@ -845,11 +1655,36 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     }
                 )
 
-                p1["messages"].append(
-                    {"role": "user",
-                    "content": correction_prompt + "\n\n" + verify
-                    }
-                )
+                # Use translation layer if enabled and reasoning levels are asymmetric
+                USE_TRANSLATION = os.getenv("GPT_OSS_USE_TRANSLATION", "false").lower() == "true"
+                is_asymmetric = (sol_reasoning == "low" and ver_reasoning in ["medium", "high"])
+
+                if USE_TRANSLATION and is_asymmetric and verify:
+                    # Translate high-level verification feedback to actionable guidance
+                    print(f">>>>>>> Asymmetric reasoning detected ({sol_reasoning} gen / {ver_reasoning} ver)")
+                    print(f">>>>>>> Activating translation layer...")
+
+                    simplified_verify = translate_verification_feedback(
+                        verify, problem_statement, solution,
+                        translation_reasoning="medium",  # Use medium as translator
+                        verbose=True
+                    )
+
+                    p1["messages"].append(
+                        {"role": "user",
+                        "content": correction_prompt + "\n\n" + simplified_verify
+                        }
+                    )
+                else:
+                    # Use original verification feedback
+                    if USE_TRANSLATION:
+                        print(f">>>>>>> Translation layer available but not needed (symmetric reasoning: {sol_reasoning}/{ver_reasoning})")
+
+                    p1["messages"].append(
+                        {"role": "user",
+                        "content": correction_prompt + "\n\n" + verify
+                        }
+                    )
 
                 print(">>>>>>> New prompt:")
                 print(json.dumps(p1, indent=4))
@@ -859,13 +1694,44 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 print(">>>>>>> Corrected solution:")
                 print(json.dumps(solution, indent=4))
 
+                # Validate answer change if solution was corrected
+                if previous_solution:
+                    answer_validation = validate_answer_change(previous_solution, solution, i, verbose=True)
+                    if answer_validation['narrowed']:
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Answer narrowing detected - extra scrutiny required")
+
             print(f">>>>>>> Verify the solution.")
-            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+            verify, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
+
+            # Calculate and track score for this iteration
+            current_score = calculate_solution_score(verify, good_verify)
+            score_history.append(current_score)
+            print(f">>>>>>> [SCORE] Iteration {i} score: {current_score:.2f}")
 
             if("yes" in good_verify.lower()):
                 print(">>>>>>> Solution is good, verifying again ...")
                 correct_count += 1
                 error_count = 0
+            else:
+                correct_count = 0
+                error_count += 1
+
+            # Track history for stuck detection
+            correct_history.append(correct_count)
+            error_history.append(error_count)
+
+            # Detect stuck pattern
+            if detect_stuck_pattern(correct_history, error_history, i, threshold=3, verbose=True):
+                print(f">>>>>>> [STUCK DETECTION] Stopping due to stuck pattern")
+                print(f">>>>>>> [STUCK DETECTION] Recommendation: Try different reasoning level or approach")
+                # Save final state before stopping
+                if memory_file:
+                    save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
+                               sol_reasoning, self_imp_reasoning, ver_reasoning)
+                return None
+
+            # Update previous solution for next iteration
+            previous_solution = solution
 
             # Save memory every iteration
             if memory_file:
@@ -921,6 +1787,24 @@ if __name__ == "__main__":
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
     parser.add_argument('--num-initial-attempts', '-nia', type=int, default=1,
                        help='Generate N diverse initial solutions and pick best (default: 1). Use 3-5 for BFS exploration to escape local minima.')
+    parser.add_argument('--use-mcts', action='store_true',
+                       help='Use MCTS-guided exploration instead of simple BFS')
+    parser.add_argument('--mcts-simulations', type=int, default=5,
+                       help='Number of MCTS simulations (default: 5, baseline proven config)')
+    parser.add_argument('--mcts-exploration', type=float, default=1.414,
+                       help='MCTS exploration constant for UCB1 (default: 1.414, sqrt(2) baseline)')
+    parser.add_argument('--best-of-n', type=int, default=0,
+                       help='If > 0, verify top N MCTS solutions and return first verified (default: 0=disabled). Recommended: 3-5 for higher success rate.')
+    parser.add_argument('--use-proof-sketch', action='store_true',
+                       help='Use Proof Sketch architecture: outline → verify structure → expand details → verify math')
+    parser.add_argument('--use-translation', action='store_true',
+                       help='Enable translation layer for asymmetric reasoning (low gen / high ver)')
+    parser.add_argument('--verification-timeout', type=int, default=600,
+                       help='Timeout for verification in seconds (default: 600 = 10 min). Prevents hangs.')
+    parser.add_argument('--verification-max-attempts', type=int, default=3,
+                       help='Max verification attempts with exponential backoff before fallback (default: 3)')
+    parser.add_argument('--disable-verification-safeguards', action='store_true',
+                       help='Disable verification timeout and retry safeguards (not recommended)')
 
     args = parser.parse_args()
 
@@ -931,6 +1815,23 @@ if __name__ == "__main__":
     self_improvement_reasoning = args.self_improvement_reasoning
     verification_reasoning = args.verification_reasoning
     num_initial_attempts = args.num_initial_attempts
+    use_mcts = args.use_mcts
+    mcts_simulations = args.mcts_simulations
+    mcts_exploration = args.mcts_exploration
+    best_of_n = args.best_of_n
+    use_proof_sketch = args.use_proof_sketch
+
+    # Set verification safeguard module variables (no 'global' needed at module level)
+    VERIFICATION_TIMEOUT = args.verification_timeout
+    VERIFICATION_MAX_ATTEMPTS = args.verification_max_attempts
+    VERIFICATION_SAFEGUARDS_ENABLED = not args.disable_verification_safeguards
+
+    # Set translation environment variable if flag is provided
+    if args.use_translation:
+        os.environ["GPT_OSS_USE_TRANSLATION"] = "true"
+        print(f">>>>>>> Translation layer ENABLED")
+    else:
+        os.environ["GPT_OSS_USE_TRANSLATION"] = "false"
 
     other_prompts = []
     if args.other_prompts:
@@ -1009,7 +1910,8 @@ if __name__ == "__main__":
         try:
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
                        solution_reasoning, self_improvement_reasoning, verification_reasoning,
-                       num_initial_attempts)
+                       num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
+                       use_proof_sketch)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))

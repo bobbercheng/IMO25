@@ -1,0 +1,88 @@
+{
+  "total_simulations": 5,
+  "exploration_constant": 1.414,
+  "max_depth": 2,
+  "tree": {
+    "strategy": "root",
+    "visits": 5,
+    "total_score": -247.54999999999998,
+    "avg_score": -49.51,
+    "best_score": -24.91,
+    "num_solutions": 5,
+    "children": [
+      {
+        "strategy": "Mathematical induction",
+        "visits": 1,
+        "total_score": -55.94,
+        "avg_score": -55.94,
+        "best_score": -55.94,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Direct proof / construction",
+        "visits": 1,
+        "total_score": -63.26,
+        "avg_score": -63.26,
+        "best_score": -63.26,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Proof by contradiction",
+        "visits": 1,
+        "total_score": -77.51,
+        "avg_score": -77.51,
+        "best_score": -77.51,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Pigeonhole principle",
+        "visits": 1,
+        "total_score": -25.93,
+        "avg_score": -25.93,
+        "best_score": -25.93,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Combinatorial argument",
+        "visits": 1,
+        "total_score": -24.91,
+        "avg_score": -24.91,
+        "best_score": -24.91,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Algebraic manipulation",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Geometric insight",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Extremal principle",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      }
+    ]
+  },
+  "timestamp": "2025-11-17T21:27:29.625204"
+}

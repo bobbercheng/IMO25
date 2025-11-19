@@ -204,3 +204,9 @@ __marimo__/
 
 # Agent log files
 logs/
+
+# Test output directories
+test_baseline_logs/
+test_enhancements_logs/
+test_logs_mcts_translation/
+test_*_logs/
