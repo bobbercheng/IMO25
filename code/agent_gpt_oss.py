@@ -40,6 +40,20 @@ from agent_oai import (
     verification_remider
 )
 
+# Import cross-validation module
+try:
+    from cross_validator import (
+        cross_validate_solution,
+        should_trigger_cross_validation,
+        format_cross_validation_summary,
+        CROSS_VALIDATION_ENABLED
+    )
+    CROSS_VALIDATION_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARNING] Cross-validation module not available: {e}")
+    CROSS_VALIDATION_AVAILABLE = False
+    CROSS_VALIDATION_ENABLED = False
+
 # --- CONFIGURATION ---
 MODEL_NAME = "gpt_oss"
 # Use OpenAI-compatible API endpoint (e.g., sglang)
@@ -1226,6 +1240,26 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     print(f">>>>>>> Corrected solution:")
     print(json.dumps(solution, indent=4))
 
+    # Cross-validation: Quick check before expensive high-reasoning verification
+    if CROSS_VALIDATION_AVAILABLE and CROSS_VALIDATION_ENABLED:
+        print(f"\n>>>>>>> Starting cross-validation (post-generation)...")
+        cv_result = cross_validate_solution(problem_statement, solution, verbose=verbose)
+
+        print(format_cross_validation_summary(cv_result))
+
+        # Decision based on cross-validation
+        if cv_result['decision'] == 'regenerate' and cv_result['confidence'] < 30:
+            print(f">>>>>>> [CROSS-VAL] Solution rejected with very low confidence")
+            print(f">>>>>>> [CROSS-VAL] Feedback: {cv_result['feedback']}")
+            print(f">>>>>>> [CROSS-VAL] Proceeding to verification anyway for learning")
+        elif cv_result['decision'] == 'accept' and cv_result['confidence'] > 90:
+            print(f">>>>>>> [CROSS-VAL] Solution accepted with high confidence")
+            print(f">>>>>>> [CROSS-VAL] Skipping redundant high-reasoning verification")
+            # Return early with simulated good verify
+            verify = cv_result['feedback']
+            good_verify = "Yes - cross-validation passed with high confidence"
+            return p1, solution, verify, good_verify
+
     print(f">>>>>>> Verify the solution.")
     verify, good_verify = verify_solution(problem_statement, solution, verbose, verification_reasoning)
 
@@ -1700,8 +1734,41 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     if answer_validation['narrowed']:
                         print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Answer narrowing detected - extra scrutiny required")
 
-            print(f">>>>>>> Verify the solution.")
-            verify, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
+            # Cross-validation: Check solution before expensive verification
+            skip_verification = False  # Flag to skip high-reasoning verification
+
+            if CROSS_VALIDATION_AVAILABLE and CROSS_VALIDATION_ENABLED:
+                # Adaptive triggering: only validate if conditions met
+                if should_trigger_cross_validation(
+                    gpt_oss_confidence=None,  # Could extract from solution if available
+                    iteration=i,
+                    error_count=error_count,
+                    verbose=True
+                ):
+                    print(f"\n>>>>>>> Starting cross-validation (iteration {i})...")
+                    cv_result = cross_validate_solution(problem_statement, solution, verbose=True)
+
+                    print(format_cross_validation_summary(cv_result))
+
+                    # If cross-validation provides strong verdict, skip expensive verification
+                    if cv_result['decision'] == 'regenerate' and cv_result['confidence'] < 25:
+                        print(f">>>>>>> [CROSS-VAL] Strong rejection - skipping high-reasoning verification")
+                        verify = cv_result['feedback']
+                        good_verify = f"No - {cv_result['verdict']} by cross-validation"
+                        skip_verification = True
+                    elif cv_result['decision'] == 'accept' and cv_result['confidence'] > 90:
+                        print(f">>>>>>> [CROSS-VAL] Strong acceptance - skipping high-reasoning verification")
+                        verify = cv_result['feedback']
+                        good_verify = "Yes - cross-validation passed with high confidence"
+                        skip_verification = True
+                    else:
+                        # Uncertain - will proceed to high-reasoning verification
+                        print(f">>>>>>> [CROSS-VAL] Uncertain verdict - proceeding to high-reasoning verification")
+
+            # Standard verification (unless skipped by cross-validation)
+            if not skip_verification:
+                print(f">>>>>>> Verify the solution.")
+                verify, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
 
             # Calculate and track score for this iteration
             current_score = calculate_solution_score(verify, good_verify)
@@ -1805,6 +1872,20 @@ if __name__ == "__main__":
                        help='Max verification attempts with exponential backoff before fallback (default: 3)')
     parser.add_argument('--disable-verification-safeguards', action='store_true',
                        help='Disable verification timeout and retry safeguards (not recommended)')
+    parser.add_argument('--use-cross-validation', action='store_true',
+                       help='Enable cross-validation with open source models (DeepSeek, Qwen, CodeQwen)')
+    parser.add_argument('--cross-val-models', type=str,
+                       help='Comma-separated list of models for cross-validation (stage1,stage2,stage3). Default: deepseek-math-7b,qwen2.5-math-72b,codeqwen3-32b')
+    parser.add_argument('--cross-val-threshold', type=float, default=70,
+                       help='Confidence threshold for accepting cross-validation results (default: 70)')
+    parser.add_argument('--cross-val-api-url', type=str,
+                       help='API URL for cross-validation models (default: http://localhost:30001/v1/chat/completions)')
+    parser.add_argument('--cross-val-adaptive', action='store_true',
+                       help='Enable adaptive triggering (only validate when conditions met)')
+    parser.add_argument('--cross-val-parallel', action='store_true', default=True,
+                       help='Run cross-validators in parallel (default: True)')
+    parser.add_argument('--cross-val-tiered', action='store_true', default=True,
+                       help='Use tiered cascade mode (default: True)')
 
     args = parser.parse_args()
 
@@ -1832,6 +1913,38 @@ if __name__ == "__main__":
         print(f">>>>>>> Translation layer ENABLED")
     else:
         os.environ["GPT_OSS_USE_TRANSLATION"] = "false"
+
+    # Set cross-validation environment variables if flag is provided
+    if args.use_cross_validation:
+        os.environ["GPT_OSS_CROSS_VALIDATION"] = "true"
+        print(f">>>>>>> Cross-validation ENABLED")
+
+        if args.cross_val_models:
+            os.environ["OSS_VALIDATOR_MODELS"] = args.cross_val_models
+            print(f">>>>>>> Cross-validation models: {args.cross_val_models}")
+
+        if args.cross_val_api_url:
+            os.environ["OSS_VALIDATOR_API_URL"] = args.cross_val_api_url
+            print(f">>>>>>> Cross-validation API URL: {args.cross_val_api_url}")
+
+        os.environ["OSS_VALIDATOR_CONFIDENCE_THRESHOLD"] = str(args.cross_val_threshold)
+        print(f">>>>>>> Cross-validation confidence threshold: {args.cross_val_threshold}")
+
+        if args.cross_val_adaptive:
+            os.environ["OSS_VALIDATOR_ADAPTIVE"] = "true"
+            print(f">>>>>>> Cross-validation adaptive triggering ENABLED")
+
+        os.environ["OSS_VALIDATOR_PARALLEL"] = "true" if args.cross_val_parallel else "false"
+        os.environ["OSS_VALIDATOR_USE_TIERED"] = "true" if args.cross_val_tiered else "false"
+
+        # Reload cross_validator module to pick up new environment variables
+        if CROSS_VALIDATION_AVAILABLE:
+            import importlib
+            import cross_validator
+            importlib.reload(cross_validator)
+            print(f">>>>>>> Cross-validation module reloaded with new settings")
+    else:
+        os.environ["GPT_OSS_CROSS_VALIDATION"] = "false"
 
     other_prompts = []
     if args.other_prompts:
