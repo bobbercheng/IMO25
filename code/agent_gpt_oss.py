@@ -1500,7 +1500,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 use_proof_sketch = False
 
         # MCTS-guided exploration if requested
-        elif use_mcts:
+        if use_mcts:
             print(f"\n{'='*80}")
             print(f">>>>>>> MCTS MODE ACTIVATED")
             print(f">>>>>>> Running {mcts_simulations} MCTS-guided simulations")

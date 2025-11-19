@@ -11,7 +11,7 @@ echo "Configuration:"
 echo "  - MCTS: 5 simulations (baseline)"
 echo "  - Exploration: 1.414 (sqrt(2), baseline)"
 echo "  - Max depth: 2 (baseline)"
-echo "  - Reasoning: Low/Low/Low (proven config)"
+echo "  - Reasoning: Low/Low/High (asymmetric - proven config)"
 echo "  - Verification safeguards: ENABLED (10 min timeout, 3 max attempts)"
 echo ""
 echo "Expected results:"
@@ -32,14 +32,14 @@ echo "Starting baseline test at $(date)"
 echo "Log: $LOG_FILE"
 echo ""
 
-# Test baseline with Low/Low/Low reasoning (proven configuration)
+# Test baseline with Low/Low/High reasoning (asymmetric - proven configuration)
 python code/agent_gpt_oss.py "$PROBLEM_FILE" \
     --use-mcts \
     --mcts-simulations 5 \
     --mcts-exploration 1.414 \
     --solution-reasoning low \
     --self-improvement-reasoning low \
-    --verification-reasoning low \
+    --verification-reasoning high \
     --verification-timeout 600 \
     --verification-max-attempts 3 \
     --log "$LOG_FILE" \
