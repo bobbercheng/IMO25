@@ -1413,10 +1413,331 @@ def detect_stuck_pattern(correct_history, error_history, current_iteration, thre
 
     return False
 
+# ==============================================================================
+# RLAC (ADVERSARIAL CRITIC) IMPLEMENTATION
+# ==============================================================================
+
+def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
+               self_imp_reasoning="high", ver_reasoning="high",
+               max_adversarial_rounds=10, consecutive_robust_threshold=3,
+               stuck_threshold=3, memory_file=None, verbose=True):
+    """
+    Main RLAC (Reinforcement Learning with Adversarial Critics) agent.
+
+    This implements a Generator-Critic adversarial loop where:
+    - Generator creates/refines solutions (using existing agent logic)
+    - Adversarial Critic actively tries to break solutions with counterexamples
+    - Iterative refinement continues until solution is robust or stuck
+
+    Key differences from standard verification:
+    - Critic is ADVERSARIAL (tries to break) not cooperative (tries to verify)
+    - Provides concrete counterexamples not abstract feedback
+    - Progressive attack intensity (curriculum learning)
+    - Structured penalty/reward signals
+
+    Args:
+        problem_statement: Mathematical problem to solve
+        other_prompts: Additional context prompts
+        sol_reasoning: Reasoning effort for solution generation (default: "low")
+        self_imp_reasoning: Reasoning effort for self-improvement (default: "high")
+        ver_reasoning: Reasoning effort for adversarial attacks (default: "high")
+        max_adversarial_rounds: Maximum RLAC rounds (default: 10)
+        consecutive_robust_threshold: Consecutive robust verdicts needed for success (default: 3)
+        stuck_threshold: Consecutive failed fixes before declaring stuck (default: 3)
+        memory_file: Path to save RLAC state and attack history
+        verbose: Enable detailed logging
+
+    Returns:
+        Solution string if successful, None if failed
+    """
+    print("="*80)
+    print(">>>>>>> ADVERSARIAL RLAC MODE ACTIVATED")
+    print(">>>>>>> Generator-Critic Adversarial Refinement Loop")
+    print("="*80)
+    print(f">>>>>>> [RLAC CONFIG] Max rounds: {max_adversarial_rounds}")
+    print(f">>>>>>> [RLAC CONFIG] Consecutive robust threshold: {consecutive_robust_threshold}")
+    print(f">>>>>>> [RLAC CONFIG] Stuck threshold: {stuck_threshold}")
+    print(f">>>>>>> [RLAC CONFIG] Generator reasoning: {sol_reasoning}")
+    print(f">>>>>>> [RLAC CONFIG] Critic reasoning: {ver_reasoning}")
+    print(f">>>>>>> [RLAC CONFIG] Self-improvement reasoning: {self_imp_reasoning}")
+    print("="*80 + "\n")
+
+    # Import adversarial critic
+    try:
+        from adversarial_critic import AdversarialCritic
+        from adversarial_prompts import adversarial_defense_prompt
+    except ImportError as e:
+        print(f">>>>>>> [RLAC ERROR] Could not import adversarial modules: {e}")
+        print(f">>>>>>> [RLAC ERROR] Falling back to standard agent")
+        return None
+
+    # Initialize adversarial critic
+    critic = AdversarialCritic(
+        reasoning_effort=ver_reasoning,
+        verbose=verbose
+    )
+
+    # Phase 1: Generate initial solution
+    print("\n" + "="*80)
+    print(">>>>>>> [RLAC PHASE 1] Initial Solution Generation")
+    print("="*80 + "\n")
+
+    try:
+        p1, solution, verify, good_verify = init_explorations(
+            problem_statement, verbose, other_prompts,
+            sol_reasoning, self_imp_reasoning, ver_reasoning
+        )
+
+        if solution is None:
+            print(">>>>>>> [RLAC PHASE 1] Failed to generate initial solution")
+            return None
+
+        print(f">>>>>>> [RLAC PHASE 1] Initial solution generated ({len(solution)} chars)")
+
+    except Exception as e:
+        print(f">>>>>>> [RLAC PHASE 1] Error generating initial solution: {e}")
+        return None
+
+    # Phase 2: Adversarial refinement loop
+    print("\n" + "="*80)
+    print(">>>>>>> [RLAC PHASE 2] Adversarial Refinement Loop")
+    print("="*80 + "\n")
+
+    consecutive_robust = 0
+    stuck_count = 0
+    previous_solution = solution
+    rlac_history = []
+
+    for round_num in range(max_adversarial_rounds):
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [RLAC ROUND {round_num + 1}/{max_adversarial_rounds}]")
+        print(f">>>>>>> [RLAC METRICS] Consecutive robust: {consecutive_robust}/{consecutive_robust_threshold}")
+        print(f">>>>>>> [RLAC METRICS] Stuck count: {stuck_count}/{stuck_threshold}")
+        print(f"{'='*80}\n")
+
+        # Critic attacks solution
+        print(f">>>>>>> [RLAC CRITIC] Launching adversarial attack...")
+
+        try:
+            attack_result = critic.attack_solution(
+                problem_statement=problem_statement,
+                solution=solution,
+                round_num=round_num,
+                max_rounds=max_adversarial_rounds,
+                api_request_func=send_api_request,
+                api_key=get_api_key()
+            )
+
+            verdict = attack_result['verdict']
+            counterexamples = attack_result['counterexamples']
+            total_penalty = attack_result['total_penalty']
+
+            # Log round metrics
+            rlac_round_data = {
+                'round': round_num + 1,
+                'verdict': verdict,
+                'counterexamples': len(counterexamples),
+                'penalty': total_penalty,
+                'solution_length': len(solution),
+                'consecutive_robust': consecutive_robust,
+                'stuck_count': stuck_count
+            }
+            rlac_history.append(rlac_round_data)
+
+            print(f"\n>>>>>>> [RLAC CRITIC] Attack complete")
+            print(f">>>>>>> [RLAC RESULT] Verdict: {verdict}")
+            print(f">>>>>>> [RLAC RESULT] Penalty: -{total_penalty} points")
+
+        except Exception as e:
+            print(f">>>>>>> [RLAC CRITIC] Error during attack: {e}")
+            print(f">>>>>>> [RLAC CRITIC] Skipping this round")
+            continue
+
+        # Handle verdict
+        if verdict == "ROBUST":
+            consecutive_robust += 1
+            stuck_count = 0  # Reset stuck counter on progress
+
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [RLAC SUCCESS] Solution survived attack! ({consecutive_robust}/{consecutive_robust_threshold})")
+            print(f"{'='*80}\n")
+
+            if consecutive_robust >= consecutive_robust_threshold:
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [RLAC SUCCESS] Solution ROBUST after {consecutive_robust_threshold} consecutive attacks!")
+                print(f">>>>>>> [RLAC SUCCESS] Total rounds: {round_num + 1}")
+                print(f"{'='*80}\n")
+
+                # Final cooperative verification as sanity check
+                print(">>>>>>> [RLAC FINAL] Running cooperative verification as sanity check...")
+                verify, good_verify = verify_solution_safe(
+                    problem_statement, solution,
+                    reasoning_effort=ver_reasoning
+                )
+
+                if "yes" in good_verify.lower():
+                    print(">>>>>>> [RLAC FINAL] ✓ Passed both adversarial AND cooperative verification!")
+
+                    # Save attack history
+                    if memory_file:
+                        history_file = memory_file.replace('.json', '_rlac_history.json')
+                        critic.save_attack_history(history_file)
+
+                        # Save final solution with RLAC metadata
+                        rlac_metadata = {
+                            'solution': solution,
+                            'rlac_rounds': round_num + 1,
+                            'consecutive_robust': consecutive_robust,
+                            'attack_history': rlac_history,
+                            'critic_metrics': critic.get_metrics_summary(),
+                            'timestamp': __import__('datetime').datetime.now().isoformat()
+                        }
+
+                        try:
+                            with open(memory_file.replace('.json', '_rlac_solution.json'), 'w') as f:
+                                json.dump(rlac_metadata, f, indent=2, ensure_ascii=False)
+                            print(f">>>>>>> [RLAC FINAL] Solution and metadata saved")
+                        except Exception as e:
+                            print(f">>>>>>> [RLAC FINAL] Error saving metadata: {e}")
+
+                    return solution
+                else:
+                    print(">>>>>>> [RLAC FINAL] ⚠️  Failed cooperative verification")
+                    print(">>>>>>> [RLAC FINAL] Continuing adversarial refinement...")
+                    consecutive_robust = 0  # Reset and continue
+
+        elif verdict == "BROKEN" or verdict == "SUSPICIOUS":
+            consecutive_robust = 0  # Reset robust counter
+
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [RLAC GENERATOR] Solution {verdict}")
+            print(f">>>>>>> [RLAC GENERATOR] Counterexamples: {len(counterexamples)}")
+            print(f"{'='*80}\n")
+
+            # Show first few counterexamples
+            if counterexamples:
+                print(f">>>>>>> [RLAC GENERATOR] Sample counterexamples:")
+                for i, ce in enumerate(counterexamples[:3], 1):
+                    print(f">>>>>>> [RLAC GENERATOR]   {i}. {ce[:150]}{'...' if len(ce) > 150 else ''}")
+                print()
+
+            # Generator responds to attack
+            print(f">>>>>>> [RLAC GENERATOR] Generating defense/revision...")
+
+            try:
+                # Build defense prompt
+                defense_prompt = critic.get_defense_prompt(attack_result)
+
+                # Create revision request
+                payload = build_request_payload(
+                    system_prompt=step1_prompt,
+                    question_prompt=problem_statement,
+                    other_prompts=other_prompts + [
+                        f"Previous solution:\n{solution}",
+                        defense_prompt
+                    ],
+                    reasoning_effort=sol_reasoning
+                )
+
+                # Generate revised solution
+                response = send_api_request(get_api_key(), payload)
+                revised_solution = extract_solution(extract_text_from_response(response))
+
+                # Check if solution actually changed
+                if revised_solution == solution or not revised_solution:
+                    stuck_count += 1
+                    print(f"\n>>>>>>> [RLAC GENERATOR] ⚠️  Solution unchanged! (stuck_count={stuck_count}/{stuck_threshold})")
+
+                    if stuck_count >= stuck_threshold:
+                        print(f"\n{'='*80}")
+                        print(f">>>>>>> [RLAC FAILURE] Generator stuck - unable to address attacks")
+                        print(f">>>>>>> [RLAC FAILURE] Same solution for {stuck_count} consecutive rounds")
+                        print(f"{'='*80}\n")
+
+                        # Save failure data
+                        if memory_file:
+                            failure_data = {
+                                'reason': 'generator_stuck',
+                                'stuck_count': stuck_count,
+                                'last_attack': attack_result,
+                                'rlac_history': rlac_history,
+                                'critic_metrics': critic.get_metrics_summary()
+                            }
+
+                            try:
+                                with open(memory_file.replace('.json', '_rlac_failure.json'), 'w') as f:
+                                    json.dump(failure_data, f, indent=2, ensure_ascii=False)
+                            except:
+                                pass
+
+                        return None
+                else:
+                    # Solution changed - progress made
+                    stuck_count = 0
+                    solution_delta = len(revised_solution) - len(solution)
+                    solution = revised_solution
+
+                    print(f">>>>>>> [RLAC GENERATOR] ✓ Solution revised")
+                    print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(solution)} chars)")
+
+                    # Validate answer change
+                    answer_validation = validate_answer_change(
+                        previous_solution, solution, round_num, verbose=verbose
+                    )
+                    if answer_validation['narrowed']:
+                        print(f">>>>>>> [RLAC GENERATOR] ⚠️  Answer narrowing detected")
+
+                    previous_solution = solution
+
+            except Exception as e:
+                print(f">>>>>>> [RLAC GENERATOR] Error generating revision: {e}")
+                stuck_count += 1
+                if stuck_count >= stuck_threshold:
+                    print(f">>>>>>> [RLAC FAILURE] Too many errors, aborting")
+                    return None
+                continue
+
+        else:  # UNKNOWN verdict
+            print(f">>>>>>> [RLAC WARNING] Unknown verdict from critic")
+            consecutive_robust = 0
+
+        # Check for critic-detected stuck pattern
+        if critic.detect_stuck_pattern(recent_rounds=3):
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [RLAC FAILURE] Critic detected stuck pattern")
+            print(f">>>>>>> [RLAC FAILURE] Generator unable to address attacks effectively")
+            print(f"{'='*80}\n")
+            return None
+
+    # Reached max rounds without success
+    print(f"\n{'='*80}")
+    print(f">>>>>>> [RLAC TIMEOUT] Maximum rounds ({max_adversarial_rounds}) reached")
+    print(f">>>>>>> [RLAC TIMEOUT] Best consecutive robust: {consecutive_robust}/{consecutive_robust_threshold}")
+    print(f"{'='*80}\n")
+
+    # Save timeout data
+    if memory_file:
+        timeout_data = {
+            'reason': 'max_rounds_exceeded',
+            'max_rounds': max_adversarial_rounds,
+            'best_consecutive_robust': consecutive_robust,
+            'final_solution': solution,
+            'rlac_history': rlac_history,
+            'critic_metrics': critic.get_metrics_summary()
+        }
+
+        try:
+            with open(memory_file.replace('.json', '_rlac_timeout.json'), 'w') as f:
+                json.dump(timeout_data, f, indent=2, ensure_ascii=False)
+        except:
+            pass
+
+    return None
+
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
-          use_proof_sketch=False):
+          use_proof_sketch=False, use_rlac=False, rlac_max_rounds=10, rlac_robust_threshold=3, rlac_stuck_threshold=3):
     """
     Main agent function for solving mathematical problems.
 
@@ -1433,11 +1754,35 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         use_mcts: If True, use MCTS-guided exploration instead of simple BFS (default: False)
         mcts_simulations: Number of MCTS simulations if use_mcts=True (default: 5)
         mcts_exploration: MCTS exploration constant for UCB1 (default: 1.414)
+        use_rlac: If True, use RLAC (Adversarial Critic) mode (default: False)
+        rlac_max_rounds: Maximum RLAC adversarial rounds (default: 10)
+        rlac_robust_threshold: Consecutive robust verdicts needed (default: 3)
+        rlac_stuck_threshold: Consecutive failed fixes before stuck (default: 3)
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
     self_imp_reasoning = self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT
     ver_reasoning = verification_reasoning or VERIFICATION_REASONING_EFFORT
+
+    # RLAC MODE: Use adversarial critic instead of standard agent loop
+    if use_rlac:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> RLAC MODE SELECTED")
+        print(f">>>>>>> Redirecting to adversarial critic agent")
+        print(f"{'='*80}\n")
+
+        return rlac_agent(
+            problem_statement=problem_statement,
+            other_prompts=other_prompts,
+            sol_reasoning=sol_reasoning,
+            self_imp_reasoning=self_imp_reasoning,
+            ver_reasoning=ver_reasoning,
+            max_adversarial_rounds=rlac_max_rounds,
+            consecutive_robust_threshold=rlac_robust_threshold,
+            stuck_threshold=rlac_stuck_threshold,
+            memory_file=memory_file,
+            verbose=True
+        )
 
     if resume_from_memory and memory_file:
         # Load memory and resume from previous state
@@ -1806,6 +2151,16 @@ if __name__ == "__main__":
     parser.add_argument('--disable-verification-safeguards', action='store_true',
                        help='Disable verification timeout and retry safeguards (not recommended)')
 
+    # RLAC (Adversarial Critic) Arguments
+    parser.add_argument('--use-rlac', action='store_true',
+                       help='Use RLAC (Adversarial Critic) mode: Generator-Critic adversarial loop')
+    parser.add_argument('--rlac-max-rounds', type=int, default=10,
+                       help='Maximum RLAC adversarial rounds (default: 10)')
+    parser.add_argument('--rlac-robust-threshold', type=int, default=3,
+                       help='Consecutive robust verdicts needed for success (default: 3)')
+    parser.add_argument('--rlac-stuck-threshold', type=int, default=3,
+                       help='Consecutive failed fixes before declaring stuck (default: 3)')
+
     args = parser.parse_args()
 
     max_runs = args.max_runs
@@ -1820,6 +2175,10 @@ if __name__ == "__main__":
     mcts_exploration = args.mcts_exploration
     best_of_n = args.best_of_n
     use_proof_sketch = args.use_proof_sketch
+    use_rlac = args.use_rlac
+    rlac_max_rounds = args.rlac_max_rounds
+    rlac_robust_threshold = args.rlac_robust_threshold
+    rlac_stuck_threshold = args.rlac_stuck_threshold
 
     # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
@@ -1911,7 +2270,7 @@ if __name__ == "__main__":
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
                        solution_reasoning, self_improvement_reasoning, verification_reasoning,
                        num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
-                       use_proof_sketch)
+                       use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
