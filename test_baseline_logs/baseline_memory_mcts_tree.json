@@ -1,0 +1,124 @@
+{
+  "total_simulations": 5,
+  "exploration_constant": 1.414,
+  "max_depth": 2,
+  "tree": {
+    "strategy": "root",
+    "visits": 5,
+    "total_score": -179.64999999999998,
+    "avg_score": -35.92999999999999,
+    "best_score": -23.259999999999998,
+    "num_solutions": 5,
+    "children": [
+      {
+        "strategy": "Mathematical induction",
+        "visits": 1,
+        "total_score": -26.56,
+        "avg_score": -26.56,
+        "best_score": -26.56,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Direct proof / construction",
+        "visits": 1,
+        "total_score": -47.3,
+        "avg_score": -47.3,
+        "best_score": -47.3,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Proof by contradiction",
+        "visits": 1,
+        "total_score": -27.7,
+        "avg_score": -27.7,
+        "best_score": -27.7,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Pigeonhole principle",
+        "visits": 1,
+        "total_score": -23.259999999999998,
+        "avg_score": -23.259999999999998,
+        "best_score": -23.259999999999998,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Combinatorial argument",
+        "visits": 1,
+        "total_score": -54.83,
+        "avg_score": -54.83,
+        "best_score": -54.83,
+        "num_solutions": 1,
+        "children": []
+      },
+      {
+        "strategy": "Algebraic manipulation",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Geometric insight",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Extremal principle",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Induction with extremal principle",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Contradiction with pigeonhole principle",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Construction with algebraic manipulation",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      },
+      {
+        "strategy": "Combinatorial with geometric insight",
+        "visits": 0,
+        "total_score": 0.0,
+        "avg_score": 0.0,
+        "best_score": -999999.0,
+        "num_solutions": 0,
+        "children": []
+      }
+    ]
+  },
+  "timestamp": "2025-11-18T18:09:03.948361"
+}
