@@ -613,22 +613,173 @@ class RLACAgent:
             json.dump(result, f, indent=2)
 
 
-# Example usage (requires LLM client implementation)
+# =============================================================================
+# TIER 5: LLM CLIENT WRAPPER - Integration with GPT-OSS API
+# =============================================================================
+
+class GPTOSSClient:
+    """
+    LLM Client wrapper for GPT-OSS API integration.
+    (Tier 5: RLAC Full Integration)
+
+    This provides the LLM interface required by GeneratorAgent and AdversarialCriticAgent,
+    connecting them to the GPT-OSS API backend used by agent_gpt_oss.py.
+    """
+
+    def __init__(self, api_url: str = None, api_key: str = None):
+        """
+        Initialize GPT-OSS client.
+
+        Args:
+            api_url: API endpoint (defaults to GPT_OSS_API_URL env var)
+            api_key: API key (defaults to GPT_OSS_API_KEY env var)
+        """
+        self.api_url = api_url or os.environ.get('GPT_OSS_API_URL', 'http://localhost:30000/v1/chat/completions')
+        self.api_key = api_key or os.environ.get('GPT_OSS_API_KEY', '')
+
+    def generate(self, prompt: str, reasoning_effort: str = "high",
+                system_prompt: str = None, timeout: int = 600) -> str:
+        """
+        Generate text using GPT-OSS API.
+
+        Args:
+            prompt: User prompt
+            reasoning_effort: Reasoning level ("low", "medium", "high")
+            system_prompt: Optional system prompt
+            timeout: Request timeout in seconds
+
+        Returns:
+            Generated text response
+        """
+        import requests
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": "gpt",  # Model name for GPT-OSS
+            "messages": messages,
+            "temperature": 1.0,
+            "stream": False
+        }
+
+        # Add reasoning effort if supported
+        if reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        try:
+            response = requests.post(
+                self.api_url,
+                json=payload,
+                headers=headers,
+                timeout=timeout
+            )
+            response.raise_for_status()
+
+            result = response.json()
+
+            # Extract text from response
+            if 'choices' in result and len(result['choices']) > 0:
+                return result['choices'][0].get('message', {}).get('content', '')
+
+            return ""
+
+        except Exception as e:
+            print(f"[GPTOSSClient] API request failed: {e}")
+            return ""
+
+
+def create_rlac_agent_with_gpt_oss(api_url: str = None, api_key: str = None,
+                                   max_iterations: int = 10,
+                                   generator_reasoning: str = "low",
+                                   critic_reasoning: str = "high") -> RLACAgent:
+    """
+    Factory function to create an RLACAgent with GPT-OSS backend.
+    (Tier 5: RLAC Full Integration)
+
+    This provides an easy way to instantiate the full RLAC pipeline
+    connected to the GPT-OSS API.
+
+    Args:
+        api_url: GPT-OSS API URL (defaults to env var)
+        api_key: GPT-OSS API key (defaults to env var)
+        max_iterations: Maximum RLAC iterations
+        generator_reasoning: Reasoning effort for generator
+        critic_reasoning: Reasoning effort for critic
+
+    Returns:
+        Configured RLACAgent ready to solve problems
+    """
+    client = GPTOSSClient(api_url=api_url, api_key=api_key)
+
+    return RLACAgent(
+        generator_llm=client,
+        critic_llm=client,  # Can use same client for both
+        max_iterations=max_iterations,
+        generator_reasoning=generator_reasoning,
+        critic_reasoning=critic_reasoning
+    )
+
+
+# Example usage
 if __name__ == "__main__":
-    # Placeholder - replace with actual LLM client
-    print("RLAC Agent Implementation")
-    print("This is a template - integrate with your LLM client (OpenAI, Gemini, etc.)")
-    print()
-    print("Key components:")
-    print("- GeneratorAgent: Creates and refines solutions")
-    print("- AdversarialCriticAgent: Attacks solutions to find flaws")
-    print("- RLACAgent: Orchestrates adversarial reinforcement learning loop")
-    print()
-    print("To use:")
-    print("1. Implement LLM client interface")
-    print("2. Initialize RLACAgent with generator and critic LLMs")
-    print("3. Call rlac_agent.solve(problem_text)")
-    print()
-    print("The adversarial feedback loop creates reinforcement signals:")
-    print("- Negative: Critic finds flaw → penalty → generator improves")
-    print("- Positive: Solution survives attack → reward → success")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="RLAC Agent - Adversarial Reinforcement Learning")
+    parser.add_argument("problem_file", nargs="?", help="Path to problem file")
+    parser.add_argument("--max-iterations", type=int, default=10, help="Maximum RLAC iterations")
+    parser.add_argument("--generator-reasoning", default="low", choices=["low", "medium", "high"])
+    parser.add_argument("--critic-reasoning", default="high", choices=["low", "medium", "high"])
+    parser.add_argument("--log", help="Log file path")
+    parser.add_argument("--api-url", help="GPT-OSS API URL")
+    parser.add_argument("--api-key", help="GPT-OSS API key")
+
+    args = parser.parse_args()
+
+    if args.problem_file:
+        # Run with actual problem
+        with open(args.problem_file, 'r') as f:
+            problem = f.read()
+
+        agent = create_rlac_agent_with_gpt_oss(
+            api_url=args.api_url,
+            api_key=args.api_key,
+            max_iterations=args.max_iterations,
+            generator_reasoning=args.generator_reasoning,
+            critic_reasoning=args.critic_reasoning
+        )
+
+        result = agent.solve(problem, log_file=args.log)
+
+        print("\n" + "="*80)
+        print("RLAC RESULT")
+        print("="*80)
+        print(f"Success: {result.get('success', False)}")
+        print(f"Iterations: {result.get('iterations', 0)}")
+        print(f"Total Reward: {result.get('total_reward', 0)}")
+
+    else:
+        # Show help
+        print("RLAC Agent Implementation (Tier 5: Full Integration)")
+        print("="*60)
+        print()
+        print("Key components:")
+        print("- GeneratorAgent: Creates and refines solutions")
+        print("- AdversarialCriticAgent: Attacks solutions to find flaws")
+        print("- RLACAgent: Orchestrates adversarial reinforcement learning loop")
+        print("- GPTOSSClient: LLM client wrapper for GPT-OSS API")
+        print()
+        print("Usage:")
+        print("  python agent_rlac.py problem.txt --log output.json")
+        print()
+        print("The adversarial feedback loop creates reinforcement signals:")
+        print("- Negative: Critic finds flaw → penalty → generator improves")
+        print("- Positive: Solution survives attack → reward → success")

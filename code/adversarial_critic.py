@@ -493,3 +493,240 @@ Follow the output format specified in your system prompt.
             return True
 
         return False
+
+    # =========================================================================
+    # TIER 5: RLAC FULL INTEGRATION - Defense/Concession Parsing
+    # =========================================================================
+
+    def parse_defense_response(self, defense_text: str, attack_result: Dict) -> Dict[str, Any]:
+        """
+        Parse generator's defense response to detect defense vs concession patterns.
+        (Tier 5: RLAC Full Integration)
+
+        This enables more intelligent RLAC loop control by understanding HOW the
+        generator responds to attacks - whether it successfully defends, concedes,
+        or fails to address the attack.
+
+        Args:
+            defense_text: Generator's response after receiving attack
+            attack_result: The attack that was responded to
+
+        Returns:
+            Dict containing:
+                - response_type: "defense" / "concession" / "partial_defense" / "unclear"
+                - defended_attacks: List of attacks successfully defended against
+                - conceded_attacks: List of attacks conceded to
+                - unaddressed_attacks: List of attacks not addressed
+                - new_approach: Whether generator tried fundamentally new approach
+                - confidence: Confidence in parsing result (0.0-1.0)
+        """
+        result = {
+            'response_type': 'unclear',
+            'defended_attacks': [],
+            'conceded_attacks': [],
+            'unaddressed_attacks': [],
+            'new_approach': False,
+            'confidence': 0.5,
+            'raw_defense': defense_text[:500] if defense_text else ''
+        }
+
+        if not defense_text:
+            return result
+
+        text_lower = defense_text.lower()
+
+        # === Detect defense patterns ===
+        defense_patterns = [
+            r'this\s+is\s+actually\s+correct\s+because',
+            r'the\s+counterexample\s+is\s+invalid',
+            r'counterexample\s+does\s+not\s+apply',
+            r'this\s+case\s+is\s+already\s+covered',
+            r'I\s+defend\s+my\s+solution',
+            r'the\s+attack\s+misinterprets',
+            r'the\s+criticism\s+is\s+incorrect',
+            r'this\s+is\s+not\s+a\s+valid\s+counterexample',
+            r'the\s+proof\s+already\s+handles',
+            r'this\s+case\s+falls\s+under'
+        ]
+
+        defense_count = sum(1 for p in defense_patterns if re.search(p, text_lower))
+
+        # === Detect concession patterns ===
+        concession_patterns = [
+            r'you\s+are\s+(?:correct|right)',
+            r'I\s+acknowledge\s+(?:this|the)\s+(?:flaw|error|gap)',
+            r'I\s+concede',
+            r'this\s+is\s+a\s+valid\s+counterexample',
+            r'I\s+will\s+fix\s+this',
+            r'I\s+need\s+to\s+revise',
+            r'the\s+(?:flaw|error|gap)\s+is\s+valid',
+            r'I\s+(?:made|found)\s+(?:a|an)\s+(?:error|mistake)',
+            r'thank\s+you\s+for\s+(?:finding|pointing)',
+            r'I\s+will\s+address\s+this'
+        ]
+
+        concession_count = sum(1 for p in concession_patterns if re.search(p, text_lower))
+
+        # === Detect new approach patterns ===
+        new_approach_patterns = [
+            r'(?:completely|fundamentally)\s+(?:new|different)\s+approach',
+            r'(?:let|trying)\s+(?:me|a)\s+(?:try|use)\s+(?:a\s+)?different\s+(?:strategy|approach|method)',
+            r'I\s+will\s+(?:now\s+)?(?:try|use)\s+(?:a\s+)?(?:completely\s+)?(?:new|different)',
+            r'switching\s+to\s+(?:a\s+)?(?:new|different)',
+            r'abandoning\s+(?:the\s+)?previous\s+approach',
+            r'instead\s+of\s+(?:my\s+)?previous'
+        ]
+
+        result['new_approach'] = any(re.search(p, text_lower) for p in new_approach_patterns)
+
+        # === Determine response type ===
+        if defense_count > concession_count and defense_count >= 2:
+            result['response_type'] = 'defense'
+            result['confidence'] = min(0.9, 0.5 + 0.1 * defense_count)
+        elif concession_count > defense_count and concession_count >= 2:
+            result['response_type'] = 'concession'
+            result['confidence'] = min(0.9, 0.5 + 0.1 * concession_count)
+        elif defense_count > 0 and concession_count > 0:
+            result['response_type'] = 'partial_defense'
+            result['confidence'] = 0.6
+        else:
+            result['response_type'] = 'unclear'
+            result['confidence'] = 0.3
+
+        # === Map attacks to defense status ===
+        counterexamples = attack_result.get('counterexamples', [])
+
+        for ce in counterexamples:
+            ce_lower = ce.lower()[:100]  # First 100 chars of counterexample
+
+            # Check if counterexample is mentioned and defended against
+            if ce_lower[:30] in text_lower or any(word in text_lower for word in ce_lower.split()[:5] if len(word) > 3):
+                if result['response_type'] in ['defense', 'partial_defense']:
+                    result['defended_attacks'].append(ce)
+                else:
+                    result['conceded_attacks'].append(ce)
+            else:
+                result['unaddressed_attacks'].append(ce)
+
+        if self.verbose:
+            self._log(f"[DEFENSE PARSER] Response type: {result['response_type']} (confidence: {result['confidence']:.2f})")
+            self._log(f"[DEFENSE PARSER] Defended: {len(result['defended_attacks'])}, Conceded: {len(result['conceded_attacks'])}, Unaddressed: {len(result['unaddressed_attacks'])}")
+            if result['new_approach']:
+                self._log(f"[DEFENSE PARSER] Generator trying new approach")
+
+        return result
+
+    # =========================================================================
+    # TIER 5: Domain-Specific Attack Patterns
+    # =========================================================================
+
+    def get_domain_specific_attacks(self, problem_type: str) -> List[str]:
+        """
+        Get domain-specific attack strategies based on problem type.
+        (Tier 5: RLAC Full Integration)
+
+        Args:
+            problem_type: Type of problem (number_theory, geometry, combinatorics, etc.)
+
+        Returns:
+            List of domain-specific attack strategies
+        """
+        domain_attacks = {
+            'number_theory': [
+                "Test edge cases: n=0, n=1, n=2, n=prime, n=composite",
+                "Check divisibility claims with actual computations",
+                "Verify modular arithmetic with specific values",
+                "Test large primes and prime powers",
+                "Check gcd/lcm properties with examples",
+                "Verify floor/ceiling function edge cases",
+                "Test claims about digit sums with specific numbers"
+            ],
+            'geometry': [
+                "Test degenerate configurations (collinear points, coincident vertices)",
+                "Verify angle calculations with specific coordinates",
+                "Check if solution holds for both convex and concave cases",
+                "Test boundary cases (right angles, parallel lines)",
+                "Verify coordinate geometry claims numerically",
+                "Check if transformations preserve claimed properties",
+                "Test with specific triangle types (isoceles, right, equilateral)"
+            ],
+            'combinatorics': [
+                "Test small values (n=1,2,3,4,5) with explicit enumeration",
+                "Verify counting arguments with double counting",
+                "Check pigeonhole applications with exact values",
+                "Test inclusion-exclusion claims",
+                "Verify bijection claims with explicit mapping",
+                "Check generating function coefficients",
+                "Test recursion base cases and induction steps"
+            ],
+            'algebra': [
+                "Verify polynomial identities with specific values",
+                "Test inequality claims at boundary values",
+                "Check symmetry arguments with permutations",
+                "Verify algebraic manipulations step by step",
+                "Test claims about roots with specific polynomials",
+                "Check AM-GM, Cauchy-Schwarz applications",
+                "Verify functional equation solutions with substitutions"
+            ],
+            'inequality': [
+                "Test at equality conditions",
+                "Check boundary values where inequality becomes tight",
+                "Verify AM-GM applications with specific values",
+                "Test Cauchy-Schwarz setup correctness",
+                "Check if constraints are satisfied at claimed optimum",
+                "Verify homogenization is valid",
+                "Test with extreme values (0, 1, infinity limits)"
+            ]
+        }
+
+        # Default general attacks
+        general_attacks = [
+            "Test with small specific values",
+            "Verify logical chains step by step",
+            "Check if all cases are covered",
+            "Look for unstated assumptions",
+            "Test boundary conditions"
+        ]
+
+        return domain_attacks.get(problem_type.lower(), general_attacks)
+
+    def enhanced_attack(self, problem_statement: str, solution: str, round_num: int,
+                       max_rounds: int, problem_type: str = None,
+                       api_request_func=None, api_key=None) -> Dict[str, Any]:
+        """
+        Enhanced attack with domain-specific strategies.
+        (Tier 5: RLAC Full Integration)
+
+        Args:
+            problem_statement: Original problem
+            solution: Solution to attack
+            round_num: Current round number
+            max_rounds: Maximum rounds
+            problem_type: Optional problem type hint for domain-specific attacks
+            api_request_func: Function to send API requests
+            api_key: API key
+
+        Returns:
+            Enhanced attack result with domain-specific findings
+        """
+        # Get base attack result
+        base_result = self.attack_solution(
+            problem_statement=problem_statement,
+            solution=solution,
+            round_num=round_num,
+            max_rounds=max_rounds,
+            api_request_func=api_request_func,
+            api_key=api_key
+        )
+
+        # Add domain-specific context
+        if problem_type:
+            domain_attacks = self.get_domain_specific_attacks(problem_type)
+            base_result['domain_attacks_suggested'] = domain_attacks
+            base_result['problem_type'] = problem_type
+
+            if self.verbose:
+                self._log(f"[ENHANCED ATTACK] Problem type: {problem_type}")
+                self._log(f"[ENHANCED ATTACK] Domain-specific attacks available: {len(domain_attacks)}")
+
+        return base_result

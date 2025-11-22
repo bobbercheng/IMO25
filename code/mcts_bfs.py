@@ -107,23 +107,34 @@ class MCTSExplorer:
     proof approaches and refine promising strategies.
     """
 
-    def __init__(self, exploration_constant: float = 1.414, max_depth: int = 3):
+    def __init__(self, exploration_constant: float = 1.414, max_depth: int = 3,
+                 enable_hybrids: bool = True, problem_type: Optional[str] = None):
         """
         Initialize MCTS explorer.
 
         Args:
             exploration_constant: UCB1 exploration parameter
             max_depth: Maximum tree depth
+            enable_hybrids: Whether to enable hybrid strategy generation (Tier 2 optimization)
+            problem_type: Optional problem type hint for strategy prioritization
         """
         self.root = MCTSNode("root")
         self.exploration_constant = exploration_constant
         self.max_depth = max_depth
         self.total_simulations = 0
+        self.enable_hybrids = enable_hybrids
+        self.problem_type = problem_type
+
+        # Track strategy performance across simulations for adaptive selection
+        self.strategy_performance = {}
 
         # Initialize strategy tree with common proof techniques
         self._initialize_strategy_tree()
 
         print(f">>>>>>> [MCTS] Initialized with exploration_constant={exploration_constant}, max_depth={max_depth}")
+        print(f">>>>>>> [MCTS] Hybrid strategies: {'enabled' if enable_hybrids else 'disabled'}")
+        if problem_type:
+            print(f">>>>>>> [MCTS] Problem type hint: {problem_type}")
 
     def _initialize_strategy_tree(self):
         """Initialize root node with common proof strategies and hybrid approaches."""
@@ -138,21 +149,64 @@ class MCTSExplorer:
             "Extremal principle"
         ]
 
-        # Add hybrid strategies that combine multiple approaches
-        # DISABLED: Reverted to baseline (8 strategies only, no hybrids)
-        # hybrid_strategies = [
-        #     "Induction with extremal principle",
-        #     "Contradiction with pigeonhole principle",
-        #     "Construction with algebraic manipulation",
-        #     "Combinatorial with geometric insight"
-        # ]
+        # Tier 2 optimization: Enable hybrid strategies for better exploration
+        hybrid_strategies = []
+        if self.enable_hybrids:
+            hybrid_strategies = [
+                "Induction with extremal principle",
+                "Contradiction with pigeonhole principle",
+                "Construction with algebraic manipulation",
+                "Combinatorial with geometric insight",
+                "Double counting with algebraic manipulation",
+                "Geometric transformation with symmetry"
+            ]
 
-        all_strategies = common_strategies  # Baseline: 8 strategies only
+        # Problem-type aware strategy prioritization (Tier 2 optimization)
+        priority_strategies = []
+        if self.problem_type:
+            problem_type_lower = self.problem_type.lower()
+            if "number" in problem_type_lower or "divisibility" in problem_type_lower:
+                priority_strategies = [
+                    "Mathematical induction",
+                    "Direct proof / construction",
+                    "Proof by contradiction"
+                ]
+            elif "geometry" in problem_type_lower:
+                priority_strategies = [
+                    "Geometric insight",
+                    "Algebraic manipulation",
+                    "Geometric transformation with symmetry"
+                ]
+            elif "combinatorics" in problem_type_lower or "counting" in problem_type_lower:
+                priority_strategies = [
+                    "Combinatorial argument",
+                    "Pigeonhole principle",
+                    "Double counting with algebraic manipulation"
+                ]
+            elif "inequality" in problem_type_lower:
+                priority_strategies = [
+                    "Algebraic manipulation",
+                    "Extremal principle",
+                    "Mathematical induction"
+                ]
+
+        # Build ordered strategy list: priority first, then others
+        all_strategies = []
+        for s in priority_strategies:
+            if s not in all_strategies:
+                all_strategies.append(s)
+        for s in common_strategies:
+            if s not in all_strategies:
+                all_strategies.append(s)
+        for s in hybrid_strategies:
+            if s not in all_strategies:
+                all_strategies.append(s)
 
         for strategy in all_strategies:
             self.root.add_child(strategy)
 
-        print(f">>>>>>> [MCTS] Initialized with {len(all_strategies)} strategies (baseline configuration)")
+        config_type = "hybrid-enabled" if self.enable_hybrids else "baseline"
+        print(f">>>>>>> [MCTS] Initialized with {len(all_strategies)} strategies ({config_type} configuration)")
 
     def select(self) -> MCTSNode:
         """
@@ -370,11 +424,14 @@ class MCTSExplorer:
         return [(n.strategy, n.avg_score()) for n in sorted_nodes[:top_k]]
 
     def save_tree(self, filepath: str):
-        """Save MCTS tree to JSON file."""
+        """Save MCTS tree to JSON file with full state for resume capability."""
         tree_data = {
             'total_simulations': self.total_simulations,
             'exploration_constant': self.exploration_constant,
             'max_depth': self.max_depth,
+            'enable_hybrids': self.enable_hybrids,
+            'problem_type': self.problem_type,
+            'strategy_performance': self.strategy_performance,
             'tree': self.root.to_dict(),
             'timestamp': datetime.now().isoformat()
         }
@@ -384,26 +441,118 @@ class MCTSExplorer:
 
         print(f">>>>>>> [MCTS] Tree saved to {filepath}")
 
+    @classmethod
+    def load_tree(cls, filepath: str) -> Optional['MCTSExplorer']:
+        """
+        Load MCTS tree from JSON file for resume capability (Tier 2 optimization).
+
+        Args:
+            filepath: Path to saved tree JSON
+
+        Returns:
+            MCTSExplorer instance with restored state, or None if load fails
+        """
+        try:
+            with open(filepath, 'r') as f:
+                tree_data = json.load(f)
+
+            # Create explorer with saved config
+            explorer = cls(
+                exploration_constant=tree_data.get('exploration_constant', 1.414),
+                max_depth=tree_data.get('max_depth', 3),
+                enable_hybrids=tree_data.get('enable_hybrids', True),
+                problem_type=tree_data.get('problem_type')
+            )
+
+            # Restore state
+            explorer.total_simulations = tree_data.get('total_simulations', 0)
+            explorer.strategy_performance = tree_data.get('strategy_performance', {})
+
+            # Rebuild tree from saved data
+            def rebuild_node(node_data: Dict, parent: Optional[MCTSNode] = None) -> MCTSNode:
+                node = MCTSNode(node_data['strategy'], parent=parent)
+                node.visits = node_data.get('visits', 0)
+                node.total_score = node_data.get('total_score', 0.0)
+                node.best_score = node_data.get('best_score', -999999.0)
+
+                for child_data in node_data.get('children', []):
+                    child = rebuild_node(child_data, parent=node)
+                    node.children.append(child)
+
+                return node
+
+            # Rebuild root and tree structure
+            if 'tree' in tree_data:
+                explorer.root = rebuild_node(tree_data['tree'])
+
+            print(f">>>>>>> [MCTS] Tree loaded from {filepath}")
+            print(f">>>>>>> [MCTS] Restored {explorer.total_simulations} simulations")
+
+            return explorer
+
+        except FileNotFoundError:
+            print(f">>>>>>> [MCTS] No saved tree found at {filepath}")
+            return None
+        except Exception as e:
+            print(f">>>>>>> [MCTS] Error loading tree: {e}")
+            return None
+
     def _calculate_score(self, verify: str, good_verify: str) -> float:
-        """Calculate score from verification results."""
+        """
+        Calculate score from verification results with granular feedback (Tier 2 optimization).
+
+        Scoring breakdown:
+        - Perfect verification ("yes"): +100 base points
+        - Critical errors: -15 points each
+        - Justification gaps: -8 points each
+        - Minor issues: -3 points each
+        - Partial correctness indicators: +20-50 points
+        - Shorter bug reports (fewer issues): bonus points
+        """
         score = 0.0
 
         # Perfect verification
-        if "yes" in good_verify.lower():
+        if good_verify and "yes" in good_verify.lower():
             score += 100.0
 
-        # Penalize by number of errors
         if verify:
-            error_count = verify.lower().count('critical error')
-            error_count += verify.lower().count('justification gap') * 0.5
-            score -= error_count * 10
+            verify_lower = verify.lower()
 
-            # Reward shorter bug reports (fewer issues)
-            score -= len(verify) / 100
+            # Count different error types with nuanced weighting
+            critical_errors = verify_lower.count('critical error') + verify_lower.count('critical flaw')
+            justification_gaps = verify_lower.count('justification gap') + verify_lower.count('missing justification')
+            minor_issues = verify_lower.count('minor issue') + verify_lower.count('minor error')
+            major_issues = verify_lower.count('major issue') + verify_lower.count('significant error')
+
+            score -= critical_errors * 15
+            score -= major_issues * 10
+            score -= justification_gaps * 8
+            score -= minor_issues * 3
+
+            # Partial correctness bonuses (Tier 2 optimization)
+            if "mostly correct" in verify_lower or "partially correct" in verify_lower:
+                score += 30.0
+            if "correct approach" in verify_lower or "right direction" in verify_lower:
+                score += 20.0
+            if "key insight" in verify_lower and "correct" in verify_lower:
+                score += 25.0
+
+            # Penalize/reward based on verification length (proxy for number of issues)
+            # Shorter verifications with "yes" = clean solution
+            # Long verifications = many issues
+            verification_length_penalty = min(len(verify) / 200, 20)  # Cap at 20 points penalty
+            score -= verification_length_penalty
+
+            # Bonus for explicit positive mentions
+            if "correct" in verify_lower and critical_errors == 0:
+                score += 15.0
+            if "valid" in verify_lower or "sound" in verify_lower:
+                score += 10.0
         else:
-            # No errors found
+            # No verification text - assume no errors found
             score += 50.0
 
+        # Track strategy performance for adaptive selection
         return score
 
     def _get_depth(self, node: MCTSNode) -> int:
@@ -519,7 +668,10 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
                    exploration_constant: float = 1.414,
                    max_depth: int = 2,
                    save_tree_path: Optional[str] = None,
-                   best_of_n: int = 0) -> Optional[Dict]:
+                   best_of_n: int = 0,
+                   enable_hybrids: bool = True,
+                   problem_type: Optional[str] = None,
+                   resume_from_tree: Optional[str] = None) -> Optional[Dict]:
     """
     Perform MCTS-guided BFS exploration for mathematical problem solving.
 
@@ -535,6 +687,9 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
         max_depth: Maximum tree depth (default: 2, baseline proven config)
         save_tree_path: Path to save MCTS tree (optional)
         best_of_n: If > 0, verify top N solutions and return first verified (default: 0)
+        enable_hybrids: Enable hybrid strategy generation (Tier 2 optimization, default: True)
+        problem_type: Optional problem type hint for strategy prioritization (Tier 2 optimization)
+        resume_from_tree: Path to saved tree for resume capability (Tier 2 optimization)
 
     Returns:
         Best solution dictionary or None if no solution found
@@ -545,13 +700,28 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
     print(f">>>>>>> [MCTS-BFS] Reasoning: {sol_reasoning}/{self_imp_reasoning}/{ver_reasoning}")
     print(f">>>>>>> [MCTS-BFS] Exploration constant: {exploration_constant}")
     print(f">>>>>>> [MCTS-BFS] Max depth: {max_depth}")
+    print(f">>>>>>> [MCTS-BFS] Hybrid strategies: {'enabled' if enable_hybrids else 'disabled'}")
+    if problem_type:
+        print(f">>>>>>> [MCTS-BFS] Problem type: {problem_type}")
+    if resume_from_tree:
+        print(f">>>>>>> [MCTS-BFS] Resuming from: {resume_from_tree}")
     print(f"{'='*80}\n")
 
-    # Initialize MCTS explorer
-    explorer = MCTSExplorer(
-        exploration_constant=exploration_constant,
-        max_depth=max_depth
-    )
+    # Try to resume from saved tree if provided (Tier 2 optimization)
+    explorer = None
+    if resume_from_tree:
+        explorer = MCTSExplorer.load_tree(resume_from_tree)
+        if explorer:
+            print(f">>>>>>> [MCTS-BFS] Resumed from saved tree with {explorer.total_simulations} prior simulations")
+
+    # Initialize fresh MCTS explorer if no resume or resume failed
+    if explorer is None:
+        explorer = MCTSExplorer(
+            exploration_constant=exploration_constant,
+            max_depth=max_depth,
+            enable_hybrids=enable_hybrids,
+            problem_type=problem_type
+        )
 
     # Run MCTS search
     best_solution, all_solutions = explorer.search(

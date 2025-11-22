@@ -1100,9 +1100,11 @@ Please revise the proof outline to fix these structural issues while keeping the
     return complete_proof, verify_result, good_verify, success
 
 def save_memory(memory_file, problem_statement, other_prompts, current_iteration, max_runs,
-                solution=None, verify=None, solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None):
+                solution=None, verify=None, solution_reasoning=None, self_improvement_reasoning=None,
+                verification_reasoning=None, iteration_history=None, score_history=None,
+                error_patterns=None, failed_approaches=None, best_solution=None, best_score=None):
     """
-    Save the current state to a memory file.
+    Save the current state to a memory file with comprehensive state tracking.
 
     Args:
         memory_file: Path to save memory
@@ -1115,7 +1117,24 @@ def save_memory(memory_file, problem_statement, other_prompts, current_iteration
         solution_reasoning: Reasoning effort for solution generation
         self_improvement_reasoning: Reasoning effort for self-improvement
         verification_reasoning: Reasoning effort for verification
+        iteration_history: List of iteration data dicts for analysis
+        score_history: List of scores for tracking progress
+        error_patterns: Dict of detected error patterns for learning
+        failed_approaches: List of failed approach summaries to avoid retry
+        best_solution: Best solution found so far (may differ from current)
+        best_score: Score of the best solution
     """
+    # Load existing memory to preserve accumulated history if present
+    existing_memory = {}
+    if memory_file:
+        try:
+            import os
+            if os.path.exists(memory_file):
+                with open(memory_file, 'r', encoding='utf-8') as f:
+                    existing_memory = json.load(f)
+        except:
+            pass  # Start fresh if can't load existing
+
     memory = {
         "problem_statement": problem_statement,
         "other_prompts": other_prompts,
@@ -1126,7 +1145,19 @@ def save_memory(memory_file, problem_statement, other_prompts, current_iteration
         "solution_reasoning": solution_reasoning or SOLUTION_REASONING_EFFORT,
         "self_improvement_reasoning": self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT,
         "verification_reasoning": verification_reasoning or VERIFICATION_REASONING_EFFORT,
-        "timestamp": __import__('datetime').datetime.now().isoformat()
+        "timestamp": __import__('datetime').datetime.now().isoformat(),
+
+        # Enhanced state tracking (Tier 1 fix)
+        "iteration_history": iteration_history or existing_memory.get("iteration_history", []),
+        "score_history": score_history or existing_memory.get("score_history", []),
+        "error_patterns": error_patterns or existing_memory.get("error_patterns", {}),
+        "failed_approaches": failed_approaches or existing_memory.get("failed_approaches", []),
+        "best_solution": best_solution or existing_memory.get("best_solution"),
+        "best_score": best_score if best_score is not None else existing_memory.get("best_score"),
+
+        # Metadata for analysis
+        "total_iterations_across_resumes": existing_memory.get("total_iterations_across_resumes", 0) + current_iteration,
+        "resume_count": existing_memory.get("resume_count", 0) + (1 if existing_memory else 0),
     }
 
     try:
@@ -1138,20 +1169,133 @@ def save_memory(memory_file, problem_statement, other_prompts, current_iteration
         print(f"Error saving memory to {memory_file}: {e}")
         return False
 
+
+def append_iteration_to_memory(memory_file, iteration_data):
+    """
+    Append iteration data to memory file without full rewrite.
+    Useful for incremental progress tracking.
+
+    Args:
+        memory_file: Path to memory file
+        iteration_data: Dict containing iteration info (iteration_num, solution_summary,
+                       verification_result, score, errors, approach_used, duration)
+    """
+    try:
+        import os
+        if not os.path.exists(memory_file):
+            # Create new memory with just iteration history
+            memory = {"iteration_history": [iteration_data]}
+        else:
+            with open(memory_file, 'r', encoding='utf-8') as f:
+                memory = json.load(f)
+            if "iteration_history" not in memory:
+                memory["iteration_history"] = []
+            memory["iteration_history"].append(iteration_data)
+
+            # Update score history
+            if "score_history" not in memory:
+                memory["score_history"] = []
+            if "score" in iteration_data:
+                memory["score_history"].append(iteration_data["score"])
+
+            # Track best solution
+            score = iteration_data.get("score", 0)
+            if score > memory.get("best_score", 0):
+                memory["best_score"] = score
+                memory["best_solution"] = iteration_data.get("solution_summary", "")
+
+        with open(memory_file, 'w', encoding='utf-8') as f:
+            json.dump(memory, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error appending iteration to memory: {e}")
+        return False
+
+
+def record_failed_approach(memory_file, approach_summary, failure_reason):
+    """
+    Record a failed approach to avoid retrying the same strategy.
+
+    Args:
+        memory_file: Path to memory file
+        approach_summary: Short description of the approach tried
+        failure_reason: Why it failed (e.g., "verification timeout", "counterexample found")
+    """
+    try:
+        import os
+        memory = {}
+        if os.path.exists(memory_file):
+            with open(memory_file, 'r', encoding='utf-8') as f:
+                memory = json.load(f)
+
+        if "failed_approaches" not in memory:
+            memory["failed_approaches"] = []
+
+        memory["failed_approaches"].append({
+            "approach": approach_summary,
+            "reason": failure_reason,
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        })
+
+        with open(memory_file, 'w', encoding='utf-8') as f:
+            json.dump(memory, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error recording failed approach: {e}")
+        return False
+
+
+def update_error_patterns(memory_file, error_type, count_increment=1):
+    """
+    Update error pattern tracking for learning.
+
+    Args:
+        memory_file: Path to memory file
+        error_type: Type of error encountered (e.g., "truncation", "format_error", "timeout")
+        count_increment: How much to increment the count
+    """
+    try:
+        import os
+        memory = {}
+        if os.path.exists(memory_file):
+            with open(memory_file, 'r', encoding='utf-8') as f:
+                memory = json.load(f)
+
+        if "error_patterns" not in memory:
+            memory["error_patterns"] = {}
+
+        memory["error_patterns"][error_type] = memory["error_patterns"].get(error_type, 0) + count_increment
+
+        with open(memory_file, 'w', encoding='utf-8') as f:
+            json.dump(memory, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Error updating error patterns: {e}")
+        return False
+
 def load_memory(memory_file):
     """
-    Load the state from a memory file.
+    Load the state from a memory file with enhanced state tracking.
 
     Returns:
         Dictionary containing:
-        - problem_statement
-        - other_prompts
-        - current_iteration
-        - max_runs
-        - solution
-        - verify
-        - solution_reasoning (if saved)
-        - verification_reasoning (if saved)
+        - problem_statement: The problem being solved
+        - other_prompts: Additional prompts
+        - current_iteration: Resume point
+        - max_runs: Maximum iterations allowed
+        - solution: Current solution (if any)
+        - verify: Current verification result (if any)
+        - solution_reasoning: Reasoning effort for solution generation
+        - self_improvement_reasoning: Reasoning effort for self-improvement
+        - verification_reasoning: Reasoning effort for verification
+        - iteration_history: List of iteration data for analysis (enhanced)
+        - score_history: List of scores for tracking progress (enhanced)
+        - error_patterns: Dict of detected error patterns (enhanced)
+        - failed_approaches: List of failed approach summaries (enhanced)
+        - best_solution: Best solution found so far (enhanced)
+        - best_score: Score of the best solution (enhanced)
+        - total_iterations_across_resumes: Cumulative iteration count
+        - resume_count: Number of times resumed
     """
     try:
         with open(memory_file, 'r', encoding='utf-8') as f:
@@ -1163,6 +1307,22 @@ def load_memory(memory_file):
             print(f"Loaded solution reasoning effort: {memory['solution_reasoning']}")
         if 'verification_reasoning' in memory:
             print(f"Loaded verification reasoning effort: {memory['verification_reasoning']}")
+
+        # Log enhanced state info (Tier 1 enhancement)
+        if 'resume_count' in memory:
+            print(f"Resume count: {memory['resume_count']}")
+        if 'total_iterations_across_resumes' in memory:
+            print(f"Total iterations across all resumes: {memory['total_iterations_across_resumes']}")
+        if 'best_score' in memory and memory['best_score'] is not None:
+            print(f"Best score achieved: {memory['best_score']}")
+        if 'iteration_history' in memory:
+            print(f"Iteration history entries: {len(memory['iteration_history'])}")
+        if 'failed_approaches' in memory and memory['failed_approaches']:
+            print(f"Failed approaches recorded: {len(memory['failed_approaches'])}")
+            for fa in memory['failed_approaches'][-3:]:  # Show last 3
+                print(f"  - {fa.get('approach', 'unknown')}: {fa.get('reason', 'unknown')}")
+        if 'error_patterns' in memory and memory['error_patterns']:
+            print(f"Error patterns: {memory['error_patterns']}")
 
         return memory
     except Exception as e:
@@ -1268,42 +1428,199 @@ def calculate_solution_score(verify, good_verify):
 
     return score
 
-def extract_answer_from_solution(solution):
+def extract_answer_from_solution(solution, problem_type=None):
     """
-    Extract the mathematical answer from a solution (e.g., k ∈ {0,1,...,n}).
+    Extract the mathematical answer from a solution with generalized pattern matching.
+    (Tier 3: Answer Validation Generalization)
+
+    Supports multiple answer types:
+    - Set membership (k ∈ {0,1,...,n})
+    - Equality (x = 5, n = 2^k)
+    - Yes/No answers
+    - Counting answers (The number is 42)
+    - Geometric answers (angle = 60°, point P = (1,2))
+    - Algebraic expressions (f(n) = n^2 + 1)
+    - Range answers (0 ≤ x ≤ n)
 
     Args:
         solution: Solution text
+        problem_type: Optional hint about problem type (number_theory, geometry, combinatorics, etc.)
 
     Returns:
-        str: Extracted answer or None if not found
+        dict: Extracted answer with type information, or None if not found
     """
     if not solution:
         return None
 
-    # Look for common answer patterns
     import re
 
-    # Pattern 1: k ∈ {explicit set}
+    # Result structure for richer answer information
+    result = {
+        'raw': None,
+        'type': 'unknown',
+        'variable': None,
+        'value': None,
+        'confidence': 'low'
+    }
+
+    # === Pattern 1: Generic variable ∈ {set} ===
+    # Matches: k ∈ {0,1,...,n}, x ∈ {1,2,3}, n ∈ ℤ
+    match = re.search(r'([a-zA-Z_]\w*)\s*[∈∊∈]\s*\{([^}]+)\}', solution)
+    if match:
+        result['raw'] = f"{match.group(1)} ∈ {{{match.group(2)}}}"
+        result['type'] = 'set_membership'
+        result['variable'] = match.group(1)
+        result['value'] = match.group(2)
+        result['confidence'] = 'high'
+        return result
+
+    # === Pattern 2: Generic variable = value ===
+    # Matches: k = 5, n = 2^k, x = n/2, angle = 60
+    match = re.search(r'([a-zA-Z_]\w*)\s*=\s*([^.\n,;]+?)(?:\.|,|;|$|\n)', solution)
+    if match:
+        var = match.group(1).strip()
+        val = match.group(2).strip()
+        # Avoid matching common false positives
+        if var.lower() not in ['if', 'then', 'let', 'where', 'such', 'for', 'and', 'or']:
+            result['raw'] = f"{var} = {val}"
+            result['type'] = 'equality'
+            result['variable'] = var
+            result['value'] = val
+            result['confidence'] = 'medium'
+            return result
+
+    # === Pattern 3: Yes/No answer ===
+    # Matches: "The answer is yes", "Therefore, no", "Yes, because..."
+    yes_no_patterns = [
+        r'(?:the\s+)?answer\s+is\s+(yes|no)',
+        r'(?:therefore|hence|thus),?\s+(yes|no)',
+        r'^(yes|no)[,.\s]',
+        r'(yes|no),?\s+(?:because|since|as)'
+    ]
+    for pattern in yes_no_patterns:
+        match = re.search(pattern, solution, re.IGNORECASE | re.MULTILINE)
+        if match:
+            result['raw'] = match.group(1).lower()
+            result['type'] = 'yes_no'
+            result['variable'] = None
+            result['value'] = match.group(1).lower()
+            result['confidence'] = 'high'
+            return result
+
+    # === Pattern 4: Counting answer ===
+    # Matches: "The number is 42", "There are exactly 100", "The count is n^2"
+    count_patterns = [
+        r'(?:the\s+)?(?:number|count|total)\s+(?:of\s+\w+\s+)?is\s+(\d+|[a-zA-Z_]\w*(?:\s*[\+\-\*\/\^]\s*[a-zA-Z_\d]+)*)',
+        r'there\s+(?:are|exist)\s+(?:exactly\s+)?(\d+)',
+        r'(\d+)\s+(?:solutions?|ways?|elements?|configurations?)'
+    ]
+    for pattern in count_patterns:
+        match = re.search(pattern, solution, re.IGNORECASE)
+        if match:
+            result['raw'] = f"count = {match.group(1)}"
+            result['type'] = 'counting'
+            result['variable'] = 'count'
+            result['value'] = match.group(1)
+            result['confidence'] = 'medium'
+            return result
+
+    # === Pattern 5: Geometric answer ===
+    # Matches: "angle = 60°", "point P = (1, 2)", "length = √2"
+    geo_patterns = [
+        r'(?:angle|∠)\s*(?:[A-Z]{2,3})?\s*=?\s*(\d+)°?',
+        r'point\s+([A-Z])\s*=\s*\(([^)]+)\)',
+        r'(?:length|distance|radius)\s*=\s*([^.\n,]+)',
+        r'(?:area|perimeter)\s*=\s*([^.\n,]+)'
+    ]
+    for pattern in geo_patterns:
+        match = re.search(pattern, solution, re.IGNORECASE)
+        if match:
+            if 'angle' in pattern.lower() or '∠' in pattern:
+                result['raw'] = f"angle = {match.group(1)}°"
+                result['type'] = 'geometric_angle'
+                result['value'] = match.group(1)
+            elif 'point' in pattern.lower():
+                result['raw'] = f"point {match.group(1)} = ({match.group(2)})"
+                result['type'] = 'geometric_point'
+                result['value'] = match.group(2)
+            else:
+                result['raw'] = f"{match.group(0)}"
+                result['type'] = 'geometric_measure'
+                result['value'] = match.group(1)
+            result['confidence'] = 'medium'
+            return result
+
+    # === Pattern 6: Range/Inequality answer ===
+    # Matches: "0 ≤ x ≤ n", "x > 0", "n is at most 100"
+    range_patterns = [
+        r'(\d+|[a-zA-Z])\s*[≤≥<>]\s*([a-zA-Z_]\w*)\s*[≤≥<>]\s*(\d+|[a-zA-Z_]\w*)',
+        r'([a-zA-Z_]\w*)\s*[≤≥<>]\s*(\d+|[a-zA-Z_]\w*)',
+        r'([a-zA-Z_]\w*)\s+is\s+at\s+(?:most|least)\s+(\d+|[a-zA-Z_]\w*)'
+    ]
+    for pattern in range_patterns:
+        match = re.search(pattern, solution)
+        if match:
+            result['raw'] = match.group(0)
+            result['type'] = 'range'
+            result['value'] = match.group(0)
+            result['confidence'] = 'medium'
+            return result
+
+    # === Pattern 7: "Answer is" fallback ===
+    match = re.search(r'(?:the\s+)?answer\s+is\s*[:\s]*([^.\n]+)', solution, re.IGNORECASE)
+    if match:
+        result['raw'] = match.group(1).strip()
+        result['type'] = 'explicit_answer'
+        result['value'] = match.group(1).strip()
+        result['confidence'] = 'high'
+        return result
+
+    # === Pattern 8: "Therefore" conclusion ===
+    match = re.search(r'(?:therefore|hence|thus|so)\s*,?\s*([a-zA-Z_]\w*)\s*=\s*([^.\n]+)', solution, re.IGNORECASE)
+    if match:
+        result['raw'] = f"{match.group(1)} = {match.group(2).strip()}"
+        result['type'] = 'conclusion'
+        result['variable'] = match.group(1)
+        result['value'] = match.group(2).strip()
+        result['confidence'] = 'medium'
+        return result
+
+    # === Legacy Pattern for backward compatibility ===
+    # Pattern: k ∈ {explicit set} (original IMO-specific pattern)
     match = re.search(r'k\s*[∈∊∈]\s*\{([^}]+)\}', solution)
     if match:
-        return f"k ∈ {{{match.group(1)}}}"
+        return {
+            'raw': f"k ∈ {{{match.group(1)}}}",
+            'type': 'set_membership',
+            'variable': 'k',
+            'value': match.group(1),
+            'confidence': 'high'
+        }
 
-    # Pattern 2: k = specific values
-    match = re.search(r'k\s*=\s*([^.\n]+)', solution)
-    if match:
-        return f"k = {match.group(1).strip()}"
+    return None
 
-    # Pattern 3: "answer is" or "therefore k"
-    match = re.search(r'(?:answer is|therefore\s+k)\s*[:\s]+([^.\n]+)', solution, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
 
+def extract_answer_simple(solution):
+    """
+    Simple string extraction for backward compatibility.
+    Returns just the raw answer string, not the full dict.
+    """
+    result = extract_answer_from_solution(solution)
+    if result:
+        return result.get('raw')
     return None
 
 def validate_answer_change(prev_solution, new_solution, iteration, verbose=True):
     """
     Validate that answer changes are not regressions (narrowing without justification).
+    (Tier 3: Generalized Answer Validation)
+
+    Supports validation for multiple answer types:
+    - Set narrowing detection
+    - Numerical value changes
+    - Yes/No flip detection
+    - Range restriction detection
+    - Geometric value changes
 
     Args:
         prev_solution: Previous solution text
@@ -1312,7 +1629,7 @@ def validate_answer_change(prev_solution, new_solution, iteration, verbose=True)
         verbose: Print validation warnings
 
     Returns:
-        dict: Validation result with warning flags
+        dict: Validation result with warning flags and detailed change info
     """
     prev_answer = extract_answer_from_solution(prev_solution)
     new_answer = extract_answer_from_solution(new_solution)
@@ -1322,53 +1639,132 @@ def validate_answer_change(prev_solution, new_solution, iteration, verbose=True)
         'new_answer': new_answer,
         'changed': False,
         'narrowed': False,
-        'warning': None
+        'flipped': False,  # For yes/no changes
+        'regression_risk': 'none',  # none, low, medium, high
+        'warning': None,
+        'change_type': None
     }
 
-    if prev_answer and new_answer and prev_answer != new_answer:
-        result['changed'] = True
+    # Handle case where answers couldn't be extracted
+    if not prev_answer or not new_answer:
+        return result
 
-        # Check for common narrowing patterns
-        if verbose:
-            print(f"\n{'='*80}")
-            print(f">>>>>>> [ANSWER VALIDATION] Answer change detected at iteration {iteration}")
-            print(f">>>>>>> [ANSWER VALIDATION] Previous: {prev_answer}")
-            print(f">>>>>>> [ANSWER VALIDATION] New:      {new_answer}")
+    # Get raw answers for comparison
+    prev_raw = prev_answer.get('raw', str(prev_answer)) if isinstance(prev_answer, dict) else str(prev_answer)
+    new_raw = new_answer.get('raw', str(new_answer)) if isinstance(new_answer, dict) else str(new_answer)
 
-        # Pattern detection: {0,...,n} → {0,...,⌊n/2⌋} is narrowing
-        if '{0' in prev_answer and '{0' in new_answer:
-            # Extract upper bounds
-            import re
-            prev_match = re.search(r'\.\.\.\s*,?\s*([^}]+)', prev_answer)
-            new_match = re.search(r'\.\.\.\s*,?\s*([^}]+)', new_answer)
+    if prev_raw == new_raw:
+        return result
 
-            if prev_match and new_match:
-                prev_upper = prev_match.group(1).strip()
-                new_upper = new_match.group(1).strip()
+    result['changed'] = True
 
-                # Check if new bound appears more restrictive
-                if 'n' in prev_upper and ('/' in new_upper or '⌊' in new_upper or '⌈' in new_upper):
-                    result['narrowed'] = True
-                    result['warning'] = f"Answer space narrowed from {prev_upper} to {new_upper}"
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [ANSWER VALIDATION] Answer change detected at iteration {iteration}")
+        print(f">>>>>>> [ANSWER VALIDATION] Previous: {prev_raw}")
+        print(f">>>>>>> [ANSWER VALIDATION] New:      {new_raw}")
+        if isinstance(prev_answer, dict) and isinstance(new_answer, dict):
+            print(f">>>>>>> [ANSWER VALIDATION] Type change: {prev_answer.get('type', '?')} → {new_answer.get('type', '?')}")
 
-                    if verbose:
-                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Answer space narrowed!")
-                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  From upper bound: {prev_upper}")
-                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  To upper bound:   {new_upper}")
-                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  This requires STRONG justification")
-                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Verify that the restriction is proven, not assumed")
+    import re
 
-        # Pattern detection: full set → partial set
-        if '...' in prev_answer and '...' not in new_answer:
-            result['narrowed'] = True
-            result['warning'] = "Changed from range to specific values"
+    # === Type-specific validation ===
+
+    # 1. Yes/No flip detection (high risk)
+    if isinstance(prev_answer, dict) and isinstance(new_answer, dict):
+        if prev_answer.get('type') == 'yes_no' and new_answer.get('type') == 'yes_no':
+            if prev_answer.get('value') != new_answer.get('value'):
+                result['flipped'] = True
+                result['regression_risk'] = 'high'
+                result['warning'] = f"Yes/No answer flipped from {prev_answer.get('value')} to {new_answer.get('value')}"
+                result['change_type'] = 'yes_no_flip'
+
+                if verbose:
+                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  CRITICAL: Yes/No answer FLIPPED!")
+                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  This is a fundamental change requiring strong justification")
+
+    # 2. Set narrowing detection
+    if '{' in prev_raw and '{' in new_raw:
+        prev_match = re.search(r'\{([^}]+)\}', prev_raw)
+        new_match = re.search(r'\{([^}]+)\}', new_raw)
+
+        if prev_match and new_match:
+            prev_set_str = prev_match.group(1)
+            new_set_str = new_match.group(1)
+
+            # Check for range narrowing: {0,...,n} → {0,...,⌊n/2⌋}
+            if '...' in prev_set_str and '...' in new_set_str:
+                prev_upper = re.search(r'\.\.\.\s*,?\s*([^}]+)', prev_set_str)
+                new_upper = re.search(r'\.\.\.\s*,?\s*([^}]+)', new_set_str)
+
+                if prev_upper and new_upper:
+                    prev_bound = prev_upper.group(1).strip()
+                    new_bound = new_upper.group(1).strip()
+
+                    # Detect restrictive changes
+                    if len(new_bound) > len(prev_bound) or '/' in new_bound or '⌊' in new_bound or '⌈' in new_bound:
+                        result['narrowed'] = True
+                        result['regression_risk'] = 'high'
+                        result['warning'] = f"Answer space narrowed from upper bound {prev_bound} to {new_bound}"
+                        result['change_type'] = 'set_narrowing'
+
+                        if verbose:
+                            print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Answer space NARROWED!")
+                            print(f">>>>>>> [ANSWER VALIDATION] ⚠️  From upper bound: {prev_bound}")
+                            print(f">>>>>>> [ANSWER VALIDATION] ⚠️  To upper bound:   {new_bound}")
+                            print(f">>>>>>> [ANSWER VALIDATION] ⚠️  This requires STRONG justification")
+
+            # Check for range to specific values: {0,...,n} → {0,1,2}
+            elif '...' in prev_set_str and '...' not in new_set_str:
+                result['narrowed'] = True
+                result['regression_risk'] = 'medium'
+                result['warning'] = "Changed from range to specific values"
+                result['change_type'] = 'range_to_specific'
+
+                if verbose:
+                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Changed from range to specific values")
+                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Verify this restriction is proven")
+
+    # 3. Numerical value change detection
+    if isinstance(prev_answer, dict) and isinstance(new_answer, dict):
+        prev_val = prev_answer.get('value', '')
+        new_val = new_answer.get('value', '')
+
+        # Try to parse as numbers
+        try:
+            prev_num = float(prev_val) if prev_val.replace('.', '').replace('-', '').isdigit() else None
+            new_num = float(new_val) if new_val.replace('.', '').replace('-', '').isdigit() else None
+
+            if prev_num is not None and new_num is not None and prev_num != new_num:
+                result['change_type'] = 'numerical_change'
+                result['regression_risk'] = 'medium'
+                result['warning'] = f"Numerical value changed from {prev_num} to {new_num}"
+
+                if verbose:
+                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Numerical value changed!")
+                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  From: {prev_num}")
+                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  To:   {new_num}")
+        except (ValueError, AttributeError):
+            pass
+
+    # 4. Variable change detection
+    if isinstance(prev_answer, dict) and isinstance(new_answer, dict):
+        prev_var = prev_answer.get('variable')
+        new_var = new_answer.get('variable')
+
+        if prev_var and new_var and prev_var != new_var:
+            result['regression_risk'] = 'low'
+            result['warning'] = f"Answer variable changed from {prev_var} to {new_var}"
+            result['change_type'] = 'variable_change'
 
             if verbose:
-                print(f">>>>>>> [ANSWER VALIDATION] ⚠️  WARNING: Changed from range to specific values")
-                print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Verify this restriction is proven")
+                print(f">>>>>>> [ANSWER VALIDATION] ℹ️  Answer variable changed: {prev_var} → {new_var}")
 
-        if verbose:
-            print(f"{'='*80}\n")
+    # Summary
+    if verbose:
+        risk_emoji = {'none': '✓', 'low': 'ℹ️', 'medium': '⚠️', 'high': '❌'}
+        print(f">>>>>>> [ANSWER VALIDATION] Regression risk: {result['regression_risk']} {risk_emoji.get(result['regression_risk'], '')}")
+        print(f"{'='*80}\n")
 
     return result
 
@@ -1393,11 +1789,22 @@ def detect_stuck_pattern(correct_history, error_history, current_iteration, thre
     recent_corrects = correct_history[-threshold:]
     recent_errors = error_history[-threshold:]
 
-    # Stuck if: all recent corrects are 0 AND errors are increasing or staying high
+    # Stuck if: all recent corrects are 0 AND errors are not decreasing over consecutive iterations
     all_zero_corrects = all(c == 0 for c in recent_corrects)
-    errors_not_decreasing = all(recent_errors[i] >= recent_errors[0] for i in range(len(recent_errors)))
 
-    if all_zero_corrects and errors_not_decreasing:
+    # Bug fix: Compare consecutive errors instead of comparing all to first error
+    # This properly detects monotonic non-decrease: each error >= previous error
+    errors_not_decreasing = all(
+        recent_errors[i] >= recent_errors[i-1]
+        for i in range(1, len(recent_errors))
+    ) if len(recent_errors) > 1 else True
+
+    # Additional check: Errors staying consistently high (above threshold)
+    # This catches cases where errors oscillate but never truly decrease
+    avg_errors = sum(recent_errors) / len(recent_errors) if recent_errors else 0
+    errors_consistently_high = all(e >= avg_errors * 0.8 for e in recent_errors) and avg_errors > 0
+
+    if all_zero_corrects and (errors_not_decreasing or errors_consistently_high):
         if verbose:
             print(f"\n{'='*80}")
             print(f">>>>>>> [STUCK DETECTION] Stuck pattern detected at iteration {current_iteration}")
@@ -1405,6 +1812,10 @@ def detect_stuck_pattern(correct_history, error_history, current_iteration, thre
             for i, (c, e) in enumerate(zip(recent_corrects, recent_errors)):
                 iter_num = current_iteration - threshold + i + 1
                 print(f">>>>>>> [STUCK DETECTION]   Iteration {iter_num}: {c} corrects, {e} errors")
+            print(f">>>>>>> [STUCK DETECTION] Detection reasons:")
+            print(f">>>>>>> [STUCK DETECTION]   - Zero corrects: {all_zero_corrects}")
+            print(f">>>>>>> [STUCK DETECTION]   - Errors not decreasing (consecutive): {errors_not_decreasing}")
+            print(f">>>>>>> [STUCK DETECTION]   - Errors consistently high (avg={avg_errors:.1f}): {errors_consistently_high}")
             print(f">>>>>>> [STUCK DETECTION] ⚠️  No improvement in {threshold} iterations")
             print(f">>>>>>> [STUCK DETECTION] ⚠️  Recommendation: Stop or escalate reasoning effort")
             print(f"{'='*80}\n")
