@@ -41,7 +41,7 @@ from agent_oai import (
 )
 
 # --- CONFIGURATION ---
-MODEL_NAME = "gpt_oss"
+MODEL_NAME = "openai/gpt-oss-120b"
 # Use OpenAI-compatible API endpoint (e.g., sglang)
 API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
 
