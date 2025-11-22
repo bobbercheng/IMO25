@@ -1830,8 +1830,9 @@ def detect_stuck_pattern(correct_history, error_history, current_iteration, thre
 
 def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                self_imp_reasoning="high", ver_reasoning="high",
-               max_adversarial_rounds=10, consecutive_robust_threshold=3,
-               stuck_threshold=3, memory_file=None, verbose=True):
+               max_adversarial_rounds=12, consecutive_robust_threshold=3,
+               stuck_threshold=4, memory_file=None, verbose=True,
+               defense_first=True):
     """
     Main RLAC (Reinforcement Learning with Adversarial Critics) agent.
 
@@ -1852,11 +1853,12 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         sol_reasoning: Reasoning effort for solution generation (default: "low")
         self_imp_reasoning: Reasoning effort for self-improvement (default: "high")
         ver_reasoning: Reasoning effort for adversarial attacks (default: "high")
-        max_adversarial_rounds: Maximum RLAC rounds (default: 10)
+        max_adversarial_rounds: Maximum RLAC rounds (default: 12)
         consecutive_robust_threshold: Consecutive robust verdicts needed for success (default: 3)
-        stuck_threshold: Consecutive failed fixes before declaring stuck (default: 3)
+        stuck_threshold: Consecutive failed fixes before declaring stuck (default: 4)
         memory_file: Path to save RLAC state and attack history
         verbose: Enable detailed logging
+        defense_first: If True, use defense-first mode for proactive attack anticipation (default: True)
 
     Returns:
         Solution string if successful, None if failed
@@ -1871,6 +1873,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     print(f">>>>>>> [RLAC CONFIG] Generator reasoning: {sol_reasoning}")
     print(f">>>>>>> [RLAC CONFIG] Critic reasoning: {ver_reasoning}")
     print(f">>>>>>> [RLAC CONFIG] Self-improvement reasoning: {self_imp_reasoning}")
+    print(f">>>>>>> [RLAC CONFIG] Defense-first mode: {defense_first}")
     print("="*80 + "\n")
 
     # Import adversarial critic
@@ -1891,11 +1894,20 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     # Phase 1: Generate initial solution
     print("\n" + "="*80)
     print(">>>>>>> [RLAC PHASE 1] Initial Solution Generation")
+    if defense_first:
+        print(">>>>>>> [RLAC PHASE 1] Defense-first mode: Generator will anticipate attacks")
     print("="*80 + "\n")
+
+    # Add defense-first prompt to initial solution generation
+    initial_prompts = other_prompts.copy() if other_prompts else []
+    if defense_first:
+        # Add defense-first prompt to make generator anticipate attacks
+        defense_first_prompt = critic.get_defense_first_prompt()
+        initial_prompts.append(defense_first_prompt)
 
     try:
         p1, solution, verify, good_verify = init_explorations(
-            problem_statement, verbose, other_prompts,
+            problem_statement, verbose, initial_prompts,
             sol_reasoning, self_imp_reasoning, ver_reasoning
         )
 
@@ -2034,10 +2046,12 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
             # Generator responds to attack
             print(f">>>>>>> [RLAC GENERATOR] Generating defense/revision...")
+            if defense_first:
+                print(f">>>>>>> [RLAC GENERATOR] Using defense-first mode for proactive defense")
 
             try:
-                # Build defense prompt
-                defense_prompt = critic.get_defense_prompt(attack_result)
+                # Build defense prompt (with defense-first mode if enabled)
+                defense_prompt = critic.get_defense_prompt(attack_result, defense_first=defense_first)
 
                 # Create revision request
                 payload = build_request_payload(
@@ -2112,11 +2126,13 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             print(f">>>>>>> [RLAC WARNING] Unknown verdict from critic")
             consecutive_robust = 0
 
-        # Check for critic-detected stuck pattern
-        if critic.detect_stuck_pattern(recent_rounds=3):
+        # Check for critic-detected stuck pattern (unified with stuck_count detection)
+        # This combines: (1) solution unchanged tracking and (2) attack pattern analysis
+        if critic.detect_stuck_pattern(recent_rounds=4):
             print(f"\n{'='*80}")
             print(f">>>>>>> [RLAC FAILURE] Critic detected stuck pattern")
             print(f">>>>>>> [RLAC FAILURE] Generator unable to address attacks effectively")
+            print(f">>>>>>> [RLAC FAILURE] (stuck_count={stuck_count}, attack_pattern=repeated)")
             print(f"{'='*80}\n")
             return None
 
@@ -2148,7 +2164,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
-          use_proof_sketch=False, use_rlac=False, rlac_max_rounds=10, rlac_robust_threshold=3, rlac_stuck_threshold=3):
+          use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=4,
+          rlac_defense_first=True):
     """
     Main agent function for solving mathematical problems.
 
@@ -2166,9 +2183,10 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         mcts_simulations: Number of MCTS simulations if use_mcts=True (default: 5)
         mcts_exploration: MCTS exploration constant for UCB1 (default: 1.414)
         use_rlac: If True, use RLAC (Adversarial Critic) mode (default: False)
-        rlac_max_rounds: Maximum RLAC adversarial rounds (default: 10)
+        rlac_max_rounds: Maximum RLAC adversarial rounds (default: 12)
         rlac_robust_threshold: Consecutive robust verdicts needed (default: 3)
-        rlac_stuck_threshold: Consecutive failed fixes before stuck (default: 3)
+        rlac_stuck_threshold: Consecutive failed fixes before stuck (default: 4)
+        rlac_defense_first: If True, use defense-first mode for proactive attack anticipation (default: True)
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
@@ -2192,7 +2210,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             consecutive_robust_threshold=rlac_robust_threshold,
             stuck_threshold=rlac_stuck_threshold,
             memory_file=memory_file,
-            verbose=True
+            verbose=True,
+            defense_first=rlac_defense_first
         )
 
     if resume_from_memory and memory_file:
@@ -2567,12 +2586,16 @@ if __name__ == "__main__":
     # RLAC (Adversarial Critic) Arguments
     parser.add_argument('--use-rlac', action='store_true',
                        help='Use RLAC (Adversarial Critic) mode: Generator-Critic adversarial loop')
-    parser.add_argument('--rlac-max-rounds', type=int, default=10,
-                       help='Maximum RLAC adversarial rounds (default: 10)')
+    parser.add_argument('--rlac-max-rounds', type=int, default=12,
+                       help='Maximum RLAC adversarial rounds (default: 12)')
     parser.add_argument('--rlac-robust-threshold', type=int, default=3,
                        help='Consecutive robust verdicts needed for success (default: 3)')
-    parser.add_argument('--rlac-stuck-threshold', type=int, default=3,
-                       help='Consecutive failed fixes before declaring stuck (default: 3)')
+    parser.add_argument('--rlac-stuck-threshold', type=int, default=4,
+                       help='Consecutive failed fixes before declaring stuck (default: 4)')
+    parser.add_argument('--rlac-defense-first', action='store_true', default=True,
+                       help='Enable defense-first mode for proactive attack anticipation (default: True)')
+    parser.add_argument('--no-rlac-defense-first', action='store_true',
+                       help='Disable defense-first mode')
 
     args = parser.parse_args()
 
@@ -2592,6 +2615,7 @@ if __name__ == "__main__":
     rlac_max_rounds = args.rlac_max_rounds
     rlac_robust_threshold = args.rlac_robust_threshold
     rlac_stuck_threshold = args.rlac_stuck_threshold
+    rlac_defense_first = args.rlac_defense_first and not args.no_rlac_defense_first
 
     # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
@@ -2683,7 +2707,8 @@ if __name__ == "__main__":
             sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
                        solution_reasoning, self_improvement_reasoning, verification_reasoning,
                        num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
-                       use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold)
+                       use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
+                       rlac_defense_first)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))

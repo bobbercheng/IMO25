@@ -21,7 +21,9 @@ from adversarial_prompts import (
     get_attack_intensity_prompt,
     build_rlac_control_prompt,
     adversarial_defense_prompt,
-    counterexample_generation_prompt
+    counterexample_generation_prompt,
+    defense_first_generator_prompt,
+    defense_first_revision_prompt
 )
 
 
@@ -247,11 +249,12 @@ Follow the output format specified in your system prompt.
             'timestamp': datetime.now().isoformat()
         }
 
-        # Extract verdict
-        result['verdict'] = self._extract_verdict(attack_text)
-
-        # Extract counterexamples
+        # Extract counterexamples FIRST (needed for verdict validation)
         result['counterexamples'] = self._extract_counterexamples(attack_text)
+
+        # Extract verdict with counterexample validation
+        # This fixes the bug where "Round 1 BROKEN with 0 counterexamples" could occur
+        result['verdict'] = self._extract_verdict(attack_text, result['counterexamples'])
 
         # Extract critical flaws
         result['critical_flaws'] = self._extract_section(attack_text, 'CRITICAL FLAWS')
@@ -286,8 +289,17 @@ Follow the output format specified in your system prompt.
 
         return result
 
-    def _extract_verdict(self, attack_text: str) -> str:
-        """Extract verdict from attack result."""
+    def _extract_verdict(self, attack_text: str, counterexamples: List[str] = None) -> str:
+        """
+        Extract verdict from attack result.
+
+        Args:
+            attack_text: Raw attack output from critic
+            counterexamples: Optional list of parsed counterexamples for validation
+
+        Returns:
+            Verdict string: "BROKEN" / "SUSPICIOUS" / "ROBUST" / "UNKNOWN"
+        """
         text_upper = attack_text.upper()
 
         # Look for explicit verdict
@@ -308,9 +320,19 @@ Follow the output format specified in your system prompt.
                 elif 'SUSPICIOUS' in verdict:
                     return 'SUSPICIOUS'
 
-        # Fallback: infer from content
-        if 'BROKEN' in text_upper or 'COUNTEREXAMPLE' in text_upper:
+        # Fallback: infer from content with validation
+        # FIX: Only mark as BROKEN if there are ACTUAL counterexamples found,
+        # not just because the word "counterexample" appears in the text
+        has_actual_counterexamples = counterexamples and len(counterexamples) > 0
+
+        if 'BROKEN' in text_upper:
             return 'BROKEN'
+        elif has_actual_counterexamples:
+            # Only mark as BROKEN if we actually found counterexamples
+            return 'BROKEN'
+        elif 'COUNTEREXAMPLE' in text_upper and not has_actual_counterexamples:
+            # Mentions counterexamples but none found - suspicious, not broken
+            return 'SUSPICIOUS'
         elif 'ROBUST' in text_upper or 'NO FLAWS' in text_upper:
             return 'ROBUST'
         elif 'SUSPICIOUS' in text_upper:
@@ -407,19 +429,36 @@ Follow the output format specified in your system prompt.
 
         self._log(f"{'='*80}\n")
 
-    def get_defense_prompt(self, attack_result: Dict[str, Any]) -> str:
+    def get_defense_prompt(self, attack_result: Dict[str, Any], defense_first: bool = False) -> str:
         """
         Generate defense prompt for the generator based on attack results.
 
         Args:
             attack_result: Parsed attack result dictionary
+            defense_first: If True, use defense-first mode for more proactive defense
 
         Returns:
             Formatted defense prompt string
         """
+        if defense_first:
+            return defense_first_revision_prompt.format(
+                adversarial_feedback=attack_result['full_attack']
+            )
         return adversarial_defense_prompt.format(
             adversarial_feedback=attack_result['full_attack']
         )
+
+    def get_defense_first_prompt(self) -> str:
+        """
+        Get the defense-first generator prompt for initial solution generation.
+
+        Use this prompt to make the generator proactively anticipate attacks
+        when generating the initial solution.
+
+        Returns:
+            Defense-first generator prompt string
+        """
+        return defense_first_generator_prompt
 
     def get_metrics_summary(self) -> Dict[str, Any]:
         """
@@ -464,12 +503,16 @@ Follow the output format specified in your system prompt.
                 self._log(f"[ADVERSARIAL CRITIC] Error saving attack history: {e}")
             return False
 
-    def detect_stuck_pattern(self, recent_rounds: int = 3) -> bool:
+    def detect_stuck_pattern(self, recent_rounds: int = 4) -> bool:
         """
         Detect if the generator is stuck (not addressing attacks).
 
+        This is the UNIFIED stuck detection mechanism that combines:
+        1. Solution unchanged detection (tracked by caller via stuck_count)
+        2. Attack pattern analysis (same flaws repeating)
+
         Args:
-            recent_rounds: Number of recent rounds to check
+            recent_rounds: Number of recent rounds to check (default: 4)
 
         Returns:
             True if stuck pattern detected
@@ -479,15 +522,29 @@ Follow the output format specified in your system prompt.
 
         recent_attacks = self.attack_history[-recent_rounds:]
 
-        # Stuck if all recent attacks found issues but verdict didn't improve
+        # Pattern 1: All recent attacks found issues but verdict didn't improve
         all_broken = all(a['verdict'] == 'BROKEN' for a in recent_attacks)
         all_have_counterexamples = all(len(a['counterexamples']) > 0 for a in recent_attacks)
 
-        if all_broken and all_have_counterexamples:
+        # Pattern 2: Same counterexamples appearing repeatedly
+        if len(recent_attacks) >= 2:
+            first_ces = set(recent_attacks[0].get('counterexamples', [])[:3])
+            last_ces = set(recent_attacks[-1].get('counterexamples', [])[:3])
+            overlapping_ces = len(first_ces & last_ces) > 0 if first_ces and last_ces else False
+        else:
+            overlapping_ces = False
+
+        is_stuck = all_broken and (all_have_counterexamples or overlapping_ces)
+
+        if is_stuck:
             if self.verbose:
                 self._log(f"\n{'='*80}")
                 self._log(f"[ADVERSARIAL CRITIC] STUCK PATTERN DETECTED")
-                self._log(f"[ADVERSARIAL CRITIC] Last {recent_rounds} rounds all BROKEN with counterexamples")
+                self._log(f"[ADVERSARIAL CRITIC] Last {recent_rounds} rounds all BROKEN")
+                if all_have_counterexamples:
+                    self._log(f"[ADVERSARIAL CRITIC] All rounds had counterexamples")
+                if overlapping_ces:
+                    self._log(f"[ADVERSARIAL CRITIC] Same counterexamples repeating")
                 self._log(f"[ADVERSARIAL CRITIC] Generator may be unable to address attacks")
                 self._log(f"{'='*80}\n")
             return True

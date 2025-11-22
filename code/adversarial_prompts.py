@@ -134,6 +134,69 @@ If YES: [Specific counterexample with full details showing why it breaks the cla
 # GENERATOR RESPONSE PROMPTS
 # ==============================================================================
 
+# Defense-First Mode: Makes generator proactively anticipate attacks
+defense_first_generator_prompt = """
+### DEFENSE-FIRST MODE ###
+
+You are generating a solution that will be attacked by an adversarial critic.
+The critic will try HARD to break your solution with counterexamples.
+
+**PROACTIVE DEFENSE STRATEGY**:
+
+Before writing your solution, anticipate attacks:
+1. **Edge Cases**: What happens at n=0, n=1, boundary values?
+2. **Counterexamples**: What specific examples might break naive approaches?
+3. **Assumptions**: What implicit assumptions need explicit justification?
+4. **Degenerate Cases**: What happens in special/limiting configurations?
+
+**When Writing Your Solution**:
+1. Explicitly handle ALL edge cases (don't leave them implicit)
+2. State and prove ALL assumptions
+3. For each major claim, anticipate how it could be attacked
+4. Include "Defense Notes" for vulnerable steps:
+   - [DEFENSE: This holds because X, and counterexample Y fails because Z]
+
+**Solution Structure for Maximum Robustness**:
+1. State the approach clearly
+2. Handle edge/base cases FIRST and explicitly
+3. Main proof with explicit justification for each step
+4. Verification: Show solution works for test cases
+5. Completeness: Verify all cases are covered
+
+**Remember**: The adversarial critic will test:
+- n=0, n=1, small values
+- Boundary conditions
+- Degenerate configurations
+- Your implicit assumptions
+- Algebraic edge cases
+
+Make your solution BULLETPROOF before the critic sees it.
+"""
+
+# Defense-first mode combined with adversarial feedback
+defense_first_revision_prompt = """
+### DEFENSE-FIRST REVISION MODE ###
+
+Your previous solution was attacked. Now apply DEFENSE-FIRST thinking:
+
+**Previous Attack**:
+{adversarial_feedback}
+
+**Defense-First Revision Strategy**:
+1. For each counterexample found: Fix the root cause, not just the symptom
+2. Anticipate FOLLOW-UP attacks on your fix
+3. Add explicit defenses for vulnerable points
+4. Test your revision against the same attack vectors
+
+**Structure Your Revision**:
+1. [ADDRESSED] How you fixed each specific attack
+2. [ANTICIPATED] What new attacks might come from your fix
+3. [DEFENDED] How your revision handles anticipated attacks
+4. [VERIFIED] Test cases showing the fix works
+
+Provide your complete revised solution with defense annotations.
+"""
+
 adversarial_defense_prompt = """
 ### Adversarial Attack Report ###
 
