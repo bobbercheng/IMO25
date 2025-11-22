@@ -377,3 +377,118 @@ def build_rlac_control_prompt(round_num, max_rounds, intensity, attack_history):
         intensity=intensity,
         attack_history=history_summary
     )
+
+
+# ==============================================================================
+# CONSTRUCTIVE CRITIC PROMPTS (for helping find valid solutions)
+# ==============================================================================
+
+constructive_critic_system_prompt = """
+You are a CONSTRUCTIVE CRITIC for mathematical proofs. Your goal is to help find a VALID solution.
+
+### Your Mission ###
+While you still find flaws, you ALSO provide constructive guidance on how to fix them.
+You are rewarded for helping the generator converge to a correct solution.
+
+### Constructive Approach ###
+1. **Identify specific flaws** with concrete counterexamples
+2. **Explain WHY the flaw breaks the solution** (root cause analysis)
+3. **Suggest how to FIX each flaw** (constructive guidance)
+4. **Point to promising directions** in partial solutions
+5. **Acknowledge what IS correct** to preserve good parts
+
+### Output Format ###
+**VERDICT**: [BROKEN / NEEDS_WORK / ALMOST_ROBUST / ROBUST]
+
+**WHAT WORKS** (preserve these parts):
+- [Correct aspect 1]
+- [Correct aspect 2]
+...
+
+**FLAWS FOUND**:
+- Flaw 1: [Description]
+  - Why it fails: [Concrete counterexample]
+  - How to fix: [Constructive suggestion]
+- Flaw 2: ...
+
+**SUGGESTED APPROACH**:
+[If solution is fundamentally broken, suggest a better approach direction]
+
+**NEXT STEPS**:
+1. [Highest priority fix]
+2. [Second priority fix]
+...
+"""
+
+constructive_defense_prompt = """
+### Constructive Feedback Report ###
+
+The constructive critic has analyzed your solution:
+
+{constructive_feedback}
+
+### Your Task ###
+
+Focus on the **SUGGESTED APPROACH** and **NEXT STEPS** provided.
+
+1. **Keep what works**: Don't discard correct parts of your solution
+2. **Fix each flaw**: Address the root cause, not just the symptom
+3. **Follow suggested approach**: If a better direction is suggested, consider pivoting
+4. **Verify fixes**: Test that your changes actually address the counterexamples
+
+**IMPORTANT**:
+- If your current approach is fundamentally flawed, it's better to start fresh with a new approach
+- Focus on getting ONE complete correct solution rather than patching a broken one
+- Make sure your final answer matches the problem requirements
+
+Provide your complete revised solution in standard format.
+"""
+
+solution_regeneration_prompt = """
+### SOLUTION REGENERATION MODE ###
+
+Previous attempts have not produced a valid solution. Let's start fresh with a different approach.
+
+**What NOT to do** (failed approaches):
+{failed_approaches}
+
+**Problem Requirements Checklist**:
+{problem_requirements}
+
+**Fresh Start Strategy**:
+1. Read the problem again carefully
+2. Identify ALL constraints and requirements
+3. Consider a DIFFERENT approach than before
+4. Build solution step by step with explicit justification
+5. Verify each step before proceeding
+
+**Approach Suggestions**:
+- If combinatorics failed, try algebraic approach
+- If direct proof failed, try contradiction/contrapositive
+- If general case failed, work from small cases and find pattern
+- If construction failed, prove bounds first
+
+Generate a complete solution using a FRESH APPROACH.
+"""
+
+def get_constructive_prompt(previous_verdict, attack_result, round_num):
+    """
+    Get appropriate constructive prompt based on situation.
+
+    Args:
+        previous_verdict: Last verdict (BROKEN, SUSPICIOUS, etc.)
+        attack_result: Full attack result dict
+        round_num: Current round number
+
+    Returns:
+        Appropriate constructive prompt
+    """
+    if previous_verdict == "BROKEN" and round_num >= 3:
+        # Solution is persistently broken - need more help
+        return constructive_defense_prompt.format(
+            constructive_feedback=attack_result.get('full_attack', '')
+        )
+    else:
+        return constructive_defense_prompt.format(
+            constructive_feedback=attack_result.get('full_attack', '')
+        )

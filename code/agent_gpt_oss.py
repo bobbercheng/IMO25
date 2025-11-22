@@ -1898,11 +1898,79 @@ def detect_stuck_pattern(correct_history, error_history, current_iteration, thre
 # RLAC (ADVERSARIAL CRITIC) IMPLEMENTATION
 # ==============================================================================
 
+def validate_solution_quality(solution, min_length=500, verbose=True):
+    """
+    Validate that a solution has substantive content before RLAC refinement.
+
+    Args:
+        solution: Solution text to validate
+        min_length: Minimum acceptable length (chars)
+        verbose: Enable logging
+
+    Returns:
+        Tuple of (is_valid, reason)
+    """
+    if solution is None:
+        return False, "Solution is None"
+
+    if len(solution) < min_length:
+        return False, f"Solution too short ({len(solution)} < {min_length} chars)"
+
+    # Check for required structure markers
+    required_markers = ['Summary', 'Solution']
+    found_markers = sum(1 for marker in required_markers if marker.lower() in solution.lower())
+    if found_markers == 0:
+        return False, "Solution missing required structure (no Summary or Solution section)"
+
+    # Check for substantive mathematical content
+    math_indicators = ['$', '\\', 'proof', 'therefore', 'hence', 'thus', 'let', 'assume']
+    math_count = sum(1 for indicator in math_indicators if indicator.lower() in solution.lower())
+    if math_count < 3:
+        return False, f"Solution lacks mathematical content (only {math_count} math indicators)"
+
+    # Check it's not just a summary/answer
+    if len(solution) < 1000 and 'boxed' in solution.lower() and 'proof' not in solution.lower():
+        return False, "Solution appears to be answer-only without proof"
+
+    if verbose:
+        print(f">>>>>>> [VALIDATION] Solution passed quality check ({len(solution)} chars, {found_markers} structure markers, {math_count} math indicators)")
+
+    return True, "Valid"
+
+
+def extract_answer_key(solution):
+    """
+    Extract a normalized answer key from solution for stability tracking.
+
+    Args:
+        solution: Solution text
+
+    Returns:
+        Normalized answer string for comparison
+    """
+    if not solution:
+        return ""
+
+    # Look for boxed answer first
+    import re
+    boxed_match = re.search(r'\\boxed\{([^}]+)\}', solution)
+    if boxed_match:
+        return boxed_match.group(1).strip()
+
+    # Look for "answer is" pattern
+    answer_match = re.search(r'(?:answer|result|conclude)\s+(?:is|:)\s*(.+?)(?:\.|$)', solution, re.IGNORECASE)
+    if answer_match:
+        return answer_match.group(1).strip()[:100]  # Limit length
+
+    return ""
+
+
 def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                self_imp_reasoning="high", ver_reasoning="high",
                max_adversarial_rounds=12, consecutive_robust_threshold=3,
                stuck_threshold=4, memory_file=None, verbose=True,
-               defense_first=True):
+               defense_first=True, max_regeneration_attempts=2,
+               use_constructive_mode=True):
     """
     Main RLAC (Reinforcement Learning with Adversarial Critics) agent.
 
@@ -1917,6 +1985,13 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     - Progressive attack intensity (curriculum learning)
     - Structured penalty/reward signals
 
+    NEW IMPROVEMENTS:
+    - Initial solution validation gate (don't enter loop with invalid solution)
+    - Best solution tracking (preserve progress)
+    - Answer stability constraints (detect oscillation)
+    - Constructive guidance mode (help find valid solutions)
+    - Regeneration fallback (fresh start when stuck)
+
     Args:
         problem_statement: Mathematical problem to solve
         other_prompts: Additional context prompts
@@ -1929,6 +2004,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         memory_file: Path to save RLAC state and attack history
         verbose: Enable detailed logging
         defense_first: If True, use defense-first mode for proactive attack anticipation (default: True)
+        max_regeneration_attempts: Maximum fresh regeneration attempts when severely broken (default: 2)
+        use_constructive_mode: Use constructive critic mode after repeated failures (default: True)
 
     Returns:
         Solution string if successful, None if failed
@@ -1944,12 +2021,18 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     print(f">>>>>>> [RLAC CONFIG] Critic reasoning: {ver_reasoning}")
     print(f">>>>>>> [RLAC CONFIG] Self-improvement reasoning: {self_imp_reasoning}")
     print(f">>>>>>> [RLAC CONFIG] Defense-first mode: {defense_first}")
+    print(f">>>>>>> [RLAC CONFIG] Max regeneration attempts: {max_regeneration_attempts}")
+    print(f">>>>>>> [RLAC CONFIG] Constructive mode: {use_constructive_mode}")
     print("="*80 + "\n")
 
     # Import adversarial critic
     try:
         from adversarial_critic import AdversarialCritic
-        from adversarial_prompts import adversarial_defense_prompt
+        from adversarial_prompts import (
+            adversarial_defense_prompt,
+            constructive_defense_prompt,
+            solution_regeneration_prompt
+        )
     except ImportError as e:
         print(f">>>>>>> [RLAC ERROR] Could not import adversarial modules: {e}")
         print(f">>>>>>> [RLAC ERROR] Falling back to standard agent")
@@ -1960,6 +2043,21 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         reasoning_effort=ver_reasoning,
         verbose=verbose
     )
+
+    # Best solution tracking
+    best_solution = None
+    best_solution_score = -float('inf')
+    best_solution_round = -1
+
+    # Answer stability tracking
+    answer_history = []
+    answer_oscillation_count = 0
+
+    # Failed approaches tracking (for regeneration)
+    failed_approaches = []
+
+    # Regeneration counter
+    regeneration_attempts = 0
 
     # Phase 1: Generate initial solution
     print("\n" + "="*80)
@@ -1975,21 +2073,83 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         defense_first_prompt = critic.get_defense_first_prompt()
         initial_prompts.append(defense_first_prompt)
 
-    try:
-        p1, solution, verify, good_verify = init_explorations(
-            problem_statement, verbose, initial_prompts,
-            sol_reasoning, self_imp_reasoning, ver_reasoning
-        )
+    # Initial solution generation with validation and regeneration
+    solution = None
+    p1 = None
 
-        if solution is None:
-            print(">>>>>>> [RLAC PHASE 1] Failed to generate initial solution")
-            return None
+    while regeneration_attempts <= max_regeneration_attempts:
+        try:
+            # Build prompts for this attempt
+            current_prompts = initial_prompts.copy()
 
-        print(f">>>>>>> [RLAC PHASE 1] Initial solution generated ({len(solution)} chars)")
+            # Add regeneration prompt if not first attempt
+            if regeneration_attempts > 0 and failed_approaches:
+                print(f"\n>>>>>>> [RLAC PHASE 1] Regeneration attempt {regeneration_attempts}/{max_regeneration_attempts}")
+                regen_prompt = solution_regeneration_prompt.format(
+                    failed_approaches="\n".join(f"- {fa}" for fa in failed_approaches[-3:]),
+                    problem_requirements="See problem statement above"
+                )
+                current_prompts.append(regen_prompt)
 
-    except Exception as e:
-        print(f">>>>>>> [RLAC PHASE 1] Error generating initial solution: {e}")
+            p1, solution, verify, good_verify = init_explorations(
+                problem_statement, verbose, current_prompts,
+                sol_reasoning, self_imp_reasoning, ver_reasoning
+            )
+
+            if solution is None:
+                print(">>>>>>> [RLAC PHASE 1] Failed to generate initial solution")
+                regeneration_attempts += 1
+                failed_approaches.append("Generation returned None")
+                continue
+
+            print(f">>>>>>> [RLAC PHASE 1] Initial solution generated ({len(solution)} chars)")
+
+            # VALIDATION GATE: Check solution quality before proceeding
+            is_valid, validation_reason = validate_solution_quality(solution, min_length=500, verbose=verbose)
+
+            if not is_valid:
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [RLAC VALIDATION] FAILED: {validation_reason}")
+                print(f">>>>>>> [RLAC VALIDATION] Solution does not meet quality threshold")
+                print(f"{'='*80}\n")
+
+                failed_approaches.append(f"Validation failed: {validation_reason}")
+                regeneration_attempts += 1
+
+                if regeneration_attempts <= max_regeneration_attempts:
+                    print(f">>>>>>> [RLAC VALIDATION] Attempting regeneration ({regeneration_attempts}/{max_regeneration_attempts})")
+                    continue
+                else:
+                    print(f">>>>>>> [RLAC VALIDATION] Max regeneration attempts reached")
+                    print(f">>>>>>> [RLAC VALIDATION] Proceeding with best available solution")
+                    break
+            else:
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [RLAC VALIDATION] PASSED: Solution meets quality threshold")
+                print(f"{'='*80}\n")
+                break
+
+        except Exception as e:
+            print(f">>>>>>> [RLAC PHASE 1] Error generating initial solution: {e}")
+            regeneration_attempts += 1
+            failed_approaches.append(f"Exception: {str(e)[:100]}")
+            if regeneration_attempts > max_regeneration_attempts:
+                return None
+
+    if solution is None:
+        print(">>>>>>> [RLAC PHASE 1] Could not generate valid initial solution after all attempts")
         return None
+
+    # Initialize best solution tracking
+    best_solution = solution
+    best_solution_score = 0 if "yes" in good_verify.lower() else -10
+    best_solution_round = 0
+    print(f">>>>>>> [RLAC TRACKING] Initial best solution score: {best_solution_score}")
+
+    # Track initial answer for stability monitoring
+    initial_answer = extract_answer_key(solution)
+    answer_history.append(initial_answer)
+    print(f">>>>>>> [RLAC TRACKING] Initial answer key: {initial_answer[:50]}..." if initial_answer else ">>>>>>> [RLAC TRACKING] No answer key extracted")
 
     # Phase 2: Adversarial refinement loop
     print("\n" + "="*80)
@@ -2000,6 +2160,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     stuck_count = 0
     previous_solution = solution
     rlac_history = []
+    consecutive_broken = 0  # Track consecutive BROKEN verdicts for constructive mode
 
     for round_num in range(max_adversarial_rounds):
         print(f"\n{'='*80}")
@@ -2049,7 +2210,16 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         # Handle verdict
         if verdict == "ROBUST":
             consecutive_robust += 1
+            consecutive_broken = 0  # Reset broken counter
             stuck_count = 0  # Reset stuck counter on progress
+
+            # Update best solution - ROBUST is best possible
+            current_score = 100 - total_penalty  # High base score for ROBUST
+            if current_score > best_solution_score:
+                best_solution = solution
+                best_solution_score = current_score
+                best_solution_round = round_num
+                print(f">>>>>>> [RLAC TRACKING] New best solution found (ROBUST, score: {current_score})")
 
             print(f"\n{'='*80}")
             print(f">>>>>>> [RLAC SUCCESS] Solution survived attack! ({consecutive_robust}/{consecutive_robust_threshold})")
@@ -2101,10 +2271,12 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
         elif verdict == "BROKEN" or verdict == "SUSPICIOUS":
             consecutive_robust = 0  # Reset robust counter
+            consecutive_broken += 1  # Track consecutive broken verdicts
 
             print(f"\n{'='*80}")
             print(f">>>>>>> [RLAC GENERATOR] Solution {verdict}")
             print(f">>>>>>> [RLAC GENERATOR] Counterexamples: {len(counterexamples)}")
+            print(f">>>>>>> [RLAC GENERATOR] Consecutive broken: {consecutive_broken}")
             print(f"{'='*80}\n")
 
             # Show first few counterexamples
@@ -2114,14 +2286,32 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                     print(f">>>>>>> [RLAC GENERATOR]   {i}. {ce[:150]}{'...' if len(ce) > 150 else ''}")
                 print()
 
+            # Calculate current solution score for best solution tracking
+            current_score = -total_penalty - len(counterexamples) * 5
+            if current_score > best_solution_score:
+                best_solution = solution
+                best_solution_score = current_score
+                best_solution_round = round_num
+                print(f">>>>>>> [RLAC TRACKING] New best solution found (score: {current_score}, round: {round_num + 1})")
+
             # Generator responds to attack
             print(f">>>>>>> [RLAC GENERATOR] Generating defense/revision...")
-            if defense_first:
+
+            # Use constructive mode after repeated broken verdicts
+            use_constructive = use_constructive_mode and consecutive_broken >= 3
+            if use_constructive:
+                print(f">>>>>>> [RLAC GENERATOR] Using CONSTRUCTIVE mode (after {consecutive_broken} consecutive broken)")
+            elif defense_first:
                 print(f">>>>>>> [RLAC GENERATOR] Using defense-first mode for proactive defense")
 
             try:
-                # Build defense prompt (with defense-first mode if enabled)
-                defense_prompt = critic.get_defense_prompt(attack_result, defense_first=defense_first)
+                # Build defense prompt (constructive or defense-first mode)
+                if use_constructive:
+                    defense_prompt = constructive_defense_prompt.format(
+                        constructive_feedback=attack_result.get('full_attack', str(counterexamples))
+                    )
+                else:
+                    defense_prompt = critic.get_defense_prompt(attack_result, defense_first=defense_first)
 
                 # Create revision request
                 payload = build_request_payload(
@@ -2147,33 +2337,73 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                         print(f"\n{'='*80}")
                         print(f">>>>>>> [RLAC FAILURE] Generator stuck - unable to address attacks")
                         print(f">>>>>>> [RLAC FAILURE] Same solution for {stuck_count} consecutive rounds")
-                        print(f"{'='*80}\n")
 
-                        # Save failure data
-                        if memory_file:
-                            failure_data = {
-                                'reason': 'generator_stuck',
-                                'stuck_count': stuck_count,
-                                'last_attack': attack_result,
-                                'rlac_history': rlac_history,
-                                'critic_metrics': critic.get_metrics_summary()
-                            }
+                        # Return best solution found if it's better than nothing
+                        if best_solution and best_solution_score > -100:
+                            print(f">>>>>>> [RLAC FALLBACK] Returning best solution found (round {best_solution_round + 1}, score {best_solution_score})")
+                            print(f"{'='*80}\n")
 
-                            try:
-                                with open(memory_file.replace('.json', '_rlac_failure.json'), 'w') as f:
-                                    json.dump(failure_data, f, indent=2, ensure_ascii=False)
-                            except:
-                                pass
+                            # Save failure data with best solution
+                            if memory_file:
+                                failure_data = {
+                                    'reason': 'generator_stuck_with_fallback',
+                                    'stuck_count': stuck_count,
+                                    'last_attack': attack_result,
+                                    'rlac_history': rlac_history,
+                                    'best_solution': best_solution,
+                                    'best_solution_round': best_solution_round,
+                                    'best_solution_score': best_solution_score,
+                                    'critic_metrics': critic.get_metrics_summary()
+                                }
+                                try:
+                                    with open(memory_file.replace('.json', '_rlac_failure.json'), 'w') as f:
+                                        json.dump(failure_data, f, indent=2, ensure_ascii=False)
+                                except:
+                                    pass
 
-                        return None
+                            return best_solution
+                        else:
+                            print(f"{'='*80}\n")
+                            # Save failure data
+                            if memory_file:
+                                failure_data = {
+                                    'reason': 'generator_stuck',
+                                    'stuck_count': stuck_count,
+                                    'last_attack': attack_result,
+                                    'rlac_history': rlac_history,
+                                    'critic_metrics': critic.get_metrics_summary()
+                                }
+
+                                try:
+                                    with open(memory_file.replace('.json', '_rlac_failure.json'), 'w') as f:
+                                        json.dump(failure_data, f, indent=2, ensure_ascii=False)
+                                except:
+                                    pass
+
+                            return None
                 else:
                     # Solution changed - progress made
                     stuck_count = 0
+                    consecutive_broken = 0  # Reset since we made progress
                     solution_delta = len(revised_solution) - len(solution)
                     solution = revised_solution
 
                     print(f">>>>>>> [RLAC GENERATOR] ✓ Solution revised")
                     print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(solution)} chars)")
+
+                    # Answer stability tracking
+                    new_answer = extract_answer_key(solution)
+                    if new_answer and answer_history:
+                        # Check for oscillation (answer matching a previous non-adjacent answer)
+                        if len(answer_history) >= 2 and new_answer in answer_history[:-1]:
+                            answer_oscillation_count += 1
+                            print(f">>>>>>> [RLAC STABILITY] ⚠️  Answer oscillation detected! ({answer_oscillation_count})")
+                            print(f">>>>>>> [RLAC STABILITY] Current answer matches earlier attempt")
+
+                            if answer_oscillation_count >= 3:
+                                print(f">>>>>>> [RLAC STABILITY] Too many oscillations - solution unstable")
+                                # Don't abort, but note the instability
+                        answer_history.append(new_answer)
 
                     # Validate answer change
                     answer_validation = validate_answer_change(
@@ -2235,7 +2465,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
           use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=4,
-          rlac_defense_first=True):
+          rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True):
     """
     Main agent function for solving mathematical problems.
 
@@ -2281,7 +2511,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             stuck_threshold=rlac_stuck_threshold,
             memory_file=memory_file,
             verbose=True,
-            defense_first=rlac_defense_first
+            defense_first=rlac_defense_first,
+            max_regeneration_attempts=rlac_max_regeneration,
+            use_constructive_mode=rlac_constructive_mode
         )
 
     if resume_from_memory and memory_file:
@@ -2664,6 +2896,12 @@ if __name__ == "__main__":
                        help='Enable defense-first mode for proactive attack anticipation (default: True)')
     parser.add_argument('--no-rlac-defense-first', action='store_true',
                        help='Disable defense-first mode')
+    parser.add_argument('--rlac-max-regeneration', type=int, default=2,
+                       help='Maximum regeneration attempts when initial solution is invalid (default: 2)')
+    parser.add_argument('--rlac-constructive-mode', action='store_true', default=True,
+                       help='Use constructive critic mode after repeated failures (default: True)')
+    parser.add_argument('--no-rlac-constructive-mode', action='store_true',
+                       help='Disable constructive critic mode')
 
     args = parser.parse_args()
 
@@ -2684,6 +2922,8 @@ if __name__ == "__main__":
     rlac_robust_threshold = args.rlac_robust_threshold
     rlac_stuck_threshold = args.rlac_stuck_threshold
     rlac_defense_first = args.rlac_defense_first and not args.no_rlac_defense_first
+    rlac_max_regeneration = args.rlac_max_regeneration
+    rlac_constructive_mode = args.rlac_constructive_mode and not args.no_rlac_constructive_mode
 
     # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
@@ -2776,7 +3016,7 @@ if __name__ == "__main__":
                        solution_reasoning, self_improvement_reasoning, verification_reasoning,
                        num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
                        use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
-                       rlac_defense_first)
+                       rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
