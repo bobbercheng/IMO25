@@ -11,7 +11,7 @@ This script tests the new RLAC functions without requiring actual API calls.
 
 import sys
 import os
-sys.path.insert(0, '/home/user/IMO25/code')
+sys.path.insert(0, 'code')
 
 from adversarial_critic import AdversarialCritic
 from agent_rlac import (
