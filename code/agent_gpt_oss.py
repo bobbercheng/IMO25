@@ -1511,12 +1511,12 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             try:
                 from mcts_bfs import mcts_bfs_search
 
-                # Run MCTS search with verification safeguards
+                # Run MCTS search
                 mcts_result = mcts_bfs_search(
                     problem_statement=problem_statement,
                     num_simulations=mcts_simulations,
                     generate_solution_func=init_explorations,
-                    verify_solution_func=verify_solution_safe,  # Use safeguards (timeout, retry, fallback)
+                    verify_solution_func=verify_solution,  # Use simple verification
                     sol_reasoning=sol_reasoning,
                     self_imp_reasoning=self_imp_reasoning,
                     ver_reasoning=ver_reasoning,
@@ -1602,8 +1602,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 return None
     else:
         # We have a solution from memory, need to get good_verify
-        # Use the verification reasoning effort (potentially overridden to 'high')
-        _, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
+        # Use the verification reasoning effort
+        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
 
     error_count = 0
     correct_count = 1
@@ -1701,7 +1701,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Answer narrowing detected - extra scrutiny required")
 
             print(f">>>>>>> Verify the solution.")
-            verify, good_verify = verify_solution_safe(problem_statement, solution, reasoning_effort=ver_reasoning)
+            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
 
             # Calculate and track score for this iteration
             current_score = calculate_solution_score(verify, good_verify)
@@ -1720,15 +1720,17 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             correct_history.append(correct_count)
             error_history.append(error_count)
 
-            # Detect stuck pattern
-            if detect_stuck_pattern(correct_history, error_history, i, threshold=3, verbose=True):
-                print(f">>>>>>> [STUCK DETECTION] Stopping due to stuck pattern")
-                print(f">>>>>>> [STUCK DETECTION] Recommendation: Try different reasoning level or approach")
-                # Save final state before stopping
-                if memory_file:
-                    save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
-                               sol_reasoning, self_imp_reasoning, ver_reasoning)
-                return None
+            # Detect stuck pattern - DISABLED for low/low/low compatibility
+            # Threshold of 3 is too aggressive for low reasoning which needs more iterations
+            # To re-enable, uncomment and increase threshold to 10+ for low reasoning
+            # if detect_stuck_pattern(correct_history, error_history, i, threshold=3, verbose=True):
+            #     print(f">>>>>>> [STUCK DETECTION] Stopping due to stuck pattern")
+            #     print(f">>>>>>> [STUCK DETECTION] Recommendation: Try different reasoning level or approach")
+            #     # Save final state before stopping
+            #     if memory_file:
+            #         save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
+            #                    sol_reasoning, self_imp_reasoning, ver_reasoning)
+            #     return None
 
             # Update previous solution for next iteration
             previous_solution = solution
