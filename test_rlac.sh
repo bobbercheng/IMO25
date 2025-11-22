@@ -39,11 +39,12 @@ echo ""
 # Run the RLAC agent
 python code/agent_gpt_oss.py "$PROBLEM_FILE" \
     --use-rlac \
-    --rlac-max-rounds 5 \
-    --rlac-robust-threshold 2 \
+    --rlac-max-rounds 10 \
+    --rlac-robust-threshold 3 \
     --rlac-stuck-threshold 3 \
     --solution-reasoning low \
-    --self-improvement-reasoning high \
+    --self-improvement-reasoning low \
+    --rlac-max-regeneration 3 \
     --log "$LOG_FILE" \
     --memory "$MEMORY_FILE" \
     --max_runs 1
