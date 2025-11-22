@@ -100,6 +100,70 @@ def log_print(*args, **kwargs):
 # Replace the built-in print function
 print = log_print
 
+# Request/Response Payload Logging
+def log_request_payload(payload, label="API Request"):
+    """
+    Log the full request payload with a descriptive label.
+
+    Args:
+        payload: The request payload dict
+        label: Descriptive label for this request (e.g., "Initial prompt", "Verification prompt")
+    """
+    print(f"\n{'='*80}")
+    print(f">>>>>>> [REQUEST] {label}")
+    print(f"{'='*80}")
+    print(f">>>>>>> Request Payload:")
+    print(json.dumps(payload, indent=4, ensure_ascii=False))
+    print(f">>>>>>> Payload size: {len(json.dumps(payload))} characters")
+    print(f">>>>>>> Message count: {len(payload.get('messages', []))}")
+    if 'reasoning' in payload:
+        print(f">>>>>>> Reasoning effort: {payload['reasoning'].get('effort', 'not specified')}")
+    print(f"{'='*80}\n")
+
+def log_response_payload(response, label="API Response", is_streaming=False):
+    """
+    Log the full response payload with a descriptive label.
+
+    Args:
+        response: The response dict (accumulated for streaming)
+        label: Descriptive label for this response
+        is_streaming: Whether this was a streaming response
+    """
+    print(f"\n{'='*80}")
+    print(f">>>>>>> [RESPONSE] {label}")
+    print(f">>>>>>> Response type: {'Streaming' if is_streaming else 'Non-streaming'}")
+    print(f"{'='*80}")
+
+    # Log response metadata
+    if 'id' in response:
+        print(f">>>>>>> Response ID: {response.get('id', 'N/A')}")
+    if 'model' in response:
+        print(f">>>>>>> Model: {response.get('model', 'N/A')}")
+    if 'usage' in response and response['usage']:
+        usage = response['usage']
+        print(f">>>>>>> Usage - Prompt tokens: {usage.get('prompt_tokens', 'N/A')}")
+        print(f">>>>>>> Usage - Completion tokens: {usage.get('completion_tokens', 'N/A')}")
+        print(f">>>>>>> Usage - Total tokens: {usage.get('total_tokens', 'N/A')}")
+
+    # Log finish reason
+    if 'choices' in response and len(response['choices']) > 0:
+        finish_reason = response['choices'][0].get('finish_reason', 'N/A')
+        print(f">>>>>>> Finish reason: {finish_reason}")
+
+        # Log content length
+        content = response['choices'][0].get('message', {}).get('content', '')
+        print(f">>>>>>> Content length: {len(content)} characters")
+
+    # Log full response structure (truncated for readability)
+    print(f">>>>>>> Full Response Payload:")
+    response_str = json.dumps(response, indent=4, ensure_ascii=False)
+    if len(response_str) > 5000:
+        print(f"{response_str[:5000]}...")
+        print(f">>>>>>> [TRUNCATED - full response is {len(response_str)} characters]")
+    else:
+        print(response_str)
+    print(f"{'='*80}\n")
+
 def set_log_file(log_file_path):
     """Set the log file for output."""
     global _log_file
@@ -185,11 +249,20 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
 
     return payload
 
-def send_api_request(api_key, payload, stream=True):
+def send_api_request(api_key, payload, stream=True, request_label="API Request"):
     """
     Sends the request to the OpenAI-compatible API and returns the response.
     Supports streaming for real-time output display.
+
+    Args:
+        api_key: API key for authentication
+        payload: Request payload dict
+        stream: Whether to use streaming (default: True)
+        request_label: Descriptive label for logging (e.g., "Initial prompt", "Verification prompt")
     """
+    # Log the full request payload
+    log_request_payload(payload, label=request_label)
+
     headers = {
         "Content-Type": "application/json"
     }
@@ -208,11 +281,15 @@ def send_api_request(api_key, payload, stream=True):
         response.raise_for_status()
 
         if stream:
-            return _handle_streaming_response(response)
+            result = _handle_streaming_response(response)
+            # Log the full response payload for streaming
+            log_response_payload(result, label=f"{request_label} - Response", is_streaming=True)
+            return result
         else:
-            print(">>>>>>> Response:")
-            print(json.dumps(response.json(), indent=4))
-            return response.json()
+            result = response.json()
+            # Log the full response payload for non-streaming
+            log_response_payload(result, label=f"{request_label} - Response", is_streaming=False)
+            return result
     except requests.exceptions.RequestException as e:
         print(f"Error during API request: {e}")
         if hasattr(e, 'response') and e.response is not None:
@@ -628,11 +705,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         reasoning_effort=verification_effort  # Use high reasoning for rigorous verification
     )
 
-    if(verbose):
-        print(">>>>>>> Verification prompt:")
-        print(json.dumps(p2, indent=4))
-
-    res = send_api_request(get_api_key(), p2)
+    res = send_api_request(get_api_key(), p2, request_label="Verification prompt")
     out = extract_text_from_response(res)
 
     if(verbose):
@@ -642,7 +715,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     check_correctness = """Response in "yes" or "no". Is the following statement saying the solution is complete, correct, and does not contain critical error or a major justification gap?""" \
             + "\n\n" + out
     prompt = build_request_payload(system_prompt="", question_prompt=check_correctness)
-    r = send_api_request(get_api_key(), prompt)
+    r = send_api_request(get_api_key(), prompt, request_label="Verification correctness check")
     o = extract_text_from_response(r)
 
     if(verbose):
@@ -765,7 +838,7 @@ The expert feedback is too sophisticated for the student to understand. Translat
         print(f">>>>>>> [TRANSLATION] Payload size: {len(json.dumps(payload))} characters")
 
     try:
-        response = send_api_request(get_api_key(), payload, stream=True)
+        response = send_api_request(get_api_key(), payload, stream=True, request_label="Translation layer prompt")
         simplified_feedback = extract_text_from_response(response)
 
         # Analyze simplified feedback
@@ -871,7 +944,7 @@ Now create a proof outline for this problem:
         reasoning_effort=reasoning_effort
     )
 
-    response = send_api_request(get_api_key(), payload)
+    response = send_api_request(get_api_key(), payload, request_label="Proof sketch generation")
     proof_sketch = extract_text_from_response(response)
 
     if verbose:
@@ -937,7 +1010,7 @@ If No:
         reasoning_effort=reasoning_effort
     )
 
-    response = send_api_request(get_api_key(), payload)
+    response = send_api_request(get_api_key(), payload, request_label="Proof structure verification")
     verification_result = extract_text_from_response(response)
 
     # Check if structurally sound
@@ -1003,7 +1076,7 @@ Begin writing the complete proof now:
         reasoning_effort=reasoning_effort
     )
 
-    response = send_api_request(get_api_key(), payload)
+    response = send_api_request(get_api_key(), payload, request_label="Proof details expansion")
     complete_proof = extract_solution(extract_text_from_response(response))
 
     if verbose:
@@ -1065,7 +1138,7 @@ Please revise the proof outline to fix these structural issues while keeping the
             reasoning_effort=sol_reasoning
         )
 
-        response = send_api_request(get_api_key(), payload)
+        response = send_api_request(get_api_key(), payload, request_label="Proof structure fix prompt")
         proof_sketch = extract_text_from_response(response)
 
         # Re-verify
@@ -1342,7 +1415,7 @@ Response in exactly "yes" or "no". No other words.
     """
 
     p1 = build_request_payload(system_prompt="", question_prompt=check_complete_prompt)
-    r = send_api_request(get_api_key(), p1)
+    r = send_api_request(get_api_key(), p1, request_label="Check solution completeness prompt")
     o = extract_text_from_response(r)
 
     print(o)
@@ -1357,10 +1430,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
             reasoning_effort=reasoning_effort
         )
 
-    print(f">>>>>> Initial prompt.")
-    print(json.dumps(p1, indent=4))
-
-    response1 = send_api_request(get_api_key(), p1)
+    response1 = send_api_request(get_api_key(), p1, request_label="Initial solution prompt")
     output1 = extract_text_from_response(response1)
 
     print(f">>>>>>> First solution:")
@@ -1381,7 +1451,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     p1["reasoning"]["effort"] = improvement_effort
     print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
 
-    response2 = send_api_request(get_api_key(), p1)
+    response2 = send_api_request(get_api_key(), p1, request_label="Self-improvement prompt")
     solution = extract_solution(extract_text_from_response(response2))
     print(f">>>>>>> Corrected solution:")
     print(json.dumps(solution, indent=4))
@@ -2065,7 +2135,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 )
 
                 # Generate revised solution
-                response = send_api_request(get_api_key(), payload)
+                response = send_api_request(get_api_key(), payload, request_label="RLAC defense prompt")
                 revised_solution = extract_solution(extract_text_from_response(response))
 
                 # Check if solution actually changed
@@ -2461,9 +2531,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         }
                     )
 
-                print(">>>>>>> New prompt:")
-                print(json.dumps(p1, indent=4))
-                response2 = send_api_request(get_api_key(), p1)
+                response2 = send_api_request(get_api_key(), p1, request_label="Correction prompt")
                 solution = extract_solution(extract_text_from_response(response2))
 
                 print(">>>>>>> Corrected solution:")
