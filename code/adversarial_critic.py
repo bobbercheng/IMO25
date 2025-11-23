@@ -327,7 +327,9 @@ Follow the output format specified in your system prompt.
 
     def _extract_verdict(self, attack_text: str, counterexamples: List[str] = None) -> str:
         """
-        Extract verdict from attack result.
+        Extract verdict from attack result using unified format.
+
+        Expects unified format: ADVERSARIAL_VERDICT: [BROKEN / SUSPICIOUS / ROBUST]
 
         Args:
             attack_text: Raw attack output from critic
@@ -338,14 +340,13 @@ Follow the output format specified in your system prompt.
         """
         text_upper = attack_text.upper()
 
-        # Look for explicit verdict
-        verdict_patterns = [
-            r'ADVERSARIAL VERDICT[:\s]+(\w+)',
-            r'VERDICT[:\s]+(\w+)',
-            r'\*\*VERDICT\*\*[:\s]+(\w+)'
+        # Primary patterns: Unified format (highest priority)
+        unified_patterns = [
+            r'ADVERSARIAL_VERDICT\s*:\s*(\w+)',      # ADVERSARIAL_VERDICT: BROKEN (unified)
+            r'###\s*VERDICT\s*###\s*\n*\s*ADVERSARIAL_VERDICT\s*:\s*(\w+)',  # Section header version
         ]
 
-        for pattern in verdict_patterns:
+        for pattern in unified_patterns:
             match = re.search(pattern, text_upper)
             if match:
                 verdict = match.group(1)
@@ -356,7 +357,26 @@ Follow the output format specified in your system prompt.
                 elif 'SUSPICIOUS' in verdict:
                     return 'SUSPICIOUS'
 
-        # Fallback: infer from content with validation
+        # Fallback patterns (backward compatibility with old format)
+        fallback_patterns = [
+            r'ADVERSARIAL\s+VERDICT[:\s]+(\w+)',     # ADVERSARIAL VERDICT: BROKEN
+            r'\*\*ADVERSARIAL\s+VERDICT\*\*[:\s]+(\w+)',  # **ADVERSARIAL VERDICT**: BROKEN
+            r'\*\*VERDICT\*\*[:\s]+(\w+)',           # **VERDICT**: BROKEN
+            r'VERDICT[:\s]+(\w+)',                    # VERDICT: BROKEN
+        ]
+
+        for pattern in fallback_patterns:
+            match = re.search(pattern, text_upper)
+            if match:
+                verdict = match.group(1)
+                if 'BROKEN' in verdict:
+                    return 'BROKEN'
+                elif 'ROBUST' in verdict:
+                    return 'ROBUST'
+                elif 'SUSPICIOUS' in verdict:
+                    return 'SUSPICIOUS'
+
+        # Content-based inference (last resort)
         # FIX: Only mark as BROKEN if there are ACTUAL counterexamples found,
         # not just because the word "counterexample" appears in the text
         has_actual_counterexamples = counterexamples and len(counterexamples) > 0
@@ -377,22 +397,46 @@ Follow the output format specified in your system prompt.
         return 'UNKNOWN'
 
     def _extract_counterexamples(self, attack_text: str) -> List[str]:
-        """Extract counterexamples from attack result."""
+        """
+        Extract counterexamples from attack result using unified format.
+
+        Expects unified format:
+        COUNTEREXAMPLE_1: [example]
+        COUNTEREXAMPLE_2: [example]
+        ...
+
+        Returns:
+            List of counterexample strings
+        """
         counterexamples = []
 
-        # Pattern 1: Numbered counterexamples
-        pattern1 = r'(?:Counterexample|Counter-example)\s+\d+[:\s]+(.+?)(?=(?:Counterexample|Counter-example)\s+\d+|BOUNDARY|ASSUMPTION|CRITICAL|$)'
-        matches = re.findall(pattern1, attack_text, re.DOTALL | re.IGNORECASE)
-        counterexamples.extend([m.strip() for m in matches if m.strip()])
+        # Primary pattern: Unified format (COUNTEREXAMPLE_N: ...)
+        unified_pattern = r'COUNTEREXAMPLE_(\d+)\s*:\s*(.+?)(?=COUNTEREXAMPLE_\d+|###|BOUNDARY|IMPLICATION|FLAW|CHALLENGE|SEVERITY|NO_COUNTEREXAMPLES|$)'
+        matches = re.findall(unified_pattern, attack_text, re.DOTALL | re.IGNORECASE)
+        for num, content in matches:
+            content = content.strip()
+            if content and content.upper() != 'NO_COUNTEREXAMPLES_FOUND':
+                counterexamples.append(content)
 
-        # Pattern 2: Bulleted counterexamples
-        pattern2 = r'-\s+(?:Counterexample|Counter-example)[:\s]+(.+?)(?=\n-|\n\n|$)'
-        matches = re.findall(pattern2, attack_text, re.DOTALL | re.IGNORECASE)
-        counterexamples.extend([m.strip() for m in matches if m.strip()])
+        # Fallback pattern 1: Numbered counterexamples (Counterexample 1:)
+        if not counterexamples:
+            pattern1 = r'(?:Counterexample|Counter-example)\s+\d+[:\s]+(.+?)(?=(?:Counterexample|Counter-example)\s+\d+|BOUNDARY|ASSUMPTION|CRITICAL|###|$)'
+            matches = re.findall(pattern1, attack_text, re.DOTALL | re.IGNORECASE)
+            counterexamples.extend([m.strip() for m in matches if m.strip()])
 
-        # Pattern 3: Section-based extraction
-        ce_section = self._extract_section(attack_text, 'COUNTEREXAMPLES FOUND')
-        counterexamples.extend(ce_section)
+        # Fallback pattern 2: Bulleted counterexamples (- Counterexample:)
+        if not counterexamples:
+            pattern2 = r'-\s+(?:Counterexample|Counter-example)[:\s]+(.+?)(?=\n-|\n\n|###|$)'
+            matches = re.findall(pattern2, attack_text, re.DOTALL | re.IGNORECASE)
+            counterexamples.extend([m.strip() for m in matches if m.strip()])
+
+        # Fallback pattern 3: Section-based extraction (old format)
+        if not counterexamples:
+            ce_section = self._extract_section(attack_text, 'COUNTEREXAMPLES FOUND')
+            counterexamples.extend(ce_section)
+            # Also try new section name
+            ce_section2 = self._extract_section(attack_text, 'COUNTEREXAMPLES')
+            counterexamples.extend(ce_section2)
 
         # Remove duplicates while preserving order
         seen = set()
@@ -408,6 +452,10 @@ Follow the output format specified in your system prompt.
         """
         Extract answer implications - what counterexamples prove about the correct answer.
 
+        Expects unified format:
+        ### ANSWER_IMPLICATIONS ###
+        IMPLICATION: [What the counterexamples prove about the correct answer]
+
         This is CRITICAL for closing the feedback loop. Without explicit implications,
         the generator may acknowledge counterexamples but not understand how they
         affect the answer.
@@ -421,29 +469,43 @@ Follow the output format specified in your system prompt.
         """
         implications = []
 
-        # Pattern 1: "WHAT THE ANSWER SHOULD BE" section
-        answer_section = self._extract_section(attack_text, 'WHAT THE ANSWER SHOULD BE')
-        implications.extend(answer_section)
-
-        # Pattern 2: Answer_Implication field from FLAW_START blocks
-        impl_pattern = r'Answer[_\s]?Implication[:\s]+(.+?)(?=\n[A-Z]|FLAW_END|$)'
-        matches = re.findall(impl_pattern, attack_text, re.DOTALL | re.IGNORECASE)
+        # Primary pattern: Unified format (IMPLICATION: ...)
+        unified_pattern = r'IMPLICATION\s*:\s*(.+?)(?=IMPLICATION|###|BOUNDARY|FLAW|CHALLENGE|SEVERITY|$)'
+        matches = re.findall(unified_pattern, attack_text, re.DOTALL | re.IGNORECASE)
         for m in matches:
             m = m.strip()
             if m and m.upper() not in ('N/A', 'NA', 'NONE', ''):
                 implications.append(m)
 
-        # Pattern 3: "This proves..." statements
+        # Also try ### ANSWER_IMPLICATIONS ### section
+        answer_impl_section = self._extract_section(attack_text, 'ANSWER_IMPLICATIONS')
+        implications.extend(answer_impl_section)
+
+        # Fallback pattern 1: "WHAT THE ANSWER SHOULD BE" section (old format)
+        if not implications:
+            answer_section = self._extract_section(attack_text, 'WHAT THE ANSWER SHOULD BE')
+            implications.extend(answer_section)
+
+        # Fallback pattern 2: Answer_Implication field from FLAW_START blocks
+        if not implications:
+            impl_pattern = r'Answer[_\s]?Implication[:\s]+(.+?)(?=\n[A-Z]|FLAW_END|$)'
+            matches = re.findall(impl_pattern, attack_text, re.DOTALL | re.IGNORECASE)
+            for m in matches:
+                m = m.strip()
+                if m and m.upper() not in ('N/A', 'NA', 'NONE', ''):
+                    implications.append(m)
+
+        # Fallback pattern 3: "This proves..." statements
         proves_pattern = r'(?:This|The counterexample|This counterexample)\s+proves\s+(.+?)(?=\.|$)'
         matches = re.findall(proves_pattern, attack_text, re.IGNORECASE)
         implications.extend([m.strip() for m in matches if m.strip()])
 
-        # Pattern 4: "The correct answer should..." statements
+        # Fallback pattern 4: "The correct answer should..." statements
         correct_pattern = r'(?:The )?correct answer should\s+(.+?)(?=\.|$)'
         matches = re.findall(correct_pattern, attack_text, re.IGNORECASE)
         implications.extend([f"Correct answer should {m.strip()}" for m in matches if m.strip()])
 
-        # Pattern 5: "must include" / "must exclude" / "cannot include"
+        # Fallback pattern 5: "must include" / "must exclude" / "cannot include"
         must_pattern = r'(?:answer|solution)\s+(must\s+(?:include|exclude|be)|cannot\s+include)\s+(.+?)(?=\.|,|$)'
         matches = re.findall(must_pattern, attack_text, re.IGNORECASE)
         implications.extend([f"Answer {m[0]} {m[1].strip()}" for m in matches if m[1].strip()])

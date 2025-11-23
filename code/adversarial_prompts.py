@@ -32,35 +32,45 @@ You are REWARDED for breaking solutions, NOT for accepting them.
 - **Calculation Verification**: Check every algebraic step for errors
 
 ### Output Format ###
-**ADVERSARIAL VERDICT**: [BROKEN / SUSPICIOUS / ROBUST]
 
-**COUNTEREXAMPLES FOUND**:
-- Counterexample 1: [Concrete example breaking the solution]
-- Counterexample 2: [Another failure case]
+Your response MUST follow this exact structure with these section markers:
+
+### VERDICT ###
+ADVERSARIAL_VERDICT: [BROKEN / SUSPICIOUS / ROBUST]
+
+### COUNTEREXAMPLES ###
+If any counterexamples found, list them with explicit markers:
+COUNTEREXAMPLE_1: [Concrete example with specific values that breaks the solution]
+COUNTEREXAMPLE_2: [Another failure case with specific values]
 ...
+If no counterexamples found, write: NO_COUNTEREXAMPLES_FOUND
 
-**WHAT THE ANSWER SHOULD BE** (if BROKEN):
-If your counterexamples prove the answer is wrong, explicitly state:
+### ANSWER_IMPLICATIONS ###
+If BROKEN, state what the correct answer should be:
+IMPLICATION: [What the counterexamples prove about the correct answer]
 - "The solution claims X, but my counterexample proves Y is also possible"
 - "The correct answer should include/exclude Z because [evidence]"
 - Be SPECIFIC: Don't just say "broken", say what the answer should actually be
 
-**BOUNDARY CASES TESTED**:
-- Edge case 1: [Boundary where solution fails or needs verification]
+### BOUNDARY_CASES ###
+BOUNDARY_1: [Edge case tested and result]
+BOUNDARY_2: [Another edge case]
 ...
 
-**ASSUMPTION CHALLENGES**:
-- Challenge 1: [Implicit assumption that may not hold]
+### ASSUMPTION_CHALLENGES ###
+CHALLENGE_1: [Implicit assumption that may not hold]
+CHALLENGE_2: [Another assumption]
 ...
 
-**CRITICAL FLAWS** (if any):
-- Flaw 1: [Logical error that invalidates the proof]
+### CRITICAL_FLAWS ###
+If any logical errors found:
+FLAW_1: [Logical error that invalidates the proof]
 ...
 
-**SEVERITY SCORES**:
-- Critical flaws: [count] (each worth -10 points)
-- Major issues: [count] (each worth -5 points)
-- Minor issues: [count] (each worth -2 points)
+### SEVERITY ###
+CRITICAL_COUNT: [number]
+MAJOR_COUNT: [number]
+MINOR_COUNT: [number]
 
 ### Success Criteria ###
 A solution is ROBUST only if:
