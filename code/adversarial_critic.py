@@ -42,6 +42,7 @@ from adversarial_prompts import (
     counterexample_generation_prompt,
     defense_first_generator_prompt,
     defense_first_revision_prompt,
+    answer_reconsideration_prompt,  # NEW: For when answer is fundamentally wrong
     small_case_verification_prompt,
     small_case_verification_instruction,
     error_severity_classification,
@@ -490,6 +491,31 @@ Follow the output format specified in your system prompt.
             Defense-first generator prompt string
         """
         return defense_first_generator_prompt
+
+    def get_answer_reconsideration_prompt(self, counterexamples: List[str],
+                                          previous_answer: str = "unknown") -> str:
+        """
+        Get the answer reconsideration prompt for when the answer may be fundamentally wrong.
+
+        Use this prompt when stuck detection triggers with counterexamples,
+        indicating the ANSWER (not just the proof) may need to change.
+
+        Args:
+            counterexamples: List of counterexample strings from recent attacks
+            previous_answer: The answer the generator has been defending
+
+        Returns:
+            Formatted answer reconsideration prompt
+        """
+        counterexample_evidence = "\n".join([
+            f"- {ce[:200]}..." if len(ce) > 200 else f"- {ce}"
+            for ce in counterexamples[-5:]  # Last 5 counterexamples
+        ])
+
+        return answer_reconsideration_prompt.format(
+            counterexample_evidence=counterexample_evidence,
+            previous_answer=previous_answer
+        )
 
     def get_metrics_summary(self) -> Dict[str, Any]:
         """

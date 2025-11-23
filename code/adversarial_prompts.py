@@ -39,6 +39,12 @@ You are REWARDED for breaking solutions, NOT for accepting them.
 - Counterexample 2: [Another failure case]
 ...
 
+**WHAT THE ANSWER SHOULD BE** (if BROKEN):
+If your counterexamples prove the answer is wrong, explicitly state:
+- "The solution claims X, but my counterexample proves Y is also possible"
+- "The correct answer should include/exclude Z because [evidence]"
+- Be SPECIFIC: Don't just say "broken", say what the answer should actually be
+
 **BOUNDARY CASES TESTED**:
 - Edge case 1: [Boundary where solution fails or needs verification]
 ...
@@ -182,19 +188,46 @@ Your previous solution was attacked. Now apply DEFENSE-FIRST thinking:
 **Previous Attack**:
 {adversarial_feedback}
 
-**Defense-First Revision Strategy**:
-1. For each counterexample found: Fix the root cause, not just the symptom
-2. Anticipate FOLLOW-UP attacks on your fix
-3. Add explicit defenses for vulnerable points
-4. Test your revision against the same attack vectors
+### CRITICAL: ANSWER VERIFICATION CHECKPOINT ###
+
+**BEFORE defending your proof, answer these questions HONESTLY:**
+
+1. **Is the counterexample mathematically valid?**
+   - Verify by direct calculation: Does the counterexample actually work?
+   - If YES, proceed to question 2
+
+2. **What does this counterexample PROVE?**
+   - If the critic shows k=1 is achievable, this PROVES k=1 should be in the answer
+   - If the critic shows a construction works, this PROVES that construction is valid
+
+3. **Is my ANSWER compatible with this evidence?**
+   - If my answer says "only k ∈ {{0, n}}" but critic proves k=1 works, my answer is WRONG
+   - If my answer excludes something the counterexample proves possible, I MUST CHANGE MY ANSWER
+
+4. **Decision: Should my ANSWER change?**
+   - [ ] NO - The counterexample is invalid (explain why with calculation)
+   - [ ] YES - The counterexample is valid and my answer must accommodate it
+
+### IF YOUR ANSWER MUST CHANGE ###
+
+If the counterexample proves your answer is wrong:
+1. **State the NEW correct answer** based on the evidence
+2. **Build a NEW proof** for the correct answer
+3. Do NOT defend the old wrong answer
+
+### IF YOUR ANSWER IS CORRECT ###
+
+If the counterexample is invalid or doesn't contradict your answer:
+1. **Explain why** the counterexample doesn't work (with calculation)
+2. **Strengthen** your proof against similar attacks
+3. **Add defenses** for vulnerable points
 
 **Structure Your Revision**:
-1. [ADDRESSED] How you fixed each specific attack
-2. [ANTICIPATED] What new attacks might come from your fix
-3. [DEFENDED] How your revision handles anticipated attacks
-4. [VERIFIED] Test cases showing the fix works
+1. [ANSWER CHECK] Is my answer compatible with valid counterexamples?
+2. [ADDRESSED] How I fixed each specific issue
+3. [VERIFIED] Test cases showing the solution is correct
 
-Provide your complete revised solution with defense annotations.
+Provide your complete revised solution.
 """
 
 adversarial_defense_prompt = """
@@ -522,6 +555,58 @@ For ALGEBRA/INEQUALITY problems:
 
 Generate a COMPLETELY NEW solution with a DIFFERENT approach.
 """
+
+# ==============================================================================
+# ANSWER RECONSIDERATION PROMPT (NEW - for when answer is fundamentally wrong)
+# ==============================================================================
+
+answer_reconsideration_prompt = """
+### ANSWER RECONSIDERATION MODE - YOUR ANSWER MAY BE WRONG ###
+
+**CRITICAL**: The critic has provided VALID counterexamples across multiple rounds.
+This suggests your ANSWER (not just your proof) may be fundamentally incorrect.
+
+**Evidence Summary**:
+{counterexample_evidence}
+
+**Your Previous Answer**: {previous_answer}
+
+### ANSWER RECONSIDERATION PROCESS ###
+
+**Step 1: Accept the Evidence**
+The counterexamples above appear to be mathematically valid. Accept them as TRUE.
+
+**Step 2: What Do They Prove?**
+- If counterexample shows k=1 is achievable → k=1 MUST be in the correct answer
+- If counterexample shows X works → X MUST be possible in the correct answer
+- List what MUST be true based on the evidence:
+  * [Evidence 1 proves...]
+  * [Evidence 2 proves...]
+
+**Step 3: Reconsider Your Answer**
+Given the evidence above, your answer "{previous_answer}" appears to be:
+- [ ] CORRECT (all counterexamples are actually invalid - show why with calculation)
+- [ ] PARTIALLY WRONG (some values are missing - add them)
+- [ ] COMPLETELY WRONG (need a totally different characterization)
+
+**Step 4: State Your REVISED Answer**
+Based on the evidence, the CORRECT answer should be: [YOUR NEW ANSWER]
+
+**Step 5: Build Proof for NEW Answer**
+Now construct a rigorous proof for your REVISED answer.
+Do NOT defend the old answer - prove the NEW one.
+
+### IMPORTANT ###
+- You are NOT defending against attacks - you are LEARNING from evidence
+- Counterexamples are DATA about what the correct answer should be
+- Your job is to find the TRUTH, not to win an argument
+
+**Output Format**:
+1. [EVIDENCE ANALYSIS] What the counterexamples prove
+2. [REVISED ANSWER] Your new answer based on evidence
+3. [PROOF] Complete rigorous proof of the revised answer
+"""
+
 
 def get_constructive_prompt(previous_verdict, attack_result, round_num):
     """

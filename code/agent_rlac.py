@@ -78,6 +78,9 @@ class GeneratorAgent:
         self.llm = llm_client
         self.reasoning_effort = reasoning_effort
         self.strategy_shift_requested = False
+        self.answer_reconsideration_requested = False
+        self.accumulated_counterexamples = []
+        self.last_answer = None
 
     def generate_initial_solution(self, problem: str) -> Solution:
         """Generate the first solution attempt."""
@@ -126,9 +129,43 @@ Provide your solution in clear mathematical language.
         criticism_summary = self._format_criticism_history(criticism_history)
         latest_flaws = self._format_latest_criticism(latest_criticism)
 
-        # Strategy shift if stuck
+        # Answer reconsideration takes priority over strategy shift
         strategy_instruction = ""
-        if self.strategy_shift_requested:
+        if self.answer_reconsideration_requested:
+            # Accumulate counterexamples for evidence
+            counterexample_evidence = "\n".join([
+                f"- {ce}" for ce in self.accumulated_counterexamples[-5:]  # Last 5
+            ])
+            strategy_instruction = f"""
+### ANSWER RECONSIDERATION MODE - YOUR ANSWER MAY BE WRONG ###
+
+**CRITICAL**: The critic has provided VALID counterexamples across multiple rounds.
+This suggests your ANSWER (not just your proof) may be fundamentally incorrect.
+
+**Evidence Summary**:
+{counterexample_evidence}
+
+**BEFORE continuing, answer these questions:**
+
+1. **Are these counterexamples mathematically valid?**
+   Verify by direct calculation. If they ARE valid:
+
+2. **What do they prove about the correct answer?**
+   - If counterexample shows k=1 works → k=1 MUST be in the correct answer
+   - List what the evidence PROVES
+
+3. **Is your current answer compatible with this evidence?**
+   If your answer EXCLUDES something the counterexamples PROVE is possible,
+   YOUR ANSWER IS WRONG and must change.
+
+4. **Your REVISED answer (if needed):**
+   State what the correct answer should be based on the evidence.
+
+**DO NOT** defend an answer that contradicts valid counterexamples.
+**DO** revise your answer if the evidence proves it wrong.
+            """
+            self.answer_reconsideration_requested = False
+        elif self.strategy_shift_requested:
             strategy_instruction = """
             IMPORTANT: Your previous approaches have been repeatedly criticized.
             Consider a FUNDAMENTALLY DIFFERENT approach to the problem.
@@ -185,6 +222,23 @@ Be thorough - the critic will attack again even more aggressively.
     def request_strategy_shift(self):
         """Signal that generator should try a completely different approach."""
         self.strategy_shift_requested = True
+
+    def request_answer_reconsideration(self, counterexamples: List[str]):
+        """
+        Signal that the generator's ANSWER may be wrong.
+
+        This is different from strategy_shift which just changes proof approach.
+        Answer reconsideration explicitly tells the generator that their claimed
+        answer (e.g., "k ∈ {0, n}") may be fundamentally incorrect based on
+        counterexample evidence.
+
+        Args:
+            counterexamples: List of counterexample strings from the critic
+        """
+        self.answer_reconsideration_requested = True
+        self.accumulated_counterexamples.extend(counterexamples)
+        # Keep only the most recent counterexamples to avoid prompt explosion
+        self.accumulated_counterexamples = self.accumulated_counterexamples[-10:]
 
     def _format_criticism_history(self, history: List[Criticism]) -> str:
         """Format criticism history for context."""
@@ -533,10 +587,18 @@ class RLACAgent:
                 best_solution = solution
                 print(f"\n→ New best solution (reward: {best_reward})")
 
-            # PHASE 5: EARLY STOPPING
-            if self._is_stuck(criticism_history):
-                print("\n⚠ STUCK PATTERN DETECTED - Requesting strategy shift")
-                self.generator.request_strategy_shift()
+            # PHASE 5: STUCK DETECTION & ANSWER RECONSIDERATION
+            stuck_info = self._analyze_stuck_pattern(criticism_history)
+            if stuck_info['is_stuck']:
+                if stuck_info['has_counterexamples']:
+                    print("\n⚠ STUCK WITH VALID COUNTEREXAMPLES - Requesting answer reconsideration")
+                    print("  Counterexamples suggest the ANSWER (not just proof) may be wrong")
+                    self.generator.request_answer_reconsideration(
+                        stuck_info['counterexamples']
+                    )
+                else:
+                    print("\n⚠ STUCK PATTERN DETECTED - Requesting strategy shift")
+                    self.generator.request_strategy_shift()
 
             # Accept if only minor flaws after several iterations
             if (all(f.severity == 'minor' for f in criticism.flaws) and
@@ -589,10 +651,36 @@ class RLACAgent:
 
     def _is_stuck(self, criticism_history: List[Criticism], window: int = 3) -> bool:
         """Detect stuck patterns (same criticism repeating)."""
+        return self._analyze_stuck_pattern(criticism_history, window)['is_stuck']
+
+    def _analyze_stuck_pattern(self, criticism_history: List[Criticism], window: int = 3) -> dict:
+        """
+        Analyze stuck patterns with detailed information.
+
+        Returns dict with:
+            - is_stuck: bool
+            - has_counterexamples: bool (if stuck with counterexamples, answer may be wrong)
+            - counterexamples: List[str] of recent counterexamples
+            - reason: str explaining why stuck
+        """
+        result = {
+            'is_stuck': False,
+            'has_counterexamples': False,
+            'counterexamples': [],
+            'reason': ''
+        }
+
         if len(criticism_history) < window:
-            return False
+            return result
 
         recent = criticism_history[-window:]
+
+        # Collect all counterexamples from recent rounds
+        all_counterexamples = []
+        for crit in recent:
+            for flaw in crit.flaws:
+                if flaw.counterexample:
+                    all_counterexamples.append(flaw.counterexample)
 
         # Check if same flaw types keep appearing
         recent_flaw_types = [
@@ -603,9 +691,24 @@ class RLACAgent:
         if len(recent_flaw_types) >= 2:
             intersection = set.intersection(*recent_flaw_types)
             if len(intersection) > 0:
-                return True
+                result['is_stuck'] = True
+                result['reason'] = f"Same flaw types repeating: {intersection}"
 
-        return False
+                # KEY INSIGHT: If stuck with counterexamples, the ANSWER may be wrong
+                if all_counterexamples:
+                    result['has_counterexamples'] = True
+                    result['counterexamples'] = all_counterexamples
+                    result['reason'] += " (with counterexamples - answer may be wrong)"
+
+        # Also check if all recent rounds have 'broken' verdicts with counterexamples
+        all_have_flaws = all(len(crit.flaws) > 0 for crit in recent)
+        if all_have_flaws and all_counterexamples:
+            result['is_stuck'] = True
+            result['has_counterexamples'] = True
+            result['counterexamples'] = all_counterexamples
+            result['reason'] = "All recent rounds have flaws with counterexamples"
+
+        return result
 
     def _save_result(self, result: dict, log_file: str):
         """Save result to log file."""
