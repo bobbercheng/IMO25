@@ -1,0 +1,189 @@
+================================================================================
+RLAC ARCHITECTURAL FAILURE: Visual Comparison
+================================================================================
+
+SCENARIO 1: IMPLEMENTATION BUG (RLAC Handles ✓)
+==================================================
+
+Round 1:
+┌─ Answer: f(n) = n(n+1)/2  ✓ CORRECT
+├─ Proof: "By induction, base case works, step follows"
+└─ Weakness: Proof has gaps
+
+Critic Attack:
+└─ "Why does inductive step follow? Show algebra."
+
+Round 2:
+┌─ Answer: f(n) = n(n+1)/2  ✓ Still CORRECT
+├─ Proof: "By induction... base case n=1: 1(2)/2 = 1 ✓
+│         Inductive step: assume P(k), prove P(k+1)..."
+└─ Stronger: More detail, clearer logic
+
+Critic Attack:
+└─ "No flaws found - ROBUST ✓✓✓"
+
+SUCCESS: Answer was right, proof got stronger
+═══════════════════════════════════════════════════════════════════════════════
+
+
+SCENARIO 2: WRONG ANSWER (RLAC Fails ✗)
+==================================================
+
+Round 1:
+┌─ Answer: f(n) = n²  ✗ WRONG
+├─ Proof: "Sum of n integers: 1+2+...+n = (n²)/2 by..."
+└─ Problem: Answer itself is wrong
+
+Critic Attack:
+└─ "For n=2: Your answer says 4, but 1+2=3 ✗ COUNTEREXAMPLE"
+
+Round 2:
+┌─ Answer: f(n) = n²  ✗ Still WRONG (unchanged)
+├─ Proof: "Sum increases each step, approximately n²/2 when..."
+└─ Difference: Different proof, same wrong answer
+
+Critic Attack:
+└─ "For n=2: Your answer says 4, but 1+2=3 ✗ SAME COUNTEREXAMPLE"
+
+Round 3:
+┌─ Answer: f(n) = n²  ✗ Still WRONG (unchanged)
+├─ Proof: "By careful calculation, we have n² ∗ 1/2 ≈ n²/2"
+└─ Difference: Different proof again, same wrong answer
+
+Critic Attack:
+└─ "For n=2: Your answer says 4, but 1+2=3 ✗ SAME COUNTEREXAMPLE REPEATS"
+
+Round 4:
+┌─ Answer: f(n) = n²  ✗ Still WRONG (unchanged)
+├─ Proof: "By considering accumulation patterns..."
+└─ Stuck: Kept trying to prove same wrong answer
+
+Stuck Detection Triggered:
+└─ "STUCK PATTERN DETECTED - Same counterexample repeating"
+   "Requesting strategy shift..."
+
+Round 5:
+┌─ Answer: f(n) = n²  ✗ Still WRONG (unchanged!)
+├─ Proof: "Taking a different approach using geometry..."
+└─ Problem: Strategy shift only changed HOW to prove, not WHAT to prove
+
+Critic Attack:
+└─ "For n=2: Your answer says 4, but 1+2=3 ✗ STILL THE SAME COUNTEREXAMPLE"
+
+FAILURE: Answer is wrong, proof improvements can't fix it
+═══════════════════════════════════════════════════════════════════════════════
+
+
+THE FUNDAMENTAL DIFFERENCE
+===========================
+
+Case A: CORRECT ANSWER + WEAK PROOF
+    Error is in the proof logic
+    Counterexample: Points out logical gap in proof
+    Solution: Strengthen proof of same answer
+    RLAC handles: ✓ YES
+
+    Flow: Answer → Proof Gap → Stronger Proof → Success
+
+Case B: WRONG ANSWER + ANY PROOF
+    Error is in the answer itself
+    Counterexample: Directly contradicts the answer
+    Solution: Find completely different answer
+    RLAC handles: ✗ NO (no mechanism)
+
+    Flow: Answer → Counterexample Proves Wrong → Need Different Answer
+                                                    ↓
+                                          RLAC Can't Do This
+
+
+THE CRITICAL MISSING PIECE
+============================
+
+When this pattern is detected:
+
+    Same Counterexample Repeating
+         ↓
+    Multiple Rounds (3, 4, 5...)
+         ↓
+    Answer Never Changes
+         ↓
+    
+RLAC Should Do:
+    "Your ANSWER is probably wrong. Try a DIFFERENT ANSWER"
+
+RLAC Actually Does:
+    "Try a different PROOF APPROACH of the same answer"
+    
+RESULT: Infinite loop on wrong answer
+
+
+THE CURRENT SYSTEM FLOW
+=======================
+
+START
+  ├─ Generate initial solution with answer X
+  │
+  LOOP (up to max_iterations):
+  ├─ Attack solution
+  ├─ IF: Critic found no flaws
+  │    THEN: SUCCESS ✓
+  │    ELSE: Continue
+  │
+  ├─ Revise solution (with answer X from previous round)
+  │    [Generator only sees: "Here's answer X and criticism, fix it"]
+  │    [Generator can't see: "Your ANSWER might be wrong"]
+  │
+  ├─ Detect stuck (same flaws repeating?)
+  │    IF: Stuck detected
+  │    THEN: Request "strategy shift" (vague, doesn't say "change answer")
+  │
+  └─ Continue loop
+  
+FAIL: Max iterations reached, return failure
+
+
+WHAT SHOULD HAPPEN
+===================
+
+START
+  ├─ Generate initial solution with answer X
+  │
+  LOOP (up to max_iterations):
+  ├─ Attack solution
+  ├─ IF: Critic found no flaws
+  │    THEN: SUCCESS ✓
+  │    ELSE: Continue
+  │
+  ├─ NEW: Extract and track current answer
+  ├─ NEW: Compare answer to previous rounds
+  │
+  ├─ Revise solution
+  │    ├─ IF: Answer unchanged AND same counterexample repeating
+  │    │    THEN: Use "ANSWER RECONSIDERATION" prompt
+  │    │         "Your ANSWER is probably wrong, find a NEW ANSWER Y"
+  │    │    ELSE: Use normal revision prompt
+  │    │         "Fix the proof of answer X"
+  │    │
+  │    └─ Generator can now propose different answer
+  │
+  ├─ Detect stuck (same flaws repeating?)
+  │    IF: Stuck AND Answer unchanged
+  │    THEN: Signal "ANSWER IS WRONG" not just "strategy different"
+  │
+  └─ Continue loop
+
+SUCCESS: When answer changes (if new answer is correct) and no flaws found
+
+
+KEY INSIGHT
+===========
+
+The problem isn't just that stuck detection is weak.
+The problem is that when stuck is detected, the system doesn't know WHY:
+
+    Stuck because proof is weak? → Fix proof of same answer ✓
+    Stuck because answer is wrong? → Find different answer ✗
+
+RLAC treats both the same way: "Try something different"
+But doesn't distinguish WHAT to change: proof vs answer
+
