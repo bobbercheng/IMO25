@@ -9,12 +9,30 @@ Key Features:
 - Structured feedback parsing (counterexamples, flaws, severity scores)
 - Comprehensive logging for troubleshooting and data collection
 - Attack history tracking for curriculum learning
+
+Enhanced Features (Counter-Proposals):
+1. Validation Pipeline with fail-fast + retry strategy (vs format enforcement)
+2. Proper brace-matching LaTeX parser + semantic normalization (vs fallback)
+3. Explicit state machine + confidence scoring + history tracking (vs simple states)
 """
 
 import json
 import re
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
+
+# Import enhanced components
+from rlac_improvements import (
+    SolutionValidationPipeline,
+    LaTeXBraceParser,
+    VerdictStateMachine,
+    VerdictState,
+    VerdictConfidence,
+    PipelineResult,
+    LaTeXParseResult,
+    run_enhanced_rlac_round,
+    create_enhanced_critic_wrapper
+)
 
 from adversarial_prompts import (
     adversarial_critic_system_prompt,
@@ -787,3 +805,375 @@ Follow the output format specified in your system prompt.
                 self._log(f"[ENHANCED ATTACK] Domain-specific attacks available: {len(domain_attacks)}")
 
         return base_result
+
+    # =========================================================================
+    # COUNTER-PROPOSAL IMPLEMENTATIONS
+    # =========================================================================
+
+    def create_enhanced_session(self) -> 'EnhancedAdversarialSession':
+        """
+        Create an enhanced RLAC session with all counter-proposal improvements.
+
+        Returns:
+            EnhancedAdversarialSession with validation pipeline, LaTeX parser, and state machine
+        """
+        return EnhancedAdversarialSession(
+            critic=self,
+            verbose=self.verbose
+        )
+
+
+class EnhancedAdversarialSession:
+    """
+    Enhanced RLAC session implementing counter-proposal improvements:
+
+    1. Empty Solution: Validation pipeline with fail-fast + retry strategy
+    2. Nested LaTeX: Proper brace-matching parser + semantic normalization
+    3. Verdict States: Explicit state machine + confidence scoring + history tracking
+    """
+
+    def __init__(self, critic: AdversarialCritic, verbose: bool = True,
+                 consecutive_robust_threshold: int = 3):
+        """
+        Initialize enhanced session.
+
+        Args:
+            critic: Base AdversarialCritic instance
+            verbose: Enable logging
+            consecutive_robust_threshold: Consecutive ROBUST for VERIFIED state
+        """
+        self.critic = critic
+        self.verbose = verbose
+
+        # Counter-proposal 1: Validation pipeline
+        self.validation_pipeline = SolutionValidationPipeline(
+            fail_fast=True,
+            verbose=verbose
+        )
+
+        # Counter-proposal 2: LaTeX parser
+        self.latex_parser = LaTeXBraceParser(verbose=verbose)
+
+        # Counter-proposal 3: State machine
+        self.state_machine = VerdictStateMachine(
+            consecutive_robust_for_verified=consecutive_robust_threshold,
+            verbose=verbose
+        )
+
+        # Session state
+        self.round_num = 0
+        self.max_retries = 3
+        self.answer_history: List[LaTeXParseResult] = []
+
+        if verbose:
+            self._log("Enhanced RLAC session initialized with counter-proposal improvements")
+            self._log("  - Validation Pipeline: fail-fast + retry strategy")
+            self._log("  - LaTeX Parser: proper brace-matching + semantic normalization")
+            self._log("  - State Machine: explicit states + confidence scoring + history")
+
+    def _log(self, message: str):
+        """Log with timestamp."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{timestamp}] [ENHANCED SESSION] {message}")
+
+    def validate_solution(self, solution: str, context: Dict[str, Any] = None) -> Tuple[bool, PipelineResult]:
+        """
+        Validate solution using fail-fast pipeline.
+
+        Counter-Proposal 1: Instead of format enforcement in prompt,
+        use validation pipeline with fail-fast + retry strategy.
+
+        Args:
+            solution: Solution to validate
+            context: Optional validation context
+
+        Returns:
+            Tuple of (is_valid, detailed_result)
+        """
+        result = self.validation_pipeline.validate(solution, context)
+
+        if self.verbose:
+            status = "PASSED" if result.is_valid else "FAILED"
+            self._log(f"Validation {status}: {result.pass_rate:.0%} ({len(result.passed_checks)}/{result.total_checks})")
+            if not result.is_valid:
+                self._log(f"  Failed checks: {', '.join(result.failed_checks)}")
+                if result.should_retry:
+                    self._log(f"  Retry hints: {result.retry_hints[:2]}")
+
+        return result.is_valid, result
+
+    def get_retry_prompt(self, validation_result: PipelineResult) -> str:
+        """
+        Get retry prompt based on validation failures.
+
+        Part of Counter-Proposal 1: Actionable feedback for retry.
+        """
+        return self.validation_pipeline.get_retry_prompt(validation_result)
+
+    def extract_answer(self, solution: str) -> LaTeXParseResult:
+        """
+        Extract answer using proper brace-matching parser.
+
+        Counter-Proposal 2: Instead of fallback to full solution,
+        use proper brace-matching parser + semantic normalization.
+
+        Args:
+            solution: Solution text
+
+        Returns:
+            LaTeXParseResult with properly parsed answer
+        """
+        result = self.latex_parser.extract_boxed(solution)
+
+        if result and result.success:
+            if self.verbose:
+                self._log(f"Answer extracted (depth {result.parse_depth}): {result.normalized[:50]}...")
+            self.answer_history.append(result)
+            return result
+
+        # Try alternative extraction
+        parsed = self.latex_parser.parse_answer_expression(solution)
+        if parsed['value']:
+            alt_result = LaTeXParseResult(
+                success=True,
+                content=str(parsed['value']),
+                raw_match=str(parsed['raw'])[:100],
+                parse_depth=0,
+                normalized=str(parsed['normalized']) if parsed['normalized'] else ""
+            )
+            self.answer_history.append(alt_result)
+            return alt_result
+
+        # Return empty result
+        return LaTeXParseResult(
+            success=False,
+            content="",
+            raw_match="",
+            parse_depth=0,
+            normalized="",
+            parse_errors=["Could not extract answer from solution"]
+        )
+
+    def check_answer_stability(self, current_answer: LaTeXParseResult) -> Dict[str, Any]:
+        """
+        Check answer stability using semantic comparison.
+
+        Part of Counter-Proposal 2: Semantic normalization for comparison.
+        """
+        if len(self.answer_history) < 2:
+            return {'stable': True, 'changes': 0, 'oscillating': False}
+
+        changes = 0
+        oscillations = 0
+
+        for i in range(1, len(self.answer_history)):
+            prev = self.answer_history[i - 1]
+            curr = self.answer_history[i]
+
+            is_equiv, confidence = self.latex_parser.answers_equivalent(
+                prev.normalized, curr.normalized
+            )
+
+            if not is_equiv:
+                changes += 1
+                # Check for oscillation (A -> B -> A pattern)
+                if i >= 2:
+                    prev_prev = self.answer_history[i - 2]
+                    is_back, _ = self.latex_parser.answers_equivalent(
+                        prev_prev.normalized, curr.normalized
+                    )
+                    if is_back:
+                        oscillations += 1
+
+        return {
+            'stable': changes == 0,
+            'changes': changes,
+            'oscillating': oscillations > 0,
+            'oscillation_count': oscillations
+        }
+
+    def evaluate_attack(self, attack_text: str, counterexamples: List[str],
+                       solution: str) -> VerdictConfidence:
+        """
+        Evaluate attack with state machine and confidence scoring.
+
+        Counter-Proposal 3: Instead of simple intermediate states,
+        use explicit state machine + confidence scoring + history tracking.
+
+        Args:
+            attack_text: Full attack text from critic
+            counterexamples: Extracted counterexamples
+            solution: Current solution
+
+        Returns:
+            VerdictConfidence with state, confidence, and evidence
+        """
+        verdict = self.state_machine.evaluate_attack(
+            attack_text=attack_text,
+            counterexamples=counterexamples,
+            solution=solution,
+            round_num=self.round_num
+        )
+
+        if self.verbose:
+            self._log(f"Verdict: {verdict.state.name} (confidence: {verdict.confidence:.2f})")
+            self._log(f"  Evidence: {verdict.evidence_count} items ({', '.join(verdict.evidence_types)})")
+            self._log(f"  Reasoning: {verdict.reasoning}")
+
+        return verdict
+
+    def get_state_summary(self) -> Dict[str, Any]:
+        """Get comprehensive state machine summary."""
+        return self.state_machine.get_state_summary()
+
+    def should_terminate(self) -> Tuple[bool, str]:
+        """Check if session should terminate."""
+        return self.state_machine.should_terminate()
+
+    def run_round(self, problem_statement: str, solution: str,
+                  max_rounds: int, api_request_func, api_key: str) -> Dict[str, Any]:
+        """
+        Run a complete RLAC round with all improvements.
+
+        Combines all three counter-proposals:
+        1. Validates solution first (fail-fast)
+        2. Extracts answer with proper parsing
+        3. Evaluates with state machine
+
+        Args:
+            problem_statement: The problem
+            solution: Current solution
+            max_rounds: Maximum rounds
+            api_request_func: API request function
+            api_key: API key
+
+        Returns:
+            Comprehensive round result
+        """
+        result = {
+            'round_num': self.round_num,
+            'validation': None,
+            'answer': None,
+            'attack': None,
+            'verdict': None,
+            'state_summary': None,
+            'should_continue': True,
+            'termination_reason': None,
+            'retry_needed': False,
+            'retry_prompt': None
+        }
+
+        # Step 1: Validate solution (Counter-Proposal 1)
+        is_valid, validation_result = self.validate_solution(solution)
+        result['validation'] = {
+            'is_valid': is_valid,
+            'pass_rate': validation_result.pass_rate,
+            'failed_checks': validation_result.failed_checks
+        }
+
+        if not is_valid:
+            if validation_result.should_retry:
+                result['retry_needed'] = True
+                result['retry_prompt'] = self.get_retry_prompt(validation_result)
+                return result
+            else:
+                result['should_continue'] = False
+                result['termination_reason'] = "Solution failed validation (not recoverable)"
+                return result
+
+        # Step 2: Extract answer (Counter-Proposal 2)
+        answer = self.extract_answer(solution)
+        result['answer'] = {
+            'success': answer.success,
+            'content': answer.content[:100] if answer.content else "",
+            'normalized': answer.normalized[:100] if answer.normalized else "",
+            'parse_depth': answer.parse_depth
+        }
+
+        # Check answer stability
+        stability = self.check_answer_stability(answer)
+        result['answer']['stability'] = stability
+
+        # Step 3: Run attack
+        attack_result = self.critic.attack_solution(
+            problem_statement=problem_statement,
+            solution=solution,
+            round_num=self.round_num,
+            max_rounds=max_rounds,
+            api_request_func=api_request_func,
+            api_key=api_key
+        )
+
+        result['attack'] = {
+            'verdict': attack_result['verdict'],
+            'counterexamples': len(attack_result['counterexamples']),
+            'penalty': attack_result['total_penalty']
+        }
+
+        # Step 4: Evaluate with state machine (Counter-Proposal 3)
+        verdict = self.evaluate_attack(
+            attack_text=attack_result['full_attack'],
+            counterexamples=attack_result['counterexamples'],
+            solution=solution
+        )
+
+        result['verdict'] = {
+            'state': verdict.state.name,
+            'confidence': verdict.confidence,
+            'evidence_count': verdict.evidence_count,
+            'evidence_types': verdict.evidence_types,
+            'reasoning': verdict.reasoning
+        }
+
+        # Step 5: Check termination
+        should_terminate, reason = self.should_terminate()
+        result['should_continue'] = not should_terminate
+        result['termination_reason'] = reason if should_terminate else None
+        result['state_summary'] = self.get_state_summary()
+
+        # Increment round counter
+        self.round_num += 1
+
+        return result
+
+    def get_defense_prompt(self, attack_result: Dict[str, Any]) -> str:
+        """Get defense prompt from base critic."""
+        return self.critic.get_defense_prompt(attack_result)
+
+    def save_session(self, filepath: str) -> bool:
+        """
+        Save session state to file.
+
+        Args:
+            filepath: Path to save state
+
+        Returns:
+            True if successful
+        """
+        try:
+            session_data = {
+                'round_num': self.round_num,
+                'state_machine': self.state_machine.to_dict(),
+                'answer_history': [
+                    {
+                        'content': a.content[:200],
+                        'normalized': a.normalized[:200],
+                        'parse_depth': a.parse_depth
+                    }
+                    for a in self.answer_history
+                ],
+                'validation_history_count': len(self.validation_pipeline.validation_history),
+                'timestamp': datetime.now().isoformat()
+            }
+
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2)
+
+            if self.verbose:
+                self._log(f"Session saved to {filepath}")
+            return True
+
+        except Exception as e:
+            if self.verbose:
+                self._log(f"Error saving session: {e}")
+            return False

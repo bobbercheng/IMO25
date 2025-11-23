@@ -79,6 +79,116 @@ The system automatically saves:
 - `*_rlac_failure.json` - Failure analysis (on stuck/timeout)
 - `*_rlac_timeout.json` - Timeout data (on max rounds)
 
+### 11. Enhanced Session Mode (Counter-Proposals)
+
+The new `EnhancedAdversarialSession` class implements three major improvements:
+
+#### Counter-Proposal 1: Validation Pipeline (vs Format Enforcement)
+**Problem**: Simple format enforcement in prompts often fails for empty or malformed solutions.
+
+**Solution**: Fail-fast validation pipeline with ordered checks:
+```python
+from adversarial_critic import AdversarialCritic
+
+critic = AdversarialCritic()
+session = critic.create_enhanced_session()
+
+# Validate solution before attack
+is_valid, result = session.validate_solution(solution)
+if not is_valid and result.should_retry:
+    retry_prompt = session.get_retry_prompt(result)
+    # Regenerate with actionable feedback
+```
+
+Pipeline checks (in order):
+1. **Null check** (critical) - Fail fast on None
+2. **Empty check** (critical) - Fail fast on whitespace-only
+3. **Min length** (error) - Require substantive content
+4. **Structure markers** (error) - Summary/Solution/Proof sections
+5. **Mathematical content** (warning) - LaTeX, proof keywords
+6. **Answer presence** (warning) - \boxed{} or "answer is"
+7. **Proof substance** (warning) - Not answer-only
+
+#### Counter-Proposal 2: Brace-Matching LaTeX Parser (vs Fallback)
+**Problem**: Simple regex `\\boxed\{([^}]+)\}` fails on nested braces like `\boxed{\frac{1}{2}}`.
+
+**Solution**: Proper brace-matching parser with semantic normalization:
+```python
+# Extract answer with proper nesting support
+answer = session.extract_answer(solution)
+print(f"Content: {answer.content}")
+print(f"Normalized: {answer.normalized}")  # For comparison
+print(f"Parse depth: {answer.parse_depth}")  # Nesting level
+
+# Check semantic equivalence
+stability = session.check_answer_stability(answer)
+if stability['oscillating']:
+    print("Warning: Answer oscillation detected")
+```
+
+Handles:
+- `\boxed{\frac{a}{b}}` - Nested fractions
+- `\boxed{x^{2} + y^{2}}` - Nested exponents
+- `\boxed{\{1, 2, 3\}}` - Escaped braces
+- Semantic normalization for comparison
+
+#### Counter-Proposal 3: Verdict State Machine (vs Simple States)
+**Problem**: Simple string matching for BROKEN/ROBUST/SUSPICIOUS lacks confidence scoring and history.
+
+**Solution**: Explicit state machine with confidence and history tracking:
+```python
+# State machine tracks verdict history
+verdict = session.evaluate_attack(attack_text, counterexamples, solution)
+print(f"State: {verdict.state.name}")       # UNKNOWN/BROKEN/SUSPICIOUS/WEAK/ROBUST/VERIFIED
+print(f"Confidence: {verdict.confidence}")  # 0.0 to 1.0
+print(f"Evidence: {verdict.evidence_types}")
+
+# Get comprehensive summary
+summary = session.get_state_summary()
+print(f"Consecutive robust: {summary['consecutive_robust']}")
+print(f"Oscillations: {summary['oscillation_count']}")
+print(f"Is stuck: {summary['is_stuck']}")
+
+# Check termination
+should_stop, reason = session.should_terminate()
+```
+
+State transitions:
+- `UNKNOWN` → `BROKEN/SUSPICIOUS/WEAK/ROBUST` (initial evaluation)
+- `ROBUST` → `VERIFIED` (after N consecutive ROBUST verdicts)
+- `ROBUST` → `BROKEN` (new attack succeeds)
+- `BROKEN` → `ROBUST` (fix verified)
+- Oscillation detection (`BROKEN` → `ROBUST` → `BROKEN`)
+
+#### Complete Enhanced Round
+```python
+from adversarial_critic import AdversarialCritic
+
+critic = AdversarialCritic(verbose=True)
+session = critic.create_enhanced_session()
+
+# Run complete round with all improvements
+result = session.run_round(
+    problem_statement=problem,
+    solution=current_solution,
+    max_rounds=12,
+    api_request_func=send_api_request,
+    api_key=api_key
+)
+
+# Result includes all three improvements
+print(f"Validation: {result['validation']}")
+print(f"Answer: {result['answer']}")
+print(f"Verdict: {result['verdict']}")
+print(f"State: {result['state_summary']}")
+
+if result['retry_needed']:
+    # Use retry prompt for regeneration
+    new_solution = regenerate(result['retry_prompt'])
+elif not result['should_continue']:
+    print(f"Terminating: {result['termination_reason']}")
+```
+
 ## Usage
 
 ### Basic RLAC Mode
