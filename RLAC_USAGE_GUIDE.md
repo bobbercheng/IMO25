@@ -64,7 +64,27 @@ When severely stuck:
 - Regenerates from fresh start with different approach
 - Configurable maximum regeneration attempts
 
-### 9. Comprehensive Logging
+### 9. Approach Diversification (New)
+When generator is stuck (producing same solution), the system:
+- **Detects stuck patterns** before final failure threshold
+- **Forces strategy change** using domain-specific guidance:
+  - Combinatorics: pigeonhole → counting → generating functions
+  - Number theory: modular arithmetic → p-adic → descent
+  - Geometry: synthetic → coordinates → projective
+  - Algebra: AM-GM → Cauchy-Schwarz → substitution
+- **Tracks failed approaches** to avoid repeating mistakes
+- **Provides counterexamples** from critic as constraints for new approach
+- **Uses medium reasoning** for diversification to balance cost/quality
+
+### 10. Enhanced Session Integration (New)
+The RLAC agent now uses `EnhancedAdversarialSession` which provides:
+- **Proper LaTeX parsing**: Handles nested braces like `\boxed{\frac{a}{b}}`
+- **Semantic normalization**: Compares answers for equivalence, not just string match
+- **State machine tracking**: Confidence-based verdict evaluation
+- **Better oscillation detection**: Uses semantic comparison, not just string equality
+- Automatic fallback to simple parser if enhanced parser fails
+
+### 12. Comprehensive Logging
 All RLAC runs generate detailed logs with:
 - Round-by-round metrics
 - Attack verdicts and counterexamples
@@ -72,14 +92,14 @@ All RLAC runs generate detailed logs with:
 - Stuck pattern detection
 - Success/failure analysis
 
-### 10. Data Collection
+### 13. Data Collection
 The system automatically saves:
 - `*_rlac_history.json` - Complete attack history with metrics
 - `*_rlac_solution.json` - Final solution with metadata (on success)
 - `*_rlac_failure.json` - Failure analysis (on stuck/timeout)
 - `*_rlac_timeout.json` - Timeout data (on max rounds)
 
-### 11. Enhanced Session Mode (Counter-Proposals)
+### 14. Enhanced Session Mode (Counter-Proposals)
 
 The new `EnhancedAdversarialSession` class implements three major improvements:
 

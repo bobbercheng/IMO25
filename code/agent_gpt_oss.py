@@ -2031,7 +2031,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         from adversarial_prompts import (
             adversarial_defense_prompt,
             constructive_defense_prompt,
-            solution_regeneration_prompt
+            solution_regeneration_prompt,
+            approach_diversification_prompt
         )
     except ImportError as e:
         print(f">>>>>>> [RLAC ERROR] Could not import adversarial modules: {e}")
@@ -2043,6 +2044,13 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         reasoning_effort=ver_reasoning,
         verbose=verbose
     )
+
+    # Create enhanced session with counter-proposal improvements
+    enhanced_session = critic.create_enhanced_session()
+    print(f">>>>>>> [RLAC CONFIG] Enhanced session created with counter-proposal improvements")
+
+    # Track failed approaches for diversification
+    failed_approach_summaries = []
 
     # Best solution tracking
     best_solution = None
@@ -2146,10 +2154,16 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     best_solution_round = 0
     print(f">>>>>>> [RLAC TRACKING] Initial best solution score: {best_solution_score}")
 
-    # Track initial answer for stability monitoring
-    initial_answer = extract_answer_key(solution)
+    # Track initial answer for stability monitoring using enhanced session's LaTeX parser
+    initial_answer_result = enhanced_session.extract_answer(solution)
+    initial_answer = initial_answer_result.normalized if initial_answer_result.success else extract_answer_key(solution)
     answer_history.append(initial_answer)
-    print(f">>>>>>> [RLAC TRACKING] Initial answer key: {initial_answer[:50]}..." if initial_answer else ">>>>>>> [RLAC TRACKING] No answer key extracted")
+    if initial_answer_result.success:
+        print(f">>>>>>> [RLAC TRACKING] Initial answer (enhanced parser): {initial_answer[:50]}... (depth: {initial_answer_result.parse_depth})")
+    elif initial_answer:
+        print(f">>>>>>> [RLAC TRACKING] Initial answer key (fallback): {initial_answer[:50]}...")
+    else:
+        print(f">>>>>>> [RLAC TRACKING] No answer key extracted")
 
     # Phase 2: Adversarial refinement loop
     print("\n" + "="*80)
@@ -2333,6 +2347,46 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                     stuck_count += 1
                     print(f"\n>>>>>>> [RLAC GENERATOR] ⚠️  Solution unchanged! (stuck_count={stuck_count}/{stuck_threshold})")
 
+                    # Try approach diversification before giving up
+                    if stuck_count == stuck_threshold - 1 and regeneration_attempts < max_regeneration_attempts:
+                        print(f"\n{'='*80}")
+                        print(f">>>>>>> [RLAC DIVERSIFY] Attempting approach diversification...")
+                        print(f">>>>>>> [RLAC DIVERSIFY] Generator stuck on same approach")
+                        print(f"{'='*80}\n")
+
+                        # Summarize failed approach
+                        approach_summary = solution[:500] if solution else "No solution"
+                        counterexample_summary = "\n".join([f"- {ce[:200]}" for ce in counterexamples[:3]]) if counterexamples else "None"
+                        failed_approach_summaries.append(approach_summary[:200])
+
+                        # Build diversification prompt
+                        diversify_prompt = approach_diversification_prompt.format(
+                            failed_approach_summary="\n".join(failed_approach_summaries[-3:]),
+                            counterexamples=counterexample_summary
+                        )
+
+                        # Generate completely new solution with different approach
+                        diversify_payload = build_request_payload(
+                            system_prompt=step1_prompt,
+                            question_prompt=problem_statement,
+                            other_prompts=other_prompts + [diversify_prompt],
+                            reasoning_effort="medium"  # Use medium for diversification
+                        )
+
+                        diversify_response = send_api_request(get_api_key(), diversify_payload, request_label="RLAC approach diversification")
+                        diversified_solution = extract_solution(extract_text_from_response(diversify_response))
+
+                        if diversified_solution and diversified_solution != solution:
+                            print(f">>>>>>> [RLAC DIVERSIFY] ✓ Generated new solution with different approach")
+                            print(f">>>>>>> [RLAC DIVERSIFY] Length: {len(diversified_solution)} chars")
+                            solution = diversified_solution
+                            stuck_count = 0  # Reset stuck counter
+                            consecutive_broken = 0
+                            regeneration_attempts += 1
+                            continue
+                        else:
+                            print(f">>>>>>> [RLAC DIVERSIFY] ⚠️  Diversification did not produce new solution")
+
                     if stuck_count >= stuck_threshold:
                         print(f"\n{'='*80}")
                         print(f">>>>>>> [RLAC FAILURE] Generator stuck - unable to address attacks")
@@ -2353,7 +2407,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                                     'best_solution': best_solution,
                                     'best_solution_round': best_solution_round,
                                     'best_solution_score': best_solution_score,
-                                    'critic_metrics': critic.get_metrics_summary()
+                                    'critic_metrics': critic.get_metrics_summary(),
+                                    'failed_approaches': failed_approach_summaries
                                 }
                                 try:
                                     with open(memory_file.replace('.json', '_rlac_failure.json'), 'w') as f:
@@ -2371,7 +2426,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                                     'stuck_count': stuck_count,
                                     'last_attack': attack_result,
                                     'rlac_history': rlac_history,
-                                    'critic_metrics': critic.get_metrics_summary()
+                                    'critic_metrics': critic.get_metrics_summary(),
+                                    'failed_approaches': failed_approach_summaries
                                 }
 
                                 try:
@@ -2391,18 +2447,29 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                     print(f">>>>>>> [RLAC GENERATOR] ✓ Solution revised")
                     print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(solution)} chars)")
 
-                    # Answer stability tracking
-                    new_answer = extract_answer_key(solution)
+                    # Answer stability tracking using enhanced session's LaTeX parser
+                    new_answer_result = enhanced_session.extract_answer(solution)
+                    new_answer = new_answer_result.normalized if new_answer_result.success else extract_answer_key(solution)
+
                     if new_answer and answer_history:
-                        # Check for oscillation (answer matching a previous non-adjacent answer)
-                        if len(answer_history) >= 2 and new_answer in answer_history[:-1]:
-                            answer_oscillation_count += 1
+                        # Use enhanced session's stability checking
+                        stability = enhanced_session.check_answer_stability(new_answer_result)
+
+                        if stability['oscillating']:
+                            answer_oscillation_count = stability['oscillation_count']
                             print(f">>>>>>> [RLAC STABILITY] ⚠️  Answer oscillation detected! ({answer_oscillation_count})")
                             print(f">>>>>>> [RLAC STABILITY] Current answer matches earlier attempt")
 
                             if answer_oscillation_count >= 3:
                                 print(f">>>>>>> [RLAC STABILITY] Too many oscillations - solution unstable")
-                                # Don't abort, but note the instability
+                                # Try approach diversification if stuck in oscillation
+                                if regeneration_attempts < max_regeneration_attempts:
+                                    print(f">>>>>>> [RLAC STABILITY] Triggering approach diversification due to oscillation")
+                                    failed_approach_summaries.append(f"Oscillating between answers: {', '.join(answer_history[-3:])}")
+
+                        elif stability['changes'] > 0:
+                            print(f">>>>>>> [RLAC STABILITY] Answer changed ({stability['changes']} total changes)")
+
                         answer_history.append(new_answer)
 
                     # Validate answer change

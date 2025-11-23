@@ -471,6 +471,58 @@ Previous attempts have not produced a valid solution. Let's start fresh with a d
 Generate a complete solution using a FRESH APPROACH.
 """
 
+# Approach diversification prompt for stuck generator
+approach_diversification_prompt = """
+### APPROACH DIVERSIFICATION - MANDATORY STRATEGY CHANGE ###
+
+Your previous approach has failed to produce a correct solution after multiple attempts.
+The critic has found genuine mathematical errors in your construction.
+
+**CRITICAL**: You MUST try a FUNDAMENTALLY DIFFERENT approach. Simply patching the previous solution will not work.
+
+**Failed Approach Analysis**:
+{failed_approach_summary}
+
+**Concrete Counterexamples that Broke Your Solution**:
+{counterexamples}
+
+**MANDATORY STRATEGY CHANGE**:
+
+For COMBINATORICS problems:
+- If you tried direct construction → Use pigeonhole principle or counting arguments
+- If you tried counting → Use generating functions or bijection
+- If you tried algebraic → Use pure combinatorial argument
+
+For NUMBER THEORY problems:
+- If you tried modular arithmetic → Use p-adic or divisibility chains
+- If you tried direct computation → Use induction or descent
+- If you tried factorization → Use order/primitive roots
+
+For GEOMETRY problems:
+- If you tried synthetic → Use coordinates or trigonometric
+- If you tried coordinates → Use projective or affine transformations
+- If you tried angle chasing → Use similar triangles or power of point
+
+For ALGEBRA/INEQUALITY problems:
+- If you tried AM-GM → Use Cauchy-Schwarz or Schur
+- If you tried direct manipulation → Use substitution or normalization
+- If you tried global approach → Use smoothing or local analysis
+
+**YOUR TASK**:
+1. Identify which approach category you used before
+2. SELECT A DIFFERENT CATEGORY from the list above
+3. Build your new solution from FIRST PRINCIPLES using the new approach
+4. Do NOT reuse any construction or claim from the failed attempt
+
+**New Solution Requirements**:
+- Start completely fresh with a new mathematical insight
+- Explicitly state your new approach at the beginning
+- Verify your construction works for small cases BEFORE generalizing
+- Address the specific counterexamples that broke the previous solution
+
+Generate a COMPLETELY NEW solution with a DIFFERENT approach.
+"""
+
 def get_constructive_prompt(previous_verdict, attack_result, round_num):
     """
     Get appropriate constructive prompt based on situation.
