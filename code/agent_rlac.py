@@ -796,7 +796,12 @@ class RLACAgent:
             result['is_stuck'] = True
             result['has_counterexamples'] = True
             result['counterexamples'] = all_counterexamples
-            result['reason'] = f"Counterexamples in {rounds_with_counterexamples}/{window} recent rounds"
+            # FIX: Append to existing reason instead of overwriting
+            new_reason = f"Counterexamples in {rounds_with_counterexamples}/{window} recent rounds"
+            if result['reason']:
+                result['reason'] += f" AND {new_reason}"
+            else:
+                result['reason'] = new_reason
 
         return result
 

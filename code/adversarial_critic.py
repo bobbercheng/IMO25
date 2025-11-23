@@ -270,6 +270,7 @@ Follow the output format specified in your system prompt.
         result = {
             'verdict': 'UNKNOWN',
             'counterexamples': [],
+            'answer_implications': [],  # NEW: What counterexamples prove about correct answer
             'critical_flaws': [],
             'major_issues': [],
             'minor_issues': [],
@@ -283,6 +284,9 @@ Follow the output format specified in your system prompt.
 
         # Extract counterexamples FIRST (needed for verdict validation)
         result['counterexamples'] = self._extract_counterexamples(attack_text)
+
+        # NEW: Extract answer implications - what counterexamples prove about correct answer
+        result['answer_implications'] = self._extract_answer_implications(attack_text, result['counterexamples'])
 
         # Extract verdict with counterexample validation
         # This fixes the bug where "Round 1 BROKEN with 0 counterexamples" could occur
@@ -400,6 +404,65 @@ Follow the output format specified in your system prompt.
 
         return unique_counterexamples
 
+    def _extract_answer_implications(self, attack_text: str, counterexamples: List[str]) -> List[str]:
+        """
+        Extract answer implications - what counterexamples prove about the correct answer.
+
+        This is CRITICAL for closing the feedback loop. Without explicit implications,
+        the generator may acknowledge counterexamples but not understand how they
+        affect the answer.
+
+        Args:
+            attack_text: Raw attack output from critic
+            counterexamples: List of extracted counterexamples
+
+        Returns:
+            List of answer implication strings
+        """
+        implications = []
+
+        # Pattern 1: "WHAT THE ANSWER SHOULD BE" section
+        answer_section = self._extract_section(attack_text, 'WHAT THE ANSWER SHOULD BE')
+        implications.extend(answer_section)
+
+        # Pattern 2: Answer_Implication field from FLAW_START blocks
+        impl_pattern = r'Answer[_\s]?Implication[:\s]+(.+?)(?=\n[A-Z]|FLAW_END|$)'
+        matches = re.findall(impl_pattern, attack_text, re.DOTALL | re.IGNORECASE)
+        for m in matches:
+            m = m.strip()
+            if m and m.upper() not in ('N/A', 'NA', 'NONE', ''):
+                implications.append(m)
+
+        # Pattern 3: "This proves..." statements
+        proves_pattern = r'(?:This|The counterexample|This counterexample)\s+proves\s+(.+?)(?=\.|$)'
+        matches = re.findall(proves_pattern, attack_text, re.IGNORECASE)
+        implications.extend([m.strip() for m in matches if m.strip()])
+
+        # Pattern 4: "The correct answer should..." statements
+        correct_pattern = r'(?:The )?correct answer should\s+(.+?)(?=\.|$)'
+        matches = re.findall(correct_pattern, attack_text, re.IGNORECASE)
+        implications.extend([f"Correct answer should {m.strip()}" for m in matches if m.strip()])
+
+        # Pattern 5: "must include" / "must exclude" / "cannot include"
+        must_pattern = r'(?:answer|solution)\s+(must\s+(?:include|exclude|be)|cannot\s+include)\s+(.+?)(?=\.|,|$)'
+        matches = re.findall(must_pattern, attack_text, re.IGNORECASE)
+        implications.extend([f"Answer {m[0]} {m[1].strip()}" for m in matches if m[1].strip()])
+
+        # Auto-generate implications from counterexamples if none found
+        if not implications and counterexamples:
+            for ce in counterexamples[:3]:  # Limit to first 3
+                implications.append(f"Counterexample '{ce[:100]}' suggests answer may need revision")
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_implications = []
+        for impl in implications:
+            if impl and impl not in seen:
+                seen.add(impl)
+                unique_implications.append(impl)
+
+        return unique_implications
+
     def _extract_section(self, text: str, section_name: str) -> List[str]:
         """Extract items from a named section."""
         items = []
@@ -442,6 +505,7 @@ Follow the output format specified in your system prompt.
         self._log(f"{'='*80}")
         self._log(f"[ADVERSARIAL CRITIC] Verdict: {result['verdict']}")
         self._log(f"[ADVERSARIAL CRITIC] Counterexamples: {len(result['counterexamples'])}")
+        self._log(f"[ADVERSARIAL CRITIC] Answer implications: {len(result.get('answer_implications', []))}")
         self._log(f"[ADVERSARIAL CRITIC] Critical flaws: {len(result['critical_flaws'])}")
         self._log(f"[ADVERSARIAL CRITIC] Boundary cases: {len(result['boundary_cases'])}")
         self._log(f"[ADVERSARIAL CRITIC] Assumption challenges: {len(result['assumption_challenges'])}")
@@ -452,6 +516,12 @@ Follow the output format specified in your system prompt.
             self._log(f"\n[ADVERSARIAL CRITIC] Counterexamples found:")
             for i, ce in enumerate(result['counterexamples'][:3], 1):  # Show first 3
                 self._log(f"[ADVERSARIAL CRITIC]   {i}. {ce[:100]}{'...' if len(ce) > 100 else ''}")
+
+        # NEW: Log answer implications - critical for feedback loop
+        if result.get('answer_implications'):
+            self._log(f"\n[ADVERSARIAL CRITIC] Answer implications (what this proves about correct answer):")
+            for i, impl in enumerate(result['answer_implications'][:5], 1):  # Show first 5
+                self._log(f"[ADVERSARIAL CRITIC]   {i}. {impl[:150]}{'...' if len(impl) > 150 else ''}")
 
         # Log critical flaws
         if result['critical_flaws']:
