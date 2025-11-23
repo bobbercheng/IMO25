@@ -26,9 +26,11 @@ class Flaw:
     description: str
     counterexample: Optional[str]
     location: str
+    answer_implication: Optional[str] = None  # What this proves about the correct answer
 
     def to_dict(self):
-        return asdict(self)
+        result = asdict(self)
+        return result
 
 
 @dataclass
@@ -241,16 +243,37 @@ Be thorough - the critic will attack again even more aggressively.
         self.accumulated_counterexamples = self.accumulated_counterexamples[-10:]
 
     def _format_criticism_history(self, history: List[Criticism]) -> str:
-        """Format criticism history for context."""
+        """Format criticism history for context - FULL details, not truncated."""
         if not history:
             return "No previous criticism."
 
         summary = []
         for i, crit in enumerate(history, 1):
             flaw_count = len(crit.flaws)
-            summary.append(f"Iteration {i}: {flaw_count} flaw(s) found")
-            for flaw in crit.flaws[:2]:  # Show first 2 flaws
-                summary.append(f"  - [{flaw.severity}] {flaw.type}: {flaw.description[:100]}")
+            summary.append(f"\n### Iteration {i}: {flaw_count} flaw(s) found ###")
+
+            # Show ALL flaws with FULL descriptions and counterexamples
+            for j, flaw in enumerate(crit.flaws, 1):
+                summary.append(f"\nFlaw {j} [{flaw.severity.upper()}] {flaw.type}:")
+                summary.append(f"  Description: {flaw.description}")  # FULL description
+                if flaw.counterexample:
+                    summary.append(f"  COUNTEREXAMPLE: {flaw.counterexample}")  # Include counterexample!
+                    summary.append(f"  → This counterexample PROVES: analyze what it means for the answer")
+                summary.append(f"  Location: {flaw.location}")
+
+        # Add summary of all counterexamples for easy reference
+        all_counterexamples = []
+        for crit in history:
+            for flaw in crit.flaws:
+                if flaw.counterexample:
+                    all_counterexamples.append(flaw.counterexample)
+
+        if all_counterexamples:
+            summary.append(f"\n### ALL COUNTEREXAMPLES FROM HISTORY ###")
+            summary.append("These counterexamples PROVE something about the correct answer:")
+            for ce in all_counterexamples:
+                summary.append(f"  • {ce}")
+            summary.append("\nYou MUST address each counterexample or change your answer if they prove it wrong.")
 
         return "\n".join(summary)
 
@@ -345,6 +368,7 @@ Severity: [critical|major|minor]
 Description: [Precise explanation of the flaw]
 Counterexample: [Specific example that breaks it, or "N/A"]
 Location: [Where in the solution this occurs]
+Answer_Implication: [CRITICAL - What does this prove about the CORRECT answer? e.g., "This proves k=1 MUST be in the answer" or "This proves the answer cannot include n-1" or "N/A"]
 FLAW_END
 
 CRITICAL RULE: If after exhaustive adversarial testing you find NO flaws,
@@ -362,32 +386,50 @@ Do NOT give the benefit of the doubt. Attack relentlessly. Your job is to BREAK 
         return self._parse_criticism(response, solution.iteration)
 
     def _get_intensity_instructions(self, intensity: str) -> str:
-        """Get attack instructions based on intensity level."""
+        """Get attack instructions based on intensity level with severity targeting."""
 
         if intensity == "basic":
             return """
-BASIC INTENSITY - Focus on obvious flaws:
-- Simple logical errors
-- Basic counterexamples (small integers: 0, 1, 2)
-- Missing trivial cases
+BASIC INTENSITY - Focus on CRITICAL flaws only:
+- Simple logical errors that invalidate the proof
+- Basic counterexamples (small integers: n=0, 1, 2, 3)
+- Missing trivial cases (base cases)
+- SEVERITY TARGET: Find CRITICAL flaws worth -10 points
+
+DOMAIN-SPECIFIC TESTS:
+- Number Theory: Test n=prime, n=composite, n=0, n=1
+- Geometry: Test unit square, equilateral triangle, degenerate cases
+- Combinatorics: Enumerate ALL cases for n=1,2,3
 """
         elif intensity == "moderate":
             return """
-MODERATE INTENSITY - Dig deeper:
-- Edge cases (0, 1, negative, large values)
+MODERATE INTENSITY - Find CRITICAL + MAJOR flaws:
+- Edge cases (0, 1, negative, large values, boundary conditions)
 - Unstated assumptions that need justification
 - Gaps in case-by-case reasoning
-- Simple consistency checks across solution
+- Consistency checks across solution
+- SEVERITY TARGET: CRITICAL (-10 pts) and MAJOR (-5 pts) flaws
+
+DOMAIN-SPECIFIC TESTS:
+- Number Theory: Test n=prime (7,11,13), n=composite (6,9,12), n=power-of-2 (4,8,16)
+- Geometry: Test specific coordinates, verify angle/length calculations
+- Combinatorics: Count explicitly, verify formulas match actual counts
 """
         else:  # advanced
             return """
-ADVANCED INTENSITY - Maximum rigor:
+ADVANCED INTENSITY - Maximum rigor, find ALL flaws:
 - Subtle logical gaps in complex reasoning chains
 - Advanced counterexamples requiring mathematical insight
 - Deep consistency checking across entire proof
 - Mathematical rigor at research-level standards
 - Implicit assumptions that themselves require proof
 - Boundary cases and limiting behaviors
+- SEVERITY TARGET: ALL flaws (CRITICAL -10, MAJOR -5, MINOR -2)
+
+DOMAIN-SPECIFIC TESTS:
+- Number Theory: Test n→∞ behavior, p-adic arguments, divisibility chains
+- Geometry: Test projective/affine transformations, degenerate configurations
+- Algebra: Test equality cases, boundary values (x=0, x=1, x→∞), symmetric cases
 """
 
     def _parse_criticism(self, response: str, iteration: int) -> Criticism:
@@ -420,12 +462,25 @@ ADVANCED INTENSITY - Maximum rigor:
                     flaw_dict[key.strip().lower()] = value.strip()
 
             if flaw_dict:
+                # Extract answer implication - critical for feedback loop
+                answer_impl = flaw_dict.get('answer_implication', flaw_dict.get('answer implication', ''))
+                if answer_impl and answer_impl.upper() not in ('N/A', 'NA', 'NONE', ''):
+                    answer_impl = answer_impl
+                else:
+                    # Auto-generate implication from counterexample if not provided
+                    ce = flaw_dict.get('counterexample', '')
+                    if ce and ce.upper() not in ('N/A', 'NA', 'NONE'):
+                        answer_impl = f"Counterexample '{ce}' suggests answer may need revision"
+                    else:
+                        answer_impl = None
+
                 flaws.append(Flaw(
                     type=flaw_dict.get('type', 'unknown'),
                     severity=flaw_dict.get('severity', 'major'),
                     description=flaw_dict.get('description', ''),
-                    counterexample=flaw_dict.get('counterexample') if flaw_dict.get('counterexample', 'N/A') != 'N/A' else None,
-                    location=flaw_dict.get('location', 'unspecified')
+                    counterexample=flaw_dict.get('counterexample') if flaw_dict.get('counterexample', 'N/A').upper() not in ('N/A', 'NA', 'NONE') else None,
+                    location=flaw_dict.get('location', 'unspecified'),
+                    answer_implication=answer_impl
                 ))
 
         # If no structured flaws found but response contains criticism, mark as unparsed
@@ -587,18 +642,29 @@ class RLACAgent:
                 best_solution = solution
                 print(f"\n→ New best solution (reward: {best_reward})")
 
-            # PHASE 5: STUCK DETECTION & ANSWER RECONSIDERATION
-            stuck_info = self._analyze_stuck_pattern(criticism_history)
-            if stuck_info['is_stuck']:
-                if stuck_info['has_counterexamples']:
-                    print("\n⚠ STUCK WITH VALID COUNTEREXAMPLES - Requesting answer reconsideration")
-                    print("  Counterexamples suggest the ANSWER (not just proof) may be wrong")
-                    self.generator.request_answer_reconsideration(
-                        stuck_info['counterexamples']
-                    )
-                else:
-                    print("\n⚠ STUCK PATTERN DETECTED - Requesting strategy shift")
-                    self.generator.request_strategy_shift()
+            # PHASE 5: EARLY ANSWER RECONSIDERATION + STUCK DETECTION
+            # NEW: Trigger answer reconsideration EARLY if counterexamples found in 2+ rounds
+            recent_counterexamples = self._collect_recent_counterexamples(criticism_history, window=2)
+
+            if len(recent_counterexamples) >= 2 and iteration >= 2:
+                # Early trigger: 2+ counterexamples in last 2 rounds
+                print("\n⚠ EARLY ANSWER CHECK - Multiple counterexamples detected")
+                print(f"  {len(recent_counterexamples)} counterexamples in recent rounds")
+                print("  Triggering answer reconsideration BEFORE getting stuck")
+                self.generator.request_answer_reconsideration(recent_counterexamples)
+            else:
+                # Original stuck detection
+                stuck_info = self._analyze_stuck_pattern(criticism_history)
+                if stuck_info['is_stuck']:
+                    if stuck_info['has_counterexamples']:
+                        print("\n⚠ STUCK WITH VALID COUNTEREXAMPLES - Requesting answer reconsideration")
+                        print("  Counterexamples suggest the ANSWER (not just proof) may be wrong")
+                        self.generator.request_answer_reconsideration(
+                            stuck_info['counterexamples']
+                        )
+                    else:
+                        print("\n⚠ STUCK PATTERN DETECTED - Requesting strategy shift")
+                        self.generator.request_strategy_shift()
 
             # Accept if only minor flaws after several iterations
             if (all(f.severity == 'minor' for f in criticism.flaws) and
@@ -652,6 +718,24 @@ class RLACAgent:
     def _is_stuck(self, criticism_history: List[Criticism], window: int = 3) -> bool:
         """Detect stuck patterns (same criticism repeating)."""
         return self._analyze_stuck_pattern(criticism_history, window)['is_stuck']
+
+    def _collect_recent_counterexamples(self, criticism_history: List[Criticism], window: int = 2) -> List[str]:
+        """Collect counterexamples from recent rounds for early answer reconsideration."""
+        if len(criticism_history) < window:
+            return []
+
+        recent = criticism_history[-window:]
+        counterexamples = []
+
+        for crit in recent:
+            for flaw in crit.flaws:
+                if flaw.counterexample:
+                    counterexamples.append(flaw.counterexample)
+                # Also include answer implications if present
+                if flaw.answer_implication:
+                    counterexamples.append(f"[IMPLICATION] {flaw.answer_implication}")
+
+        return counterexamples
 
     def _analyze_stuck_pattern(self, criticism_history: List[Criticism], window: int = 3) -> dict:
         """
