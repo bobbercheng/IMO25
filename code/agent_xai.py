@@ -326,18 +326,107 @@ def extract_text_from_response(response_data):
 
 def extract_solution(response_data):
     """
-    Extracts the solution from the API response JSON.
+    Extracts the solution from the API response.
+
+    Expects unified format with ### markers:
+    - ### Summary ###
+    - ### Detailed Solution ###
+
+    Returns:
+        Solution text from ### Summary ### onwards, or empty string if not found
     """
-    # find the last "### Summary ###" and return the text after it
+    if not response_data:
+        return ""
+
+    # Pattern 1: Look for ### Summary ### marker (preferred unified format)
+    summary_pattern = r'###\s*Summary\s*###'
+    summary_match = re.search(summary_pattern, response_data, re.IGNORECASE)
+
+    if summary_match:
+        # Extract from ### Summary ### onwards
+        start_idx = summary_match.start()
+        return response_data[start_idx:].strip()
+
+    # Fallback: Look for just "Summary" keyword (backward compatibility)
     summary_idx = response_data.rfind("Summary")
     if summary_idx == -1:
         return ""
-    
-    # check if there "###" before the summary, if so, return the text with the "###"
-    if "### " in response_data[summary_idx - 4:summary_idx]:
+
+    # Check if "### " appears before Summary
+    if summary_idx >= 4 and "### " in response_data[summary_idx - 4:summary_idx]:
         return response_data[summary_idx - 4:].strip()
     else:
         return response_data[summary_idx:].strip()
+
+
+def validate_solution_structure(solution):
+    """
+    Validate that solution has required unified format structure.
+
+    Required sections (in order):
+    1. ### Summary ### - with Verdict and Method Sketch
+    2. ### Detailed Solution ### - with full proof
+
+    Returns:
+        Tuple of (is_valid: bool, errors: List[str], sections: Dict)
+    """
+    errors = []
+    sections = {
+        'summary': None,
+        'detailed_solution': None,
+        'has_boxed_answer': False,
+        'boxed_answer': None
+    }
+
+    if not solution:
+        return False, ["Empty solution"], sections
+
+    # Check for ### Summary ### marker
+    summary_pattern = r'###\s*Summary\s*###'
+    summary_match = re.search(summary_pattern, solution, re.IGNORECASE)
+    if not summary_match:
+        # Fallback: check for "Summary" without ### markers
+        if 'Summary' not in solution and 'summary' not in solution.lower():
+            errors.append("Missing '### Summary ###' section marker")
+
+    # Check for ### Detailed Solution ### marker
+    detailed_pattern = r'###\s*Detailed\s+Solution\s*###'
+    detailed_match = re.search(detailed_pattern, solution, re.IGNORECASE)
+    if not detailed_match:
+        # Fallback: check for "Detailed Solution" without ### markers
+        if 'Detailed Solution' not in solution and 'detailed solution' not in solution.lower():
+            errors.append("Missing '### Detailed Solution ###' section marker")
+        else:
+            # Found without markers - extract it
+            idx = solution.lower().find('detailed solution')
+            if idx != -1:
+                sections['detailed_solution'] = solution[idx:].strip()
+    else:
+        # Extract detailed solution section
+        start = detailed_match.end()
+        sections['detailed_solution'] = solution[start:].strip()
+
+        # Update summary to be between Summary and Detailed Solution
+        if summary_match and detailed_match.start() > summary_match.end():
+            sections['summary'] = solution[summary_match.end():detailed_match.start()].strip()
+
+    # Extract summary if we found the marker but haven't extracted yet
+    if summary_match and sections['summary'] is None:
+        if detailed_match:
+            sections['summary'] = solution[summary_match.end():detailed_match.start()].strip()
+        else:
+            sections['summary'] = solution[summary_match.end():].strip()
+
+    # Check for boxed answer
+    boxed_pattern = r'\\boxed\{([^}]+)\}'
+    boxed_match = re.search(boxed_pattern, solution)
+    if boxed_match:
+        sections['has_boxed_answer'] = True
+        sections['boxed_answer'] = boxed_match.group(1).strip()
+
+    is_valid = len(errors) == 0
+    return is_valid, errors, sections
+
 
 def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     """
