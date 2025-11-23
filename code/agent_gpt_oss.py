@@ -46,8 +46,8 @@ MODEL_NAME = "openai/gpt-oss-120b"
 API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
 
 # Asymmetric Reasoning Effort Configuration
-# Solution generation: Uses low reasoning to prevent truncation and maintain efficiency
-SOLUTION_REASONING_EFFORT = os.getenv("GPT_OSS_SOLUTION_REASONING", "low")
+# Solution generation: Uses medium reasoning for better quality while maintaining efficiency
+SOLUTION_REASONING_EFFORT = os.getenv("GPT_OSS_SOLUTION_REASONING", "medium")
 # Self-improvement: Uses high reasoning for proactive error detection and prevention
 SELF_IMPROVEMENT_REASONING_EFFORT = os.getenv("GPT_OSS_SELF_IMPROVEMENT_REASONING", "high")
 # Verification: Uses high reasoning for rigorous checking and catching subtle errors
@@ -1968,7 +1968,7 @@ def extract_answer_key(solution):
 def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                self_imp_reasoning="high", ver_reasoning="high",
                max_adversarial_rounds=12, consecutive_robust_threshold=3,
-               stuck_threshold=4, memory_file=None, verbose=True,
+               stuck_threshold=2, memory_file=None, verbose=True,
                defense_first=True, max_regeneration_attempts=2,
                use_constructive_mode=True):
     """
@@ -2000,7 +2000,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         ver_reasoning: Reasoning effort for adversarial attacks (default: "high")
         max_adversarial_rounds: Maximum RLAC rounds (default: 12)
         consecutive_robust_threshold: Consecutive robust verdicts needed for success (default: 3)
-        stuck_threshold: Consecutive failed fixes before declaring stuck (default: 4)
+        stuck_threshold: Consecutive failed fixes before declaring stuck (default: 2)
         memory_file: Path to save RLAC state and attack history
         verbose: Enable detailed logging
         defense_first: If True, use defense-first mode for proactive attack anticipation (default: True)
@@ -2531,7 +2531,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_memory=False,
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
-          use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=4,
+          use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=2,
           rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True):
     """
     Main agent function for solving mathematical problems.
@@ -2552,7 +2552,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         use_rlac: If True, use RLAC (Adversarial Critic) mode (default: False)
         rlac_max_rounds: Maximum RLAC adversarial rounds (default: 12)
         rlac_robust_threshold: Consecutive robust verdicts needed (default: 3)
-        rlac_stuck_threshold: Consecutive failed fixes before stuck (default: 4)
+        rlac_stuck_threshold: Consecutive failed fixes before stuck (default: 2)
         rlac_defense_first: If True, use defense-first mode for proactive attack anticipation (default: True)
     """
     # Set reasoning efforts with CLI overrides if provided
@@ -2957,8 +2957,8 @@ if __name__ == "__main__":
                        help='Maximum RLAC adversarial rounds (default: 12)')
     parser.add_argument('--rlac-robust-threshold', type=int, default=3,
                        help='Consecutive robust verdicts needed for success (default: 3)')
-    parser.add_argument('--rlac-stuck-threshold', type=int, default=4,
-                       help='Consecutive failed fixes before declaring stuck (default: 4)')
+    parser.add_argument('--rlac-stuck-threshold', type=int, default=2,
+                       help='Consecutive failed fixes before declaring stuck (default: 2)')
     parser.add_argument('--rlac-defense-first', action='store_true', default=True,
                        help='Enable defense-first mode for proactive attack anticipation (default: True)')
     parser.add_argument('--no-rlac-defense-first', action='store_true',

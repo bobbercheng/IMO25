@@ -41,7 +41,12 @@ from adversarial_prompts import (
     adversarial_defense_prompt,
     counterexample_generation_prompt,
     defense_first_generator_prompt,
-    defense_first_revision_prompt
+    defense_first_revision_prompt,
+    small_case_verification_prompt,
+    small_case_verification_instruction,
+    error_severity_classification,
+    classify_error_severity,
+    calculate_verdict_from_errors
 )
 
 
@@ -142,11 +147,13 @@ class AdversarialCritic:
             round_num, max_rounds, intensity_name, self.attack_history
         )
 
-        # Build complete attack prompt
+        # Build complete attack prompt with small-case verification
         attack_prompt = f"""
 {control_prompt}
 
 {intensity_prompt}
+
+{small_case_verification_instruction}
 
 ### Problem ###
 {problem_statement}
@@ -157,6 +164,12 @@ class AdversarialCritic:
 ### Your Attack ###
 Try HARD to break this solution. Generate counterexamples, test boundaries, challenge assumptions.
 Remember: You are rewarded for finding flaws, not for accepting solutions.
+
+**MANDATORY**: Before giving your verdict, perform small-case verification:
+1. Pick 3-5 small concrete values (n=1, 2, 3, 4, 5 or appropriate)
+2. Compute what the solution claims for each case
+3. Verify by direct calculation
+4. Report any mismatch as a COUNTEREXAMPLE
 
 Follow the output format specified in your system prompt.
 """
@@ -1177,3 +1190,389 @@ class EnhancedAdversarialSession:
             if self.verbose:
                 self._log(f"Error saving session: {e}")
             return False
+
+
+# ==============================================================================
+# SYMBOLIC VERIFIER
+# ==============================================================================
+
+class SymbolicVerifier:
+    """
+    Symbolic verification system for mathematical solutions.
+
+    This verifier performs symbolic computation to validate claims in solutions,
+    catching errors that pure reasoning might miss. It integrates with the
+    small-case verification system.
+
+    Key capabilities:
+    1. Algebraic expression verification
+    2. Numerical computation checks
+    3. Symbolic equivalence testing
+    4. Small-case enumeration
+    5. Formula verification
+    """
+
+    def __init__(self, verbose: bool = True):
+        """
+        Initialize the symbolic verifier.
+
+        Args:
+            verbose: Enable detailed logging
+        """
+        self.verbose = verbose
+        self.verification_history: List[Dict[str, Any]] = []
+
+        if verbose:
+            self._log("SymbolicVerifier initialized")
+
+    def _log(self, message: str):
+        """Log with timestamp."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[{timestamp}] [SYMBOLIC VERIFIER] {message}")
+
+    def verify_formula(self, formula: str, test_values: List[Dict[str, Any]],
+                       expected_fn=None) -> Dict[str, Any]:
+        """
+        Verify a mathematical formula against test values.
+
+        Args:
+            formula: Mathematical formula as string (e.g., "n*(n+1)//2")
+            test_values: List of dicts with variable values (e.g., [{'n': 1}, {'n': 2}])
+            expected_fn: Optional function to compute expected values
+
+        Returns:
+            Dict with verification results:
+                - passed: True if all tests passed
+                - results: List of individual test results
+                - first_failure: Details of first failing case (if any)
+        """
+        results = []
+        first_failure = None
+
+        for test in test_values:
+            try:
+                # Safe evaluation of formula with given values
+                computed = self._safe_eval(formula, test)
+
+                # Compare with expected if provided
+                if expected_fn:
+                    expected = expected_fn(**test)
+                    passed = computed == expected
+                    result = {
+                        'test': test,
+                        'computed': computed,
+                        'expected': expected,
+                        'passed': passed
+                    }
+                else:
+                    result = {
+                        'test': test,
+                        'computed': computed,
+                        'passed': True  # No expected value to compare
+                    }
+
+                results.append(result)
+
+                if not result['passed'] and first_failure is None:
+                    first_failure = result
+
+            except Exception as e:
+                result = {
+                    'test': test,
+                    'error': str(e),
+                    'passed': False
+                }
+                results.append(result)
+                if first_failure is None:
+                    first_failure = result
+
+        all_passed = all(r.get('passed', False) for r in results)
+
+        verification_result = {
+            'passed': all_passed,
+            'results': results,
+            'first_failure': first_failure,
+            'total_tests': len(results),
+            'passed_tests': sum(1 for r in results if r.get('passed', False))
+        }
+
+        self.verification_history.append(verification_result)
+
+        if self.verbose:
+            status = "PASS" if all_passed else "FAIL"
+            self._log(f"Formula verification: {status} ({verification_result['passed_tests']}/{len(results)})")
+            if first_failure:
+                self._log(f"  First failure: {first_failure}")
+
+        return verification_result
+
+    def _safe_eval(self, formula: str, variables: Dict[str, Any]) -> Any:
+        """
+        Safely evaluate a mathematical formula.
+
+        Only allows safe mathematical operations, no arbitrary code execution.
+
+        Args:
+            formula: Formula string
+            variables: Variable values dict
+
+        Returns:
+            Computed result
+        """
+        # Allowed names for safe evaluation
+        safe_names = {
+            'abs': abs,
+            'min': min,
+            'max': max,
+            'sum': sum,
+            'len': len,
+            'range': range,
+            'int': int,
+            'float': float,
+            'pow': pow,
+            'round': round,
+            # Add variable values
+            **variables
+        }
+
+        # Restrict to safe operations
+        return eval(formula, {"__builtins__": {}}, safe_names)
+
+    def verify_small_cases(self, claim_checker, n_values: List[int] = None,
+                          problem_type: str = 'general') -> Dict[str, Any]:
+        """
+        Verify a claim for small cases.
+
+        Args:
+            claim_checker: Function that takes n and returns (passed: bool, details: str)
+            n_values: List of n values to test (auto-generated if None)
+            problem_type: Type of problem for generating appropriate test cases
+
+        Returns:
+            Dict with small-case verification results
+        """
+        if n_values is None:
+            n_values = self._get_test_values_for_type(problem_type)
+
+        results = []
+        all_passed = True
+        first_failure = None
+
+        for n in n_values:
+            try:
+                passed, details = claim_checker(n)
+                result = {
+                    'n': n,
+                    'passed': passed,
+                    'details': details
+                }
+            except Exception as e:
+                passed = False
+                result = {
+                    'n': n,
+                    'passed': False,
+                    'error': str(e)
+                }
+
+            results.append(result)
+
+            if not passed:
+                all_passed = False
+                if first_failure is None:
+                    first_failure = result
+
+        verification_result = {
+            'verdict': 'ALL_PASS' if all_passed else 'SOME_FAIL',
+            'passed': all_passed,
+            'results': results,
+            'first_failure': first_failure,
+            'cases_tested': len(results),
+            'cases_passed': sum(1 for r in results if r.get('passed', False))
+        }
+
+        self.verification_history.append(verification_result)
+
+        if self.verbose:
+            self._log(f"Small-case verification: {verification_result['verdict']}")
+            self._log(f"  Cases: {verification_result['cases_passed']}/{verification_result['cases_tested']} passed")
+            if first_failure:
+                self._log(f"  First failure at n={first_failure['n']}: {first_failure.get('details', first_failure.get('error', 'unknown'))}")
+
+        return verification_result
+
+    def _get_test_values_for_type(self, problem_type: str) -> List[int]:
+        """Get appropriate test values based on problem type."""
+        test_cases = {
+            'number_theory': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 25, 100],
+            'combinatorics': [1, 2, 3, 4, 5, 6, 7, 8],
+            'geometry': [3, 4, 5, 6, 7, 8],
+            'algebra': [0, 1, 2, 3, 4, 5, -1, -2],
+            'inequality': [1, 2, 3, 4, 5, 10, 100],
+            'general': [1, 2, 3, 4, 5]
+        }
+        return test_cases.get(problem_type.lower(), test_cases['general'])
+
+    def verify_divisibility(self, value: int, divisor: int) -> Dict[str, Any]:
+        """
+        Verify divisibility claim.
+
+        Args:
+            value: Number to check
+            divisor: Divisor to check against
+
+        Returns:
+            Dict with verification result
+        """
+        result = {
+            'value': value,
+            'divisor': divisor,
+            'remainder': value % divisor,
+            'is_divisible': value % divisor == 0
+        }
+
+        if self.verbose:
+            status = "YES" if result['is_divisible'] else "NO"
+            self._log(f"Divisibility check: {value} % {divisor} = {result['remainder']} -> {status}")
+
+        return result
+
+    def verify_modular_claim(self, expression: str, modulus: int,
+                            expected_residue: int, variables: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Verify a modular arithmetic claim.
+
+        Args:
+            expression: Expression to evaluate (e.g., "n**2 + n")
+            modulus: Modulus value
+            expected_residue: Expected residue
+            variables: Variable values
+
+        Returns:
+            Dict with verification result
+        """
+        try:
+            computed = self._safe_eval(expression, variables)
+            actual_residue = computed % modulus
+
+            result = {
+                'expression': expression,
+                'variables': variables,
+                'computed_value': computed,
+                'modulus': modulus,
+                'actual_residue': actual_residue,
+                'expected_residue': expected_residue,
+                'passed': actual_residue == expected_residue
+            }
+        except Exception as e:
+            result = {
+                'expression': expression,
+                'variables': variables,
+                'error': str(e),
+                'passed': False
+            }
+
+        if self.verbose:
+            status = "PASS" if result.get('passed', False) else "FAIL"
+            self._log(f"Modular claim verification: {status}")
+
+        return result
+
+    def verify_inequality(self, lhs_expr: str, rhs_expr: str, relation: str,
+                         test_values: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Verify an inequality claim.
+
+        Args:
+            lhs_expr: Left-hand side expression
+            rhs_expr: Right-hand side expression
+            relation: Comparison operator ('>', '<', '>=', '<=', '==')
+            test_values: List of variable value dicts to test
+
+        Returns:
+            Dict with verification results
+        """
+        compare_ops = {
+            '>': lambda a, b: a > b,
+            '<': lambda a, b: a < b,
+            '>=': lambda a, b: a >= b,
+            '<=': lambda a, b: a <= b,
+            '==': lambda a, b: a == b,
+            '!=': lambda a, b: a != b
+        }
+
+        compare_fn = compare_ops.get(relation)
+        if not compare_fn:
+            return {'error': f'Unknown relation: {relation}', 'passed': False}
+
+        results = []
+        first_failure = None
+
+        for test in test_values:
+            try:
+                lhs_value = self._safe_eval(lhs_expr, test)
+                rhs_value = self._safe_eval(rhs_expr, test)
+                passed = compare_fn(lhs_value, rhs_value)
+
+                result = {
+                    'test': test,
+                    'lhs': lhs_value,
+                    'rhs': rhs_value,
+                    'relation': relation,
+                    'passed': passed
+                }
+            except Exception as e:
+                result = {
+                    'test': test,
+                    'error': str(e),
+                    'passed': False
+                }
+
+            results.append(result)
+            if not result['passed'] and first_failure is None:
+                first_failure = result
+
+        all_passed = all(r.get('passed', False) for r in results)
+
+        return {
+            'passed': all_passed,
+            'results': results,
+            'first_failure': first_failure,
+            'total_tests': len(results),
+            'passed_tests': sum(1 for r in results if r.get('passed', False))
+        }
+
+    def classify_errors(self, errors: List[str]) -> Dict[str, Any]:
+        """
+        Classify a list of errors by severity.
+
+        Args:
+            errors: List of error description strings
+
+        Returns:
+            Dict with classified errors and verdict
+        """
+        classified = [classify_error_severity(e) for e in errors]
+        return calculate_verdict_from_errors(classified)
+
+    def get_small_case_prompt(self) -> str:
+        """Get the small-case verification prompt."""
+        return small_case_verification_prompt
+
+    def get_small_case_instruction(self) -> str:
+        """Get the mandatory small-case check instruction."""
+        return small_case_verification_instruction
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get verification metrics summary."""
+        if not self.verification_history:
+            return {'total_verifications': 0, 'pass_rate': 0.0}
+
+        passed = sum(1 for v in self.verification_history if v.get('passed', False))
+        total = len(self.verification_history)
+
+        return {
+            'total_verifications': total,
+            'passed': passed,
+            'failed': total - passed,
+            'pass_rate': passed / total if total > 0 else 0.0
+        }

@@ -544,3 +544,262 @@ def get_constructive_prompt(previous_verdict, attack_result, round_num):
         return constructive_defense_prompt.format(
             constructive_feedback=attack_result.get('full_attack', '')
         )
+
+
+# ==============================================================================
+# SMALL-CASE VERIFICATION PROMPTS
+# ==============================================================================
+
+small_case_verification_prompt = """
+### SMALL-CASE VERIFICATION MODE ###
+
+Before accepting ANY solution, verify it works on SMALL CONCRETE CASES.
+This catches ~80% of mathematical errors before complex reasoning.
+
+**Verification Protocol**:
+
+For NUMBER THEORY problems:
+- Test n=1, n=2, n=3, n=4, n=5 explicitly
+- Test n=prime (7, 11, 13) and n=composite (6, 9, 12)
+- Test n=power of 2 (4, 8, 16) and n=odd (3, 5, 7)
+- Compute ACTUAL values, don't just claim "works"
+
+For COMBINATORICS problems:
+- Enumerate ALL cases for n=1, n=2, n=3
+- Count explicitly (list them out)
+- Verify claimed formulas match actual counts
+- Check base cases and small recursion steps
+
+For GEOMETRY problems:
+- Test with specific coordinates (unit triangle, square)
+- Verify angle/length calculations with actual numbers
+- Test degenerate cases (collinear, coincident points)
+- Use n=3,4,5 sided polygons explicitly
+
+For ALGEBRA/INEQUALITY problems:
+- Test equality cases with specific values
+- Test boundary values (x=0, x=1, x→∞)
+- Test symmetric cases (x=y=z)
+- Verify claimed optimum with concrete computation
+
+**Required Output Format**:
+
+**SMALL-CASE VERIFICATION**:
+
+Case n=1:
+- Setup: [Concrete values/configuration]
+- Solution claims: [What the solution says should happen]
+- Actual computation: [Step-by-step calculation]
+- Result: [PASS/FAIL]
+
+Case n=2:
+[Same format]
+
+Case n=3:
+[Same format]
+
+[Continue for n=4, n=5 if applicable]
+
+**VERIFICATION SUMMARY**:
+- Cases tested: [count]
+- Passed: [count]
+- Failed: [count]
+- First failing case: [Details if any]
+
+**SMALL-CASE VERDICT**: [ALL_PASS / SOME_FAIL / CRITICAL_FAIL]
+
+If ANY case fails, declare BROKEN immediately with the failing case as counterexample.
+"""
+
+small_case_verification_instruction = """
+### MANDATORY SMALL-CASE CHECK ###
+
+BEFORE providing any verdict on this solution:
+
+1. **STOP** and pick 3-5 small concrete values
+2. **COMPUTE** what the solution predicts for each case
+3. **VERIFY** by direct calculation (not reasoning about the solution)
+4. **REPORT** any discrepancy as a COUNTEREXAMPLE
+
+This is MANDATORY. Do not skip small-case verification.
+
+**Example for "Prove sum of first n integers = n(n+1)/2"**:
+- n=1: Formula gives 1(2)/2=1, actual sum=1 ✓
+- n=2: Formula gives 2(3)/2=3, actual sum=1+2=3 ✓
+- n=3: Formula gives 3(4)/2=6, actual sum=1+2+3=6 ✓
+- n=4: Formula gives 4(5)/2=10, actual sum=1+2+3+4=10 ✓
+Result: ALL_PASS
+
+**If you find a mismatch, this is a COUNTEREXAMPLE - report it immediately.**
+"""
+
+
+# ==============================================================================
+# ERROR SEVERITY CLASSIFICATION SYSTEM
+# ==============================================================================
+
+error_severity_classification = """
+### ERROR SEVERITY CLASSIFICATION SYSTEM ###
+
+When analyzing mathematical solutions, classify errors into severity levels:
+
+**LEVEL 1 - CRITICAL (Solution Invalid)**
+Score: -10 points | Action: BROKEN verdict
+- Counterexample exists that breaks the main claim
+- Logical error that invalidates the entire proof
+- Missing case that makes the proof incomplete
+- Circular reasoning (assuming what needs to be proved)
+- Wrong answer (computation gives different result)
+
+**LEVEL 2 - MAJOR (Serious Flaw)**
+Score: -5 points | Action: SUSPICIOUS verdict
+- Unjustified leap in reasoning
+- Implicit assumption that's not obviously true
+- Gap in case analysis (some cases not covered)
+- Wrong intermediate result (but might be fixable)
+- Boundary case not handled
+
+**LEVEL 3 - MINOR (Needs Improvement)**
+Score: -2 points | Action: Flag for revision
+- Unclear explanation (but logic appears sound)
+- Missing justification for "obvious" step
+- Notation inconsistency
+- Style issues (not rigorous enough)
+- Could be more elegant/direct
+
+**LEVEL 4 - COSMETIC (Polish Only)**
+Score: -1 point | Action: Note but don't penalize
+- Typos in non-critical places
+- Formatting issues
+- Redundant steps
+- Suboptimal presentation
+
+**Classification Rules**:
+1. Each distinct error should be classified ONCE
+2. If error could fit multiple levels, use the HIGHEST applicable
+3. Related errors (same root cause) count as ONE error
+4. Severity accumulates: 2 MAJOR + 3 MINOR = significant issue
+
+**Automatic Verdicts by Total Score**:
+- Score ≥ 0: ROBUST
+- Score -1 to -9: SUSPICIOUS (minor issues)
+- Score -10 to -19: NEEDS_WORK (major revisions needed)
+- Score ≤ -20: BROKEN (fundamental problems)
+"""
+
+def classify_error_severity(error_description: str) -> dict:
+    """
+    Classify an error's severity based on keywords and patterns.
+
+    Args:
+        error_description: Text describing the error
+
+    Returns:
+        Dict with 'level' (1-4), 'name', 'points', and 'action'
+    """
+    error_lower = error_description.lower()
+
+    # Level 1 - Critical indicators
+    critical_patterns = [
+        'counterexample', 'invalid', 'wrong answer', 'circular',
+        'breaks', 'fails for', 'doesn\'t work', 'incorrect result',
+        'fundamental error', 'proof is wrong', 'false claim',
+        'missing case', 'incomplete', 'not proven'
+    ]
+
+    # Level 2 - Major indicators
+    major_patterns = [
+        'unjustified', 'assumption', 'gap', 'boundary',
+        'not handled', 'edge case', 'why does', 'not clear how',
+        'needs proof', 'claim without', 'implicit', 'missing step'
+    ]
+
+    # Level 3 - Minor indicators
+    minor_patterns = [
+        'unclear', 'could be clearer', 'notation', 'obvious',
+        'trivial', 'well-known', 'straightforward', 'style',
+        'should mention', 'would be better', 'more rigorous'
+    ]
+
+    # Check patterns in order of severity
+    for pattern in critical_patterns:
+        if pattern in error_lower:
+            return {
+                'level': 1,
+                'name': 'CRITICAL',
+                'points': -10,
+                'action': 'BROKEN verdict'
+            }
+
+    for pattern in major_patterns:
+        if pattern in error_lower:
+            return {
+                'level': 2,
+                'name': 'MAJOR',
+                'points': -5,
+                'action': 'SUSPICIOUS verdict'
+            }
+
+    for pattern in minor_patterns:
+        if pattern in error_lower:
+            return {
+                'level': 3,
+                'name': 'MINOR',
+                'points': -2,
+                'action': 'Flag for revision'
+            }
+
+    # Default to cosmetic
+    return {
+        'level': 4,
+        'name': 'COSMETIC',
+        'points': -1,
+        'action': 'Note but don\'t penalize'
+    }
+
+
+def calculate_verdict_from_errors(errors: list) -> dict:
+    """
+    Calculate overall verdict from a list of classified errors.
+
+    Args:
+        errors: List of error dicts with 'level' and 'points' keys
+
+    Returns:
+        Dict with 'total_score', 'verdict', and 'error_summary'
+    """
+    if not errors:
+        return {
+            'total_score': 0,
+            'verdict': 'ROBUST',
+            'error_summary': {'critical': 0, 'major': 0, 'minor': 0, 'cosmetic': 0}
+        }
+
+    total_score = sum(e.get('points', 0) for e in errors)
+
+    error_summary = {
+        'critical': sum(1 for e in errors if e.get('level') == 1),
+        'major': sum(1 for e in errors if e.get('level') == 2),
+        'minor': sum(1 for e in errors if e.get('level') == 3),
+        'cosmetic': sum(1 for e in errors if e.get('level') == 4)
+    }
+
+    # Determine verdict based on score
+    if total_score >= 0:
+        verdict = 'ROBUST'
+    elif total_score >= -9:
+        verdict = 'SUSPICIOUS'
+    elif total_score >= -19:
+        verdict = 'NEEDS_WORK'
+    else:
+        verdict = 'BROKEN'
+
+    # Override: any critical error means BROKEN
+    if error_summary['critical'] > 0:
+        verdict = 'BROKEN'
+
+    return {
+        'total_score': total_score,
+        'verdict': verdict,
+        'error_summary': error_summary
+    }
