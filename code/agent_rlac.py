@@ -700,13 +700,19 @@ class RLACAgent:
                     result['counterexamples'] = all_counterexamples
                     result['reason'] += " (with counterexamples - answer may be wrong)"
 
-        # Also check if all recent rounds have 'broken' verdicts with counterexamples
+        # Also check if MULTIPLE recent rounds have counterexamples (not just one)
+        # This indicates persistent counterexample issues, not just varied flaws
         all_have_flaws = all(len(crit.flaws) > 0 for crit in recent)
-        if all_have_flaws and all_counterexamples:
+        rounds_with_counterexamples = sum(
+            1 for crit in recent
+            if any(flaw.counterexample for flaw in crit.flaws)
+        )
+        # Only mark stuck if counterexamples appear in majority of recent rounds
+        if all_have_flaws and rounds_with_counterexamples >= (window // 2 + 1):
             result['is_stuck'] = True
             result['has_counterexamples'] = True
             result['counterexamples'] = all_counterexamples
-            result['reason'] = "All recent rounds have flaws with counterexamples"
+            result['reason'] = f"Counterexamples in {rounds_with_counterexamples}/{window} recent rounds"
 
         return result
 
