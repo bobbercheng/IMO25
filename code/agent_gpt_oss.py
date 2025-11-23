@@ -2532,7 +2532,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
           use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=2,
-          rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True):
+          rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True, rlac_critic_reasoning=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -2554,6 +2554,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         rlac_robust_threshold: Consecutive robust verdicts needed (default: 3)
         rlac_stuck_threshold: Consecutive failed fixes before stuck (default: 2)
         rlac_defense_first: If True, use defense-first mode for proactive attack anticipation (default: True)
+        rlac_max_regeneration: Maximum regeneration attempts when initial solution is invalid (default: 2)
+        rlac_constructive_mode: Use constructive critic mode after repeated failures (default: True)
+        rlac_critic_reasoning: Reasoning effort for RLAC adversarial critic (default: medium). Overrides ver_reasoning for RLAC mode.
     """
     # Set reasoning efforts with CLI overrides if provided
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
@@ -2567,12 +2570,16 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f">>>>>>> Redirecting to adversarial critic agent")
         print(f"{'='*80}\n")
 
+        # Use dedicated RLAC critic reasoning if provided, otherwise fall back to ver_reasoning
+        # Default for RLAC critic is "medium" (set via CLI default) for balanced attack quality
+        rlac_ver_reasoning = rlac_critic_reasoning or ver_reasoning
+
         return rlac_agent(
             problem_statement=problem_statement,
             other_prompts=other_prompts,
             sol_reasoning=sol_reasoning,
             self_imp_reasoning=self_imp_reasoning,
-            ver_reasoning=ver_reasoning,
+            ver_reasoning=rlac_ver_reasoning,
             max_adversarial_rounds=rlac_max_rounds,
             consecutive_robust_threshold=rlac_robust_threshold,
             stuck_threshold=rlac_stuck_threshold,
@@ -2969,6 +2976,8 @@ if __name__ == "__main__":
                        help='Use constructive critic mode after repeated failures (default: True)')
     parser.add_argument('--no-rlac-constructive-mode', action='store_true',
                        help='Disable constructive critic mode')
+    parser.add_argument('--rlac-critic-reasoning', type=str, choices=['low', 'medium', 'high'], default='medium',
+                       help='Reasoning effort for RLAC adversarial critic attacks (default: medium). Higher = more rigorous attacks.')
 
     args = parser.parse_args()
 
@@ -2991,6 +3000,7 @@ if __name__ == "__main__":
     rlac_defense_first = args.rlac_defense_first and not args.no_rlac_defense_first
     rlac_max_regeneration = args.rlac_max_regeneration
     rlac_constructive_mode = args.rlac_constructive_mode and not args.no_rlac_constructive_mode
+    rlac_critic_reasoning = args.rlac_critic_reasoning
 
     # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
@@ -3083,7 +3093,7 @@ if __name__ == "__main__":
                        solution_reasoning, self_improvement_reasoning, verification_reasoning,
                        num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
                        use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
-                       rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode)
+                       rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning)
             if(sol is not None):
                 print(f">>>>>>> Found a correct solution in run {i}.")
                 print(json.dumps(sol, indent=4))
