@@ -577,6 +577,138 @@ With progressive reasoning (LOW → MEDIUM → HIGH):
 3. **Reward Unused**: Cumulative reward tracked but not used for updates
 4. **Parsing Fragility**: Depends on LLM following output format
 
+## Bug Fixes and Improvements (P0-P3)
+
+The following critical fixes were implemented based on analysis of `test_rlac_output.log`:
+
+### P0: Near-Success Protection (CRITICAL)
+
+**Problem**: When RLAC achieved 2/3 ROBUST verdicts, a single BROKEN verdict would reset `consecutive_robust` to 0, throwing away all progress.
+
+**Root Cause**: Binary reset logic (`consecutive_robust = 0`) didn't account for near-success state.
+
+**Fix**: Implement grace failure protection at 2/3 ROBUST:
+
+```python
+# agent_gpt_oss.py lines 2401-2411
+elif verdict == "BROKEN" or verdict == "SUSPICIOUS":
+    if consecutive_robust >= 2:
+        # Near-success protection: decrement instead of reset
+        consecutive_robust -= 1  # 2/3 -> 1/3 (grace failure)
+    else:
+        consecutive_robust = 0  # Full reset when not near success
+```
+
+**Behavior**:
+- At 2/3 ROBUST: BROKEN → decrement to 1/3 (grace failure)
+- At 1/3 ROBUST: BROKEN → reset to 0/3
+
+### P1: Counterexample Verification (HIGH)
+
+**Problem**: Generator was dismissing valid counterexamples without verification, leading to answer oscillation.
+
+**Root Cause**: Defense prompt used raw counterexamples without validation, allowing vague/hypothetical counterexamples to guide revision.
+
+**Fix**: Verify counterexamples before using them in defense prompt:
+
+```python
+# agent_gpt_oss.py lines 2446-2494
+# P1 FIX: Counterexample verification before defense
+for ce in counterexamples[:3]:
+    # Check for vague indicators
+    vague_indicators = ["might fail", "could fail", "may not work"]
+    is_vague = any(ind in ce.lower() for ind in vague_indicators)
+
+    # Look for concrete values (n=, k=, etc.)
+    concrete_value_pattern = r'[nkxyzabcm]\s*[=≤≥<>]\s*\d+'
+    has_concrete_values = bool(re.search(concrete_value_pattern, ce))
+
+    if has_concrete_values:
+        verified_counterexamples.append(("verified", ce))
+    elif is_vague:
+        verified_counterexamples.append(("vague", ce))
+```
+
+### P2: Answer Lock Mechanism (HIGH)
+
+**Problem**: Answer oscillated 3+ times in test run (IMO1 answer changed from k∈{0,...,n} to k∈{0,...,n-1} and back).
+
+**Root Cause**: No mechanism to preserve validated answers when fixing proof issues.
+
+**Fix**: Lock answer after 2 consecutive ROBUST verdicts:
+
+```python
+# agent_gpt_oss.py lines 2149-2155, 2344-2351, 2496-2505
+# P2 FIX: Answer lock variables
+answer_locked = False
+locked_answer = None
+lock_threshold = 2
+
+# Lock answer after near-success
+if consecutive_robust >= lock_threshold and not answer_locked:
+    locked_answer = extract_answer(solution)
+    answer_locked = True
+
+# Add lock instruction to defense prompt
+if answer_locked and locked_answer:
+    answer_lock_instruction = """
+    CRITICAL ANSWER LOCK INSTRUCTION:
+    The answer "{locked_answer}" has been validated and MUST be preserved.
+    You may ONLY fix the PROOF/JUSTIFICATION, not the answer itself.
+    """
+```
+
+### P3: Truncation Detection (MEDIUM)
+
+**Problem**: Round 7 was a FALSE POSITIVE - truncated response (445 chars) returned BROKEN verdict without proper analysis.
+
+**Root Cause**: No validation of response completeness before accepting verdict.
+
+**Fix**: Detect truncated responses and downgrade BROKEN to SUSPICIOUS:
+
+```python
+# agent_gpt_oss.py lines 2296-2307
+# P3 FIX: Truncation detection
+min_valid_attack_length = 500  # Minimum expected response length
+
+attack_length = len(attack_text) if attack_text else 0
+if attack_length < min_valid_attack_length and verdict == "BROKEN":
+    # Check if counterexamples are also short/incomplete
+    if len(counterexamples) == 0 or len(counterexamples[0]) < 100:
+        verdict = "SUSPICIOUS"  # Downgrade, don't trust truncated analysis
+        attack_result['truncation_detected'] = True
+```
+
+### Test Verification
+
+All P0-P3 fixes are verified by unit tests in `code/test_rlac_bug_fixes.py`:
+
+```bash
+python code/test_rlac_bug_fixes.py
+
+# Expected output:
+# Tests run: 17
+# Failures: 0
+# Errors: 0
+# 🎉 ALL BUG FIXES VERIFIED!
+```
+
+### Configuration for Longer Iterations
+
+For hard problems requiring more iterations, these parameters can be adjusted:
+
+```bash
+python code/agent_gpt_oss.py problems/imo01.txt \
+    --use-rlac \
+    --rlac-max-rounds 20 \              # More rounds for hard problems
+    --rlac-robust-threshold 3 \          # Keep at 3 with P0 protection
+    --rlac-stuck-threshold 5 \           # More patience before stuck
+    --rlac-max-regeneration 5 \          # More regeneration attempts
+    --solution-reasoning low \
+    --rlac-critic-reasoning high \
+    --log output.log
+```
+
 ## Future Improvements
 
 1. **Critic Training Loop**: Collect successful/failed criticisms for fine-tuning

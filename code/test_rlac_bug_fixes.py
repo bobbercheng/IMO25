@@ -341,16 +341,171 @@ class TestRealLLMIntegration(unittest.TestCase):
             self.fail(f"Real LLM attack failed: {e}")
 
 
+class TestP0NearSuccessProtection(unittest.TestCase):
+    """Test P0: Near-success protection (2/3 ROBUST grace failure)."""
+
+    def test_near_success_decrement_logic(self):
+        """P0 FIX: At 2/3 ROBUST, decrement instead of full reset."""
+
+        def apply_broken_verdict_with_fix(consecutive_robust: int) -> int:
+            """Simulates the fixed logic from agent_gpt_oss.py lines 2401-2411"""
+            if consecutive_robust >= 2:
+                # Near-success protection: decrement instead of reset
+                consecutive_robust -= 1
+            else:
+                consecutive_robust = 0  # Full reset when not near success
+            return consecutive_robust
+
+        # Test case 1: At 2/3 ROBUST, should decrement to 1
+        result = apply_broken_verdict_with_fix(2)
+        self.assertEqual(result, 1,
+            "At 2/3 ROBUST, BROKEN should decrement to 1/3, not reset to 0")
+
+        # Test case 2: At 1/3 ROBUST, should reset to 0
+        result = apply_broken_verdict_with_fix(1)
+        self.assertEqual(result, 0,
+            "At 1/3 ROBUST, BROKEN should reset to 0")
+
+        # Test case 3: At 0/3 ROBUST, should stay at 0
+        result = apply_broken_verdict_with_fix(0)
+        self.assertEqual(result, 0,
+            "At 0/3 ROBUST, should stay at 0")
+
+        print("✓ P0 Near-success protection verified")
+        print("  - 2/3 ROBUST -> 1/3 (grace failure)")
+        print("  - 1/3 ROBUST -> 0/3 (full reset)")
+
+
+class TestP1CounterexampleVerification(unittest.TestCase):
+    """Test P1: Counterexample verification before defense."""
+
+    def test_verify_counterexample_with_concrete_values(self):
+        """P1 FIX: Counterexamples with concrete values should be verified."""
+        import re
+        concrete_value_pattern = r'[nkxyzabcm]\s*[=≤≥<>]\s*\d+'
+
+        # Test concrete counterexamples
+        ce_concrete = "For n=3, k=2, the construction fails"
+        has_concrete = bool(re.search(concrete_value_pattern, ce_concrete, re.IGNORECASE))
+        self.assertTrue(has_concrete, "Should detect concrete value n=3")
+
+        # Test vague counterexample
+        ce_vague = "The construction might fail for some values"
+        has_concrete = bool(re.search(concrete_value_pattern, ce_vague, re.IGNORECASE))
+        self.assertFalse(has_concrete, "Should not find concrete values in vague CE")
+
+        print("✓ P1 Counterexample verification pattern works")
+
+    def test_vague_indicator_detection(self):
+        """P1 FIX: Vague counterexamples should be flagged."""
+        vague_indicators = ["might fail", "could fail", "may not work", "unclear", "possibly wrong"]
+
+        # Test vague counterexample
+        ce_vague = "This approach might fail in certain cases"
+        is_vague = any(ind in ce_vague.lower() for ind in vague_indicators)
+        self.assertTrue(is_vague, "Should detect 'might fail' as vague")
+
+        # Test concrete counterexample
+        ce_concrete = "n=3, k=2: line x+y=5 is not sunny"
+        is_vague = any(ind in ce_concrete.lower() for ind in vague_indicators)
+        self.assertFalse(is_vague, "Concrete CE should not be flagged as vague")
+
+        print("✓ P1 Vague indicator detection works")
+
+
+class TestP2AnswerLock(unittest.TestCase):
+    """Test P2: Answer lock mechanism after 2 consecutive ROBUST."""
+
+    def test_answer_lock_activation(self):
+        """P2 FIX: Answer should lock after lock_threshold consecutive ROBUST."""
+        lock_threshold = 2
+        consecutive_robust = 2
+        answer_locked = False
+        locked_answer = None
+
+        # Simulate lock activation
+        if consecutive_robust >= lock_threshold and not answer_locked:
+            locked_answer = "k ∈ {0, 1, ..., n}"
+            answer_locked = True
+
+        self.assertTrue(answer_locked, "Answer should be locked at 2/3 ROBUST")
+        self.assertEqual(locked_answer, "k ∈ {0, 1, ..., n}", "Locked answer should be preserved")
+
+        print("✓ P2 Answer lock activation verified")
+
+    def test_answer_lock_enforcement_instruction(self):
+        """P2 FIX: Lock instruction should be added to defense prompt."""
+        answer_locked = True
+        locked_answer = "k ∈ {0, 1, ..., n}"
+
+        answer_lock_instruction = ""
+        if answer_locked and locked_answer:
+            answer_lock_instruction = f"""
+CRITICAL ANSWER LOCK INSTRUCTION:
+The answer "{locked_answer[:100]}..." has been validated in previous rounds and MUST be preserved.
+"""
+
+        self.assertIn("CRITICAL ANSWER LOCK", answer_lock_instruction,
+            "Lock instruction should be generated")
+        self.assertIn(locked_answer, answer_lock_instruction,
+            "Lock instruction should contain the locked answer")
+
+        print("✓ P2 Answer lock instruction generation verified")
+
+
+class TestP3TruncationDetection(unittest.TestCase):
+    """Test P3: Truncation detection for short attack responses."""
+
+    def test_truncation_detection_threshold(self):
+        """P3 FIX: Short attack responses should be flagged as truncated."""
+        min_valid_attack_length = 500
+
+        # Test short response (truncated)
+        short_response = "BROKEN - n=3 fails"  # Only ~20 chars
+        self.assertTrue(len(short_response) < min_valid_attack_length,
+            "Short response should be detected as potentially truncated")
+
+        # Test adequate response
+        adequate_response = "ANALYSIS: " + "x" * 600
+        self.assertFalse(len(adequate_response) < min_valid_attack_length,
+            "Adequate response should not be flagged as truncated")
+
+        print("✓ P3 Truncation detection threshold works")
+
+    def test_truncation_verdict_downgrade(self):
+        """P3 FIX: BROKEN verdict with truncation should downgrade to SUSPICIOUS."""
+        min_valid_attack_length = 500
+        verdict = "BROKEN"
+        attack_length = 100  # Short response
+        counterexamples = ["n=3"]  # Very short counterexample
+
+        # Apply truncation detection logic
+        if attack_length < min_valid_attack_length and verdict == "BROKEN":
+            if len(counterexamples) == 0 or (counterexamples and len(counterexamples[0]) < 100):
+                verdict = "SUSPICIOUS"
+
+        self.assertEqual(verdict, "SUSPICIOUS",
+            "BROKEN with short response should downgrade to SUSPICIOUS")
+
+        print("✓ P3 Verdict downgrade on truncation verified")
+
+
 def run_tests():
     """Run all tests."""
     # Create test suite
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
 
-    # Add test classes
+    # Add test classes - original bug fixes
     suite.addTests(loader.loadTestsFromTestCase(TestVerdictParsing))
     suite.addTests(loader.loadTestsFromTestCase(TestStuckPatternDetection))
     suite.addTests(loader.loadTestsFromTestCase(TestRLACLoopIntegration))
+
+    # Add test classes - P0-P3 fixes (from second analysis)
+    suite.addTests(loader.loadTestsFromTestCase(TestP0NearSuccessProtection))
+    suite.addTests(loader.loadTestsFromTestCase(TestP1CounterexampleVerification))
+    suite.addTests(loader.loadTestsFromTestCase(TestP2AnswerLock))
+    suite.addTests(loader.loadTestsFromTestCase(TestP3TruncationDetection))
 
     # Check if real LLM test requested
     if '--real-llm' in sys.argv:

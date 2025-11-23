@@ -2146,6 +2146,14 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     answer_history = []
     answer_oscillation_count = 0
 
+    # P2 FIX: Answer lock mechanism - lock answer after near-success
+    answer_locked = False
+    locked_answer = None
+    lock_threshold = 2  # Lock after this many consecutive ROBUST
+
+    # P3 FIX: Truncation detection threshold
+    min_valid_attack_length = 500  # Minimum chars for valid critic response
+
     # Failed approaches tracking (for regeneration)
     failed_approaches = []
 
@@ -2285,6 +2293,19 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             counterexamples = attack_result['counterexamples']
             total_penalty = attack_result['total_penalty']
 
+            # P3 FIX: Truncation detection - check if attack response was truncated
+            attack_text = attack_result.get('full_attack', '')
+            attack_length = len(attack_text) if attack_text else 0
+            if attack_length < min_valid_attack_length and verdict == "BROKEN":
+                print(f"\n>>>>>>> [RLAC TRUNCATION] WARNING: Attack response suspiciously short ({attack_length} chars)")
+                print(f">>>>>>> [RLAC TRUNCATION] Minimum expected: {min_valid_attack_length} chars")
+                if len(counterexamples) == 0 or (counterexamples and len(counterexamples[0]) < 100):
+                    print(f">>>>>>> [RLAC TRUNCATION] Counterexample appears incomplete/truncated")
+                    print(f">>>>>>> [RLAC TRUNCATION] Downgrading verdict from BROKEN to SUSPICIOUS")
+                    verdict = "SUSPICIOUS"
+                    attack_result['verdict'] = "SUSPICIOUS"
+                    attack_result['truncation_detected'] = True
+
             # Log round metrics
             rlac_round_data = {
                 'round': round_num + 1,
@@ -2319,6 +2340,15 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 best_solution_score = current_score
                 best_solution_round = round_num
                 print(f">>>>>>> [RLAC TRACKING] New best solution found (ROBUST, score: {current_score})")
+
+            # P2 FIX: Answer lock mechanism - lock answer after near-success
+            if consecutive_robust >= lock_threshold and not answer_locked:
+                current_answer_result = enhanced_session.extract_answer(solution)
+                if current_answer_result.success:
+                    locked_answer = current_answer_result.normalized
+                    answer_locked = True
+                    print(f"\n>>>>>>> [RLAC LOCK] Answer locked after {consecutive_robust} consecutive ROBUST")
+                    print(f">>>>>>> [RLAC LOCK] Locked answer: {locked_answer[:100]}...")
 
             print(f"\n{'='*80}")
             print(f">>>>>>> [RLAC SUCCESS] Solution survived attack! ({consecutive_robust}/{consecutive_robust_threshold})")
@@ -2369,7 +2399,16 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                     consecutive_robust = 0  # Reset and continue
 
         elif verdict == "BROKEN" or verdict == "SUSPICIOUS":
-            consecutive_robust = 0  # Reset robust counter
+            # P0 FIX: Near-success protection - don't fully reset when close to success
+            if consecutive_robust >= 2:
+                # At 2/3 ROBUST, give one grace failure - decrement instead of reset
+                old_robust = consecutive_robust
+                consecutive_robust -= 1
+                print(f"\n>>>>>>> [RLAC PROTECTION] Near-success protection activated!")
+                print(f">>>>>>> [RLAC PROTECTION] {old_robust}/3 -> {consecutive_robust}/3 (grace failure)")
+                print(f">>>>>>> [RLAC PROTECTION] One more BROKEN will fully reset")
+            else:
+                consecutive_robust = 0  # Full reset when not near success
             consecutive_broken += 1  # Track consecutive broken verdicts
 
             print(f"\n{'='*80}")
@@ -2404,6 +2443,67 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 print(f">>>>>>> [RLAC GENERATOR] Using defense-first mode for proactive defense")
 
             try:
+                # P1 FIX: Counterexample verification before defense
+                # Verify that counterexamples are actually valid before using them to guide defense
+                verified_counterexamples = []
+                if counterexamples and len(counterexamples) > 0:
+                    print(f">>>>>>> [RLAC P1] Verifying {len(counterexamples)} counterexample(s)...")
+
+                    for i, ce in enumerate(counterexamples[:3]):  # Verify up to 3 counterexamples
+                        # Quick validation: check if counterexample is substantive
+                        if len(ce) < 20:
+                            print(f">>>>>>> [RLAC P1]   CE #{i+1}: Too short ({len(ce)} chars) - skipping")
+                            continue
+
+                        # Check for vague/non-specific counterexamples
+                        vague_indicators = ["might fail", "could fail", "may not work", "unclear", "possibly wrong"]
+                        is_vague = any(ind in ce.lower() for ind in vague_indicators)
+
+                        if is_vague:
+                            print(f">>>>>>> [RLAC P1]   CE #{i+1}: Appears vague/hypothetical - downgrading priority")
+                            verified_counterexamples.append(("vague", ce))
+                        else:
+                            # Look for concrete values (n=, k=, x=, etc.)
+                            import re
+                            concrete_value_pattern = r'[nkxyzabcm]\s*[=≤≥<>]\s*\d+'
+                            has_concrete_values = bool(re.search(concrete_value_pattern, ce, re.IGNORECASE))
+
+                            if has_concrete_values:
+                                print(f">>>>>>> [RLAC P1]   CE #{i+1}: VERIFIED - contains concrete values")
+                                verified_counterexamples.append(("verified", ce))
+                            else:
+                                print(f">>>>>>> [RLAC P1]   CE #{i+1}: No concrete values found - keeping but flagged")
+                                verified_counterexamples.append(("unverified", ce))
+
+                    # Update counterexamples list for defense prompt
+                    if verified_counterexamples:
+                        # Prioritize verified counterexamples
+                        verified_only = [ce for status, ce in verified_counterexamples if status == "verified"]
+                        if verified_only:
+                            print(f">>>>>>> [RLAC P1] Using {len(verified_only)} verified counterexample(s) for defense")
+                            attack_result['verified_counterexamples'] = verified_only
+                        else:
+                            print(f">>>>>>> [RLAC P1] No verified counterexamples - using all {len(counterexamples)}")
+                    else:
+                        print(f">>>>>>> [RLAC P1] WARNING: No counterexamples passed verification")
+                        # If no counterexamples verified and verdict was BROKEN, reconsider
+                        if verdict == "BROKEN" and not verified_counterexamples:
+                            print(f">>>>>>> [RLAC P1] Verdict BROKEN but no valid counterexamples - treating as SUSPICIOUS")
+                            verdict = "SUSPICIOUS"
+                            attack_result['verdict'] = "SUSPICIOUS"
+                            attack_result['p1_downgraded'] = True
+
+                # P2 FIX (continued): Answer lock enforcement in defense prompt
+                answer_lock_instruction = ""
+                if answer_locked and locked_answer:
+                    answer_lock_instruction = f"""
+CRITICAL ANSWER LOCK INSTRUCTION:
+The answer "{locked_answer[:100]}..." has been validated in previous rounds and MUST be preserved.
+You may ONLY fix the PROOF/JUSTIFICATION, not the answer itself.
+If you believe the answer must change, you must provide OVERWHELMING evidence with at least 3 concrete counterexamples.
+"""
+                    print(f">>>>>>> [RLAC LOCK] Adding answer lock instruction to defense prompt")
+
                 # Build defense prompt (constructive or defense-first mode)
                 if use_constructive:
                     defense_prompt = constructive_defense_prompt.format(
@@ -2412,14 +2512,18 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 else:
                     defense_prompt = critic.get_defense_prompt(attack_result, defense_first=defense_first)
 
-                # Create revision request
+                # Create revision request with answer lock instruction if active
+                revision_prompts = other_prompts + [
+                    f"Previous solution:\n{solution}",
+                    defense_prompt
+                ]
+                if answer_lock_instruction:
+                    revision_prompts.append(answer_lock_instruction)
+
                 payload = build_request_payload(
                     system_prompt=step1_prompt,
                     question_prompt=problem_statement,
-                    other_prompts=other_prompts + [
-                        f"Previous solution:\n{solution}",
-                        defense_prompt
-                    ],
+                    other_prompts=revision_prompts,
                     reasoning_effort=sol_reasoning
                 )
 
