@@ -338,6 +338,12 @@ Follow the output format specified in your system prompt.
         Returns:
             Verdict string: "BROKEN" / "SUSPICIOUS" / "ROBUST" / "UNKNOWN"
         """
+        # FIX: Handle None or empty attack_text to prevent crash
+        if not attack_text:
+            if self.verbose:
+                self._log("[ADVERSARIAL CRITIC] Warning: Empty attack_text received")
+            return 'UNKNOWN'
+
         text_upper = attack_text.upper()
 
         # Primary patterns: Unified format (highest priority)
@@ -378,19 +384,30 @@ Follow the output format specified in your system prompt.
 
         # Content-based inference (last resort)
         # FIX: Only mark as BROKEN if there are ACTUAL counterexamples found,
-        # not just because the word "counterexample" appears in the text
+        # not just because the word "counterexample" or "BROKEN" appears in the text
         has_actual_counterexamples = counterexamples and len(counterexamples) > 0
 
-        if 'BROKEN' in text_upper:
+        # FIX: Check for ROBUST/pass indicators FIRST (they're more reliable)
+        if 'ADVERSARIAL_VALIDATION_PASSED' in text_upper or 'NO FLAWS' in text_upper.replace('_', ' '):
+            return 'ROBUST'
+        elif 'ROBUST' in text_upper and 'NOT ROBUST' not in text_upper:
+            return 'ROBUST'
+
+        # FIX: Only mark as BROKEN if we have actual counterexamples
+        # The word "BROKEN" alone doesn't mean the solution is broken
+        # (e.g., "This is NOT BROKEN" or "what a BROKEN solution looks like")
+        if has_actual_counterexamples:
             return 'BROKEN'
-        elif has_actual_counterexamples:
-            # Only mark as BROKEN if we actually found counterexamples
+        elif 'BROKEN' in text_upper and has_actual_counterexamples:
+            # Word BROKEN + actual counterexamples = definitely broken
             return 'BROKEN'
         elif 'COUNTEREXAMPLE' in text_upper and not has_actual_counterexamples:
-            # Mentions counterexamples but none found - suspicious, not broken
+            # Mentions counterexamples but none parsed - suspicious, not broken
             return 'SUSPICIOUS'
-        elif 'ROBUST' in text_upper or 'NO FLAWS' in text_upper:
-            return 'ROBUST'
+        elif 'BROKEN' in text_upper and not has_actual_counterexamples:
+            # Word BROKEN but no actual counterexamples - suspicious
+            # FIX: Changed from returning 'BROKEN' to 'SUSPICIOUS'
+            return 'SUSPICIOUS'
         elif 'SUSPICIOUS' in text_upper:
             return 'SUSPICIOUS'
 

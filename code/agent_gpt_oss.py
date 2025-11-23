@@ -2525,7 +2525,12 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 else:
                     # Solution changed - progress made
                     stuck_count = 0
-                    consecutive_broken = 0  # Reset since we made progress
+                    # FIX: Do NOT reset consecutive_broken here
+                    # consecutive_broken tracks how many BROKEN verdicts in a row,
+                    # regardless of whether the solution changes.
+                    # This allows constructive mode to activate when the generator
+                    # keeps trying but critic keeps finding issues.
+                    # consecutive_broken is only reset on ROBUST verdict (line ~2313)
                     solution_delta = len(revised_solution) - len(solution)
                     solution = revised_solution
 
@@ -2578,15 +2583,29 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             print(f">>>>>>> [RLAC WARNING] Unknown verdict from critic")
             consecutive_robust = 0
 
-        # Check for critic-detected stuck pattern (unified with stuck_count detection)
-        # This combines: (1) solution unchanged tracking and (2) attack pattern analysis
-        if critic.detect_stuck_pattern(recent_rounds=4):
+        # Check for critic-detected stuck pattern (must be combined with stuck_count)
+        # FIX: Only trigger failure if BOTH conditions are met:
+        # 1. stuck_count > 0 (solution is not changing) OR multiple rounds of broken
+        # 2. Attack pattern is repeating (same flaws keep appearing)
+        # This prevents premature failure when solutions ARE changing but critic keeps finding issues
+        critic_stuck = critic.detect_stuck_pattern(recent_rounds=4)
+        if critic_stuck and stuck_count > 0:
+            # Generator is truly stuck - solution not changing AND attack pattern repeating
             print(f"\n{'='*80}")
             print(f">>>>>>> [RLAC FAILURE] Critic detected stuck pattern")
             print(f">>>>>>> [RLAC FAILURE] Generator unable to address attacks effectively")
             print(f">>>>>>> [RLAC FAILURE] (stuck_count={stuck_count}, attack_pattern=repeated)")
             print(f"{'='*80}\n")
+            # Try to return best solution instead of None
+            if best_solution and best_solution_score > -100:
+                print(f">>>>>>> [RLAC FALLBACK] Returning best solution found (score: {best_solution_score})")
+                return best_solution
             return None
+        elif critic_stuck and consecutive_broken >= stuck_threshold:
+            # Solutions changing but consistently broken - allow more attempts but warn
+            print(f">>>>>>> [RLAC WARNING] Attack pattern repeating but solutions still changing")
+            print(f">>>>>>> [RLAC WARNING] (consecutive_broken={consecutive_broken}, stuck_count={stuck_count})")
+            # Don't fail yet - let it continue until max_rounds or stuck_count triggers
 
     # Reached max rounds without success
     print(f"\n{'='*80}")
