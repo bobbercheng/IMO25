@@ -157,11 +157,7 @@ def log_response_payload(response, label="API Response", is_streaming=False):
     # Log full response structure (truncated for readability)
     print(f">>>>>>> Full Response Payload:")
     response_str = json.dumps(response, indent=4, ensure_ascii=False)
-    if len(response_str) > 5000:
-        print(f"{response_str[:5000]}...")
-        print(f">>>>>>> [TRUNCATED - full response is {len(response_str)} characters]")
-    else:
-        print(response_str)
+    print(response_str)
     print(f"{'='*80}\n")
 
 def set_log_file(log_file_path):
