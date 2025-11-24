@@ -3497,9 +3497,12 @@ Provide a corrected solution that passes validation for all small cases.
                                     failed_summary = "\n".join(failed_approach_summaries[-3:]) if failed_approach_summaries else "Multiple approaches failed to converge"
                                     evidence_summary = "\n".join([f"- {ce}" for _, ce in accumulated_counterexamples[-5:]])
 
+                                    # Extract problem requirements from problem statement
+                                    problem_req = problem_statement[:400] if problem_statement else "See problem statement"
+
                                     fresh_prompt = solution_regeneration_prompt.format(
                                         failed_approaches=failed_summary,
-                                        counterexamples=evidence_summary
+                                        problem_requirements=problem_req
                                     )
 
                                     payload = build_request_payload(
