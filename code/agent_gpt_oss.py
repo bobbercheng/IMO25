@@ -2564,11 +2564,10 @@ Example: "SIMILARITY: 0.85 | REASON: Both claim k≤n-1, just different notation
 
     def semantic_similarity(fp1, fp2, answer1_text="", answer2_text=""):
         """
-        HYBRID semantic similarity: Fast rule-based + LLM for ambiguous cases.
+        PURE LLM semantic similarity (User preference: Option 3)
 
-        Proposal C Enhanced: Two-tier approach
-        - Tier 1: Fast fuzzy matching for obvious cases (>0.8 or <0.2)
-        - Tier 2: LLM comparison for ambiguous cases (0.2-0.8)
+        Uses LLM for all semantic comparisons to maximize accuracy.
+        Recognizes mathematical equivalences across different notations.
 
         Args:
             fp1, fp2: Semantic fingerprints (dicts with formulas, bounds, etc.)
@@ -2577,35 +2576,128 @@ Example: "SIMILARITY: 0.85 | REASON: Both claim k≤n-1, just different notation
         Returns:
             Similarity score 0.0-1.0
         """
-        # Tier 1: Fast rule-based check
-        fuzzy_score = semantic_similarity_fuzzy(fp1, fp2)
-
-        # Clear cases: skip LLM
-        if fuzzy_score >= 0.8:
-            print(f">>>>>>> [RLAC Hybrid] Fuzzy score {fuzzy_score:.2f} >= 0.8 (clearly similar), skipping LLM")
-            return fuzzy_score
-
-        if fuzzy_score <= 0.2:
-            print(f">>>>>>> [RLAC Hybrid] Fuzzy score {fuzzy_score:.2f} <= 0.2 (clearly different), skipping LLM")
-            return fuzzy_score
-
-        # Ambiguous case (0.2 < score < 0.8): Use LLM to disambiguate
-        print(f">>>>>>> [RLAC Hybrid] Fuzzy score {fuzzy_score:.2f} is ambiguous (0.2-0.8), using LLM tier")
-
         # Need full answer text for LLM comparison
         if not answer1_text or not answer2_text:
-            # Fallback: reconstruct from fingerprint
+            # Fallback: try to reconstruct from fingerprint
             answer1_text = fp1.get('raw', '') if fp1 else ''
             answer2_text = fp2.get('raw', '') if fp2 else ''
 
-        if answer1_text and answer2_text:
-            llm_score = llm_semantic_comparison(answer1_text, answer2_text)
-            print(f">>>>>>> [RLAC Hybrid] LLM score: {llm_score:.2f}, Fuzzy score: {fuzzy_score:.2f}")
-            # Use LLM score as authoritative for ambiguous cases
-            return llm_score
-        else:
-            print(f">>>>>>> [RLAC Hybrid] No answer text available, using fuzzy score: {fuzzy_score:.2f}")
-            return fuzzy_score
+        # If still no text, fall back to fuzzy matching
+        if not answer1_text or not answer2_text or len(answer1_text) < 10 or len(answer2_text) < 10:
+            print(f">>>>>>> [RLAC Pure-LLM] Insufficient text, falling back to fuzzy matching")
+            return semantic_similarity_fuzzy(fp1, fp2)
+
+        # Use LLM for all comparisons
+        print(f">>>>>>> [RLAC Pure-LLM] Using LLM for semantic comparison")
+        llm_score = llm_semantic_comparison(answer1_text, answer2_text)
+        return llm_score
+
+    def critic_validate_small_cases(solution_text, problem_statement):
+        """
+        Option 3: Critic Auto-Validation
+
+        After P5.1 generates a response, have the critic validate the proposed answer
+        against small cases (n=3, 4, 5) to verify it actually works.
+
+        Returns: (is_valid, failure_message)
+        - is_valid: True if validation passes, False if fails
+        - failure_message: Specific failure description if validation fails
+        """
+        if not solution_text:
+            return (False, "No solution provided")
+
+        # Extract the claimed answer from the solution
+        answer_extract = extract_answer_from_solution(solution_text)
+        if not answer_extract or len(answer_extract) < 10:
+            return (False, "Could not extract answer from solution")
+
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [RLAC CRITIC-VALIDATION] Auto-validating small cases...")
+        print(f">>>>>>> [RLAC CRITIC-VALIDATION] Extracted answer: {answer_extract[:100]}...")
+        print(f"{'='*80}\n")
+
+        # Ask critic to validate small cases
+        validation_prompt = f"""You are a mathematical critic validating a proposed solution.
+
+**Problem**: {problem_statement[:500]}...
+
+**Proposed Answer**: {answer_extract[:300]}
+
+**Your Task**: Test if this answer is correct for small cases n=3, n=4, n=5.
+
+For EACH small case:
+1. Determine what values of k the answer claims are possible
+2. Try to construct an explicit configuration for ONE claimed value
+3. Verify the construction covers all required points
+
+**Output Format** (one section per case):
+```
+n=3 TEST:
+- Answer claims: k ∈ [set of values]
+- Testing k=[pick one value]: [PASS/FAIL]
+- If FAIL: [specific counterexample or missing point]
+
+n=4 TEST:
+- Answer claims: k ∈ [set of values]
+- Testing k=[pick one value]: [PASS/FAIL]
+- If FAIL: [specific counterexample]
+
+n=5 TEST:
+- Answer claims: k ∈ [set of values]
+- Testing k=[pick one value]: [PASS/FAIL]
+- If FAIL: [specific counterexample]
+
+VERDICT: [ALL PASS / FAIL]
+REASON: [if FAIL, which case failed and why]
+```
+
+Be concrete. If you find a counterexample, state it explicitly with numbers.
+"""
+
+        try:
+            payload = build_request_payload(
+                system_prompt="You are a rigorous mathematical validator. Test claims with concrete examples.",
+                question_prompt=validation_prompt,
+                other_prompts=[],
+                reasoning_effort="medium"  # Medium for validation - balance speed/accuracy
+            )
+
+            response = send_api_request(get_api_key(), payload, request_label="RLAC critic validation")
+            validation_text = extract_text_from_response(response)
+
+            print(f">>>>>>> [RLAC CRITIC-VALIDATION] Validation response received ({len(validation_text)} chars)")
+
+            # Parse validation result
+            validation_lower = validation_text.lower()
+
+            # Check for PASS verdict
+            if re.search(r'verdict:\s*all\s+pass', validation_lower):
+                print(f">>>>>>> [RLAC CRITIC-VALIDATION] ✓ Small cases validation PASSED!")
+                return (True, "")
+
+            # Check for FAIL verdict
+            if re.search(r'verdict:\s*fail', validation_lower) or 'fail' in validation_lower:
+                print(f">>>>>>> [RLAC CRITIC-VALIDATION] ✗ Small cases validation FAILED!")
+
+                # Extract failure reason
+                reason_match = re.search(r'reason:\s*(.+?)(?:\n\n|\Z)', validation_lower, re.DOTALL)
+                if reason_match:
+                    failure_reason = reason_match.group(1).strip()[:500]
+                else:
+                    # Fallback: extract first FAIL mention
+                    fail_match = re.search(r'(n=\d+.*?fail.*?)(?:\n\n|n=\d+|\Z)', validation_text, re.IGNORECASE | re.DOTALL)
+                    failure_reason = fail_match.group(1)[:500] if fail_match else "Validation failed (see critic response)"
+
+                print(f">>>>>>> [RLAC CRITIC-VALIDATION] Failure reason: {failure_reason[:200]}...")
+                return (False, failure_reason)
+
+            # Ambiguous result
+            print(f">>>>>>> [RLAC CRITIC-VALIDATION] ⚠️  Could not determine validation result")
+            return (False, "Validation result unclear - critic response ambiguous")
+
+        except Exception as e:
+            print(f">>>>>>> [RLAC CRITIC-VALIDATION] Error during validation: {e}")
+            return (False, f"Validation error: {str(e)}")
 
     previous_semantic_fingerprint = None
     semantic_unchanged_count = 0  # P9: Track semantically unchanged answers
@@ -3123,6 +3215,56 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                         response = send_api_request(get_api_key(), payload, request_label="RLAC P5.1 escalation")
                         revised_solution = extract_solution(extract_text_from_response(response))
                         p51_verification_triggered = True  # Mark as triggered
+
+                        # Option 3: Critic Auto-Validation
+                        # After P5.1 generates response, have critic validate small cases
+                        if revised_solution and revised_solution != solution:
+                            is_valid, failure_msg = critic_validate_small_cases(revised_solution, problem_statement)
+
+                            if not is_valid:
+                                print(f"\n{'='*80}")
+                                print(f">>>>>>> [RLAC Option 3] P5.1 response FAILED critic validation!")
+                                print(f">>>>>>> [RLAC Option 3] Regenerating with specific failure feedback...")
+                                print(f"{'='*80}\n")
+
+                                # Regenerate with specific failure feedback
+                                validation_failure_prompt = f"""### CRITIC VALIDATION FAILED ###
+
+Your previous answer failed validation for small cases.
+
+**Specific Failure**:
+{failure_msg}
+
+**Instructions**:
+1. Accept that the validation failure is correct
+2. Fix the specific case that failed
+3. Verify your new answer works for n=3, n=4, n=5 with explicit constructions
+4. Provide the corrected answer
+
+**Previous Answer** (that failed): {extract_answer_from_solution(revised_solution)[:200] if revised_solution else 'Unknown'}
+
+**Counterexamples from earlier rounds**:
+{evidence_summary[:800]}
+
+Provide a corrected solution that passes validation for all small cases.
+"""
+
+                                retry_prompts = other_prompts + [
+                                    f"Previous solution:\n{solution}",
+                                    validation_failure_prompt
+                                ]
+
+                                retry_payload = build_request_payload(
+                                    system_prompt=step1_prompt,
+                                    question_prompt=problem_statement,
+                                    other_prompts=retry_prompts,
+                                    reasoning_effort=sol_reasoning
+                                )
+
+                                print(f">>>>>>> [RLAC Option 3] Sending validation failure feedback...")
+                                retry_response = send_api_request(get_api_key(), retry_payload, request_label="RLAC validation retry")
+                                revised_solution = extract_solution(extract_text_from_response(retry_response))
+                                print(f">>>>>>> [RLAC Option 3] Retry response received")
 
                         # Check if P5.1 produced a change
                         if revised_solution == solution or not revised_solution:
