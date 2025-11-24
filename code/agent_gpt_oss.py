@@ -2298,8 +2298,10 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     fresh_start_triggered = False
 
     # P5.1 FIX: Enhanced reconsideration with mandatory verification
-    p51_verification_threshold = 6  # After 6 consecutive BROKEN, use enhanced verification prompt
+    p51_verification_threshold = 6  # After 6 total BROKEN, use enhanced verification prompt
     p51_verification_triggered = False
+    # Proposal A: Track TOTAL broken verdicts in session (never reset on ROBUST)
+    total_broken_in_session = 0  # Accumulates across entire RLAC session
 
     # P9 FIX: Semantic answer change detection
     # Track the mathematical MEANING of answers, not just text
@@ -2367,10 +2369,44 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
         return fingerprint
 
+    def fuzzy_match_bounds(b1_list, b2_list):
+        """
+        Fuzzy match mathematical bounds like 'k <= n' vs 'k <= n-1'.
+        Returns similarity score 0-1 based on how similar the bounds are.
+        """
+        if not b1_list or not b2_list:
+            return 0.0
+
+        # Normalize bounds to extract variables and operators
+        def normalize_bound(b):
+            b = str(b).strip().lower()
+            # Extract pattern: "n-1", "n", "n+1" etc
+            import re
+            # Look for n, n-1, n+1, n-k, etc
+            if 'n' in b:
+                return 'n-based'
+            elif any(c.isdigit() for c in b):
+                return 'numeric'
+            else:
+                return 'symbolic'
+
+        b1_types = [normalize_bound(b) for b in b1_list]
+        b2_types = [normalize_bound(b) for b in b2_list]
+
+        # Calculate type overlap
+        from collections import Counter
+        c1 = Counter(b1_types)
+        c2 = Counter(b2_types)
+
+        common = sum((c1 & c2).values())
+        total = sum((c1 | c2).values())
+
+        return common / max(total, 1) if total > 0 else 0.0
+
     def semantic_similarity(fp1, fp2):
         """
-        Compare two semantic fingerprints and return similarity score (0-1).
-        Returns 1.0 if semantically identical, 0.0 if completely different.
+        Proposal C: Improved semantic fingerprint comparison with fuzzy matching.
+        Returns similarity score (0-1) based on mathematical meaning, not exact text match.
         """
         if not fp1 or not fp2:
             return 0.0
@@ -2378,55 +2414,88 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         score = 0.0
         total_weight = 0.0
 
-        # Compare formulas (high weight)
-        if fp1.get('formulas') or fp2.get('formulas'):
+        # Compare formulas (high weight) - only add weight if BOTH have formulas
+        f1 = set(str(f).strip().lower() for f in fp1.get('formulas', []))
+        f2 = set(str(f).strip().lower() for f in fp2.get('formulas', []))
+        if f1 and f2:
             total_weight += 3.0
-            f1 = set(str(f).strip() for f in fp1.get('formulas', []))
-            f2 = set(str(f).strip() for f in fp2.get('formulas', []))
-            if f1 and f2:
-                overlap = len(f1 & f2) / max(len(f1 | f2), 1)
-                score += 3.0 * overlap
+            # Exact match score
+            exact_overlap = len(f1 & f2) / max(len(f1 | f2), 1)
+            # Fuzzy match score (substring matching)
+            fuzzy_score = 0.0
+            for formula1 in f1:
+                for formula2 in f2:
+                    if formula1 in formula2 or formula2 in formula1:
+                        fuzzy_score += 0.5
+            fuzzy_overlap = min(fuzzy_score / max(len(f1), len(f2)), 1.0)
+            score += 3.0 * max(exact_overlap, fuzzy_overlap)
 
-        # Compare bounds (high weight)
-        if fp1.get('set_bounds') or fp2.get('set_bounds'):
-            total_weight += 2.0
-            b1 = set(str(b).strip() for b in fp1.get('set_bounds', []))
-            b2 = set(str(b).strip() for b in fp2.get('set_bounds', []))
-            if b1 and b2:
-                overlap = len(b1 & b2) / max(len(b1 | b2), 1)
-                score += 2.0 * overlap
+        # Compare bounds (high weight) - with fuzzy matching
+        b1_list = fp1.get('set_bounds', [])
+        b2_list = fp2.get('set_bounds', [])
+        if b1_list and b2_list:
+            total_weight += 2.5
+            b1 = set(str(b).strip().lower() for b in b1_list)
+            b2 = set(str(b).strip().lower() for b in b2_list)
+            # Exact match
+            exact_overlap = len(b1 & b2) / max(len(b1 | b2), 1)
+            # Fuzzy match (similar bound types)
+            fuzzy_overlap = fuzzy_match_bounds(b1_list, b2_list)
+            score += 2.5 * max(exact_overlap, fuzzy_overlap * 0.8)
 
         # Compare impossibility claims (medium weight)
-        if fp1.get('impossible') or fp2.get('impossible'):
-            total_weight += 1.5
-            i1 = set(str(i).strip() for i in fp1.get('impossible', []))
-            i2 = set(str(i).strip() for i in fp2.get('impossible', []))
-            if i1 and i2:
-                overlap = len(i1 & i2) / max(len(i1 | i2), 1)
-                score += 1.5 * overlap
+        i1 = set(str(i).strip().lower() for i in fp1.get('impossible', []))
+        i2 = set(str(i).strip().lower() for i in fp2.get('impossible', []))
+        if i1 and i2:
+            total_weight += 2.0
+            exact_overlap = len(i1 & i2) / max(len(i1 | i2), 1)
+            # Fuzzy: any overlap in impossibility claims is significant
+            fuzzy_score = 0.0
+            for imp1 in i1:
+                for imp2 in i2:
+                    if imp1 in imp2 or imp2 in imp1:
+                        fuzzy_score += 0.7
+            fuzzy_overlap = min(fuzzy_score / max(len(i1), len(i2)), 1.0)
+            score += 2.0 * max(exact_overlap, fuzzy_overlap)
 
         # Compare possibility claims (medium weight)
-        if fp1.get('possible') or fp2.get('possible'):
-            total_weight += 1.5
-            p1 = set(str(p).strip() for p in fp1.get('possible', []))
-            p2 = set(str(p).strip() for p in fp2.get('possible', []))
-            if p1 and p2:
-                overlap = len(p1 & p2) / max(len(p1 | p2), 1)
-                score += 1.5 * overlap
+        p1 = set(str(p).strip().lower() for p in fp1.get('possible', []))
+        p2 = set(str(p).strip().lower() for p in fp2.get('possible', []))
+        if p1 and p2:
+            total_weight += 2.0
+            exact_overlap = len(p1 & p2) / max(len(p1 | p2), 1)
+            # Fuzzy: any overlap in possibility claims is significant
+            fuzzy_score = 0.0
+            for pos1 in p1:
+                for pos2 in p2:
+                    if pos1 in pos2 or pos2 in pos1:
+                        fuzzy_score += 0.7
+            fuzzy_overlap = min(fuzzy_score / max(len(p1), len(p2)), 1.0)
+            score += 2.0 * max(exact_overlap, fuzzy_overlap)
 
-        # Fallback to raw text similarity if no semantic features found
+        # Raw text similarity as additional signal (lower weight)
+        from difflib import SequenceMatcher
+        raw1 = fp1.get('raw', '').lower()
+        raw2 = fp2.get('raw', '').lower()
+        if raw1 and raw2:
+            total_weight += 1.0
+            text_sim = SequenceMatcher(None, raw1, raw2).ratio()
+            score += 1.0 * text_sim
+
+        # If no semantic features matched, return low similarity
         if total_weight == 0:
-            total_weight = 1.0
-            from difflib import SequenceMatcher
-            raw1 = fp1.get('raw', '')
-            raw2 = fp2.get('raw', '')
-            if raw1 and raw2:
-                score = SequenceMatcher(None, raw1, raw2).ratio()
+            return 0.1  # Small non-zero to indicate uncertainty
 
         return score / total_weight if total_weight > 0 else 0.0
 
     previous_semantic_fingerprint = None
     semantic_unchanged_count = 0  # P9: Track semantically unchanged answers
+
+    # Proposal D: Convergence detection
+    answer_history = []  # Track last N answers for convergence analysis
+    convergence_window = 5  # Look at last 5 rounds
+    convergence_threshold = 0.6  # If average similarity > 0.6, answers are converging
+    no_convergence_threshold = 10  # After 10 rounds without convergence, take action
 
     for round_num in range(max_adversarial_rounds):
         print(f"\n{'='*80}")
@@ -2634,11 +2703,13 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             else:
                 consecutive_robust = 0  # Full reset when no history
             consecutive_broken += 1  # Track consecutive broken verdicts
+            total_broken_in_session += 1  # Proposal A: Track total BROKEN (never reset on ROBUST)
 
             print(f"\n{'='*80}")
             print(f">>>>>>> [RLAC GENERATOR] Solution {verdict}")
             print(f">>>>>>> [RLAC GENERATOR] Counterexamples: {len(counterexamples)}")
             print(f">>>>>>> [RLAC GENERATOR] Consecutive broken: {consecutive_broken}")
+            print(f">>>>>>> [RLAC GENERATOR] Total broken in session: {total_broken_in_session}")
             print(f"{'='*80}\n")
 
             # Show first few counterexamples
@@ -2847,19 +2918,21 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     prev_answer = current_answer_extract or "Unknown answer"
 
                     # P5.1 FIX: Use enhanced verification prompt after higher threshold
-                    use_p51_enhanced = (consecutive_broken >= p51_verification_threshold and
+                    # Proposal A: Use total_broken_in_session instead of consecutive_broken
+                    # This prevents ROBUST verdicts from resetting the counter
+                    use_p51_enhanced = (total_broken_in_session >= p51_verification_threshold and
                                         not p51_verification_triggered)
 
                     if use_p51_enhanced:
                         p51_verification_triggered = True
                         defense_prompt = answer_reconsideration_with_verification_prompt.format(
-                            consecutive_broken=consecutive_broken,
+                            consecutive_broken=total_broken_in_session,
                             counterexample_evidence=evidence_summary,
                             previous_answer=prev_answer
                         )
                         print(f"\n{'='*80}")
                         print(f">>>>>>> [RLAC P5.1] ENHANCED VERIFICATION TRIGGERED!")
-                        print(f">>>>>>> [RLAC P5.1] {consecutive_broken} consecutive BROKEN - mandatory small case verification")
+                        print(f">>>>>>> [RLAC P5.1] {total_broken_in_session} total BROKEN verdicts - mandatory small case verification")
                         print(f">>>>>>> [RLAC P5.1] Previous answer: {prev_answer[:80]}...")
                         print(f"{'='*80}\n")
                     else:
@@ -2898,8 +2971,50 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
 
                 # Check if solution actually changed
                 if revised_solution == solution or not revised_solution:
-                    stuck_count += 1
-                    print(f"\n>>>>>>> [RLAC GENERATOR] ⚠️  Solution unchanged! (stuck_count={stuck_count}/{stuck_threshold})")
+                    # Proposal B: If P5 failed (gentle reconsideration didn't work), immediately escalate to P5.1
+                    if use_answer_reconsideration and not use_p51_enhanced:
+                        print(f"\n{'='*80}")
+                        print(f">>>>>>> [RLAC P5] ⚠️  P5 RECONSIDERATION FAILED - solution unchanged")
+                        print(f">>>>>>> [RLAC Proposal B] Immediate escalation to P5.1 ENHANCED VERIFICATION")
+                        print(f"{'='*80}\n")
+
+                        # Force P5.1 activation by clearing the flag
+                        p51_verification_triggered = False
+
+                        # Regenerate with P5.1 enhanced verification prompt
+                        defense_prompt = answer_reconsideration_with_verification_prompt.format(
+                            consecutive_broken=total_broken_in_session,
+                            counterexample_evidence=evidence_summary,
+                            previous_answer=prev_answer
+                        )
+
+                        revision_prompts = other_prompts + [
+                            f"Previous solution:\n{solution}",
+                            defense_prompt
+                        ]
+
+                        payload = build_request_payload(
+                            system_prompt=step1_prompt,
+                            question_prompt=problem_statement,
+                            other_prompts=revision_prompts,
+                            reasoning_effort=sol_reasoning
+                        )
+
+                        print(f">>>>>>> [RLAC Proposal B] Regenerating with P5.1 mandatory verification...")
+                        response = send_api_request(get_api_key(), payload, request_label="RLAC P5.1 escalation")
+                        revised_solution = extract_solution(extract_text_from_response(response))
+                        p51_verification_triggered = True  # Mark as triggered
+
+                        # Check if P5.1 produced a change
+                        if revised_solution == solution or not revised_solution:
+                            print(f">>>>>>> [RLAC Proposal B] ⚠️  P5.1 also failed to change solution")
+                            stuck_count += 1
+                        else:
+                            print(f">>>>>>> [RLAC Proposal B] ✓ P5.1 produced new solution")
+                            stuck_count = 0  # Reset since we got a change
+                    else:
+                        stuck_count += 1
+                        print(f"\n>>>>>>> [RLAC GENERATOR] ⚠️  Solution unchanged! (stuck_count={stuck_count}/{stuck_threshold})")
 
                     # Try approach diversification before giving up
                     if stuck_count == stuck_threshold - 1 and regeneration_attempts < max_regeneration_attempts:
@@ -3057,6 +3172,83 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
 
                         # Update semantic fingerprint for next comparison
                         previous_semantic_fingerprint = new_semantic_fp
+
+                        # Proposal D: Convergence detection - track answer history
+                        answer_history.append({
+                            'round': round_num + 1,
+                            'fingerprint': new_semantic_fp,
+                            'answer_text': new_answer_extract[:200] if new_answer_extract else ""
+                        })
+                        # Keep only recent history
+                        if len(answer_history) > convergence_window * 2:
+                            answer_history = answer_history[-convergence_window * 2:]
+
+                        # Proposal D: Analyze convergence trend
+                        if len(answer_history) >= convergence_window:
+                            # Calculate pairwise similarities over the window
+                            recent_answers = answer_history[-convergence_window:]
+                            similarities = []
+                            for i in range(len(recent_answers) - 1):
+                                sim = semantic_similarity(
+                                    recent_answers[i]['fingerprint'],
+                                    recent_answers[i + 1]['fingerprint']
+                                )
+                                similarities.append(sim)
+
+                            avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
+                            is_converging = avg_similarity >= convergence_threshold
+
+                            print(f"\n>>>>>>> [RLAC Proposal D] Convergence Analysis:")
+                            print(f">>>>>>> [RLAC Proposal D] Average similarity over last {convergence_window} rounds: {avg_similarity:.2f}")
+                            print(f">>>>>>> [RLAC Proposal D] Converging: {'YES' if is_converging else 'NO'}")
+
+                            # Detect oscillation pattern (similarity alternates high/low)
+                            if len(similarities) >= 3:
+                                oscillation_detected = False
+                                for i in range(len(similarities) - 2):
+                                    if similarities[i] < 0.3 and similarities[i+1] > 0.7:
+                                        oscillation_detected = True
+                                        break
+                                if oscillation_detected:
+                                    print(f">>>>>>> [RLAC Proposal D] ⚠️  OSCILLATION PATTERN DETECTED!")
+
+                            # If no convergence after threshold rounds, trigger emergency fresh start
+                            if round_num + 1 >= no_convergence_threshold and not is_converging:
+                                print(f"\n{'='*80}")
+                                print(f">>>>>>> [RLAC Proposal D] NO CONVERGENCE after {round_num + 1} rounds!")
+                                print(f">>>>>>> [RLAC Proposal D] Average similarity: {avg_similarity:.2f} < threshold {convergence_threshold}")
+                                print(f">>>>>>> [RLAC Proposal D] Triggering emergency fresh start...")
+                                print(f"{'='*80}\n")
+
+                                # Force fresh start regardless of other flags
+                                if regeneration_attempts < max_regeneration_attempts:
+                                    failed_summary = "\n".join(failed_approach_summaries[-3:]) if failed_approach_summaries else "Multiple approaches failed to converge"
+                                    evidence_summary = "\n".join([f"- {ce}" for _, ce in accumulated_counterexamples[-5:]])
+
+                                    fresh_prompt = solution_regeneration_prompt.format(
+                                        failed_approaches=failed_summary,
+                                        counterexamples=evidence_summary
+                                    )
+
+                                    payload = build_request_payload(
+                                        system_prompt=step1_prompt,
+                                        question_prompt=problem_statement,
+                                        other_prompts=other_prompts + [fresh_prompt],
+                                        reasoning_effort="high"  # Use high for emergency fresh start
+                                    )
+
+                                    print(f">>>>>>> [RLAC Proposal D] Generating fresh solution with high reasoning...")
+                                    response = send_api_request(get_api_key(), payload, request_label="RLAC convergence emergency")
+                                    fresh_solution = extract_solution(extract_text_from_response(response))
+
+                                    if fresh_solution and fresh_solution != solution:
+                                        print(f">>>>>>> [RLAC Proposal D] ✓ Emergency fresh solution generated")
+                                        solution = fresh_solution
+                                        consecutive_broken = 0
+                                        answer_reconsideration_triggered = False
+                                        regeneration_attempts += 1
+                                        answer_history = []  # Reset history for new approach
+                                        continue
 
                         # P8 FIX: Fresh start if answer unchanged after reconsideration and still broken
                         # P9 enhancement: Also trigger if semantically unchanged multiple times
