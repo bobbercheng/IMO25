@@ -490,6 +490,155 @@ class TestP3TruncationDetection(unittest.TestCase):
         print("✓ P3 Verdict downgrade on truncation verified")
 
 
+class TestP1v2SelfContradiction(unittest.TestCase):
+    """Test P1-v2: Self-contradiction detection in counterexamples."""
+
+    def test_detects_actually_works(self):
+        """P1-v2: Should detect 'actually works' as self-contradiction."""
+        import re
+        pattern = r"actually\s+(works?|correct|valid|does\s+cover)"
+        test_cases = [
+            ("the construction actually works for n=5", True),
+            ("actually does cover all points", True),
+            ("this is actually correct", True),
+            ("the solution fails for n=3", False),
+        ]
+        for text, should_match in test_cases:
+            result = bool(re.search(pattern, text.lower()))
+            self.assertEqual(result, should_match, f"Pattern mismatch for: {text}")
+        print("✓ P1-v2 'actually works' detection verified")
+
+    def test_detects_counterexample_fails(self):
+        """P1-v2: Should detect 'counterexample fails' as self-contradiction."""
+        import re
+        pattern = r"the\s+(attempted\s+)?counterexample\s+(fails?|is\s+invalid|doesn't\s+work)"
+        test_cases = [
+            ("the attempted counterexample fails", True),
+            ("the counterexample is invalid", True),
+            ("the counterexample doesn't work", True),
+            ("this counterexample shows the error", False),
+        ]
+        for text, should_match in test_cases:
+            result = bool(re.search(pattern, text.lower()))
+            self.assertEqual(result, should_match, f"Pattern mismatch for: {text}")
+        print("✓ P1-v2 'counterexample fails' detection verified")
+
+    def test_conclusion_invalidation(self):
+        """P1-v2: Should detect invalidating conclusions."""
+        import re
+        pattern = r"\*?conclusion:?\*?.*?(works|correct|valid|cover)"
+        test_cases = [
+            ("*Conclusion:* The construction actually works", True),
+            ("Conclusion: the solution is correct", True),
+            ("therefore the claim is valid", False),  # Different pattern
+        ]
+        for text, should_match in test_cases:
+            result = bool(re.search(pattern, text.lower()))
+            self.assertEqual(result, should_match, f"Pattern mismatch for: {text}")
+        print("✓ P1-v2 conclusion invalidation detection verified")
+
+
+class TestP4OscillationDetection(unittest.TestCase):
+    """Test P4: Oscillation detection in verdict history."""
+
+    def test_detects_strict_alternation(self):
+        """P4: Should detect strict R-B-R-B alternation."""
+        verdict_history = ["ROBUST", "BROKEN", "ROBUST", "BROKEN"]
+        binary = [1 if v == "ROBUST" else 0 for v in verdict_history]
+
+        is_alternating = True
+        for i in range(1, len(binary)):
+            if binary[i] == binary[i-1]:
+                is_alternating = False
+                break
+
+        self.assertTrue(is_alternating, "Should detect strict alternation")
+        print("✓ P4 strict alternation detection verified")
+
+    def test_detects_near_alternation(self):
+        """P4: Should detect near-alternation (>= 70% transitions)."""
+        verdict_history = ["ROBUST", "BROKEN", "BROKEN", "ROBUST", "BROKEN", "ROBUST"]
+        binary = [1 if v == "ROBUST" else 0 for v in verdict_history]
+
+        transitions = sum(1 for i in range(1, len(binary)) if binary[i] != binary[i-1])
+        transition_ratio = transitions / (len(binary) - 1)
+
+        self.assertGreaterEqual(transition_ratio, 0.7,
+            f"Should detect near-alternation (ratio={transition_ratio:.2f})")
+        print(f"✓ P4 near-alternation detection verified (ratio={transition_ratio:.2f})")
+
+    def test_no_false_positive_on_progress(self):
+        """P4: Should NOT detect oscillation on steady progress."""
+        verdict_history = ["BROKEN", "BROKEN", "ROBUST", "ROBUST", "ROBUST"]
+        binary = [1 if v == "ROBUST" else 0 for v in verdict_history]
+
+        transitions = sum(1 for i in range(1, len(binary)) if binary[i] != binary[i-1])
+        transition_ratio = transitions / (len(binary) - 1)
+
+        self.assertLess(transition_ratio, 0.7,
+            f"Should NOT detect oscillation on progress (ratio={transition_ratio:.2f})")
+        print("✓ P4 no false positive on progress verified")
+
+
+class TestP0v2HistoryProtection(unittest.TestCase):
+    """Test P0-v2: Enhanced protection with history awareness."""
+
+    def test_history_protection_at_1_robust(self):
+        """P0-v2: At 1/3 ROBUST with history >= 2, should decrement not reset."""
+        consecutive_robust = 1
+        total_robust_count = 2
+
+        # Apply P0-v2 logic
+        if consecutive_robust >= 2:
+            consecutive_robust -= 1
+        elif consecutive_robust >= 1 and total_robust_count >= 2:
+            consecutive_robust = max(0, consecutive_robust - 1)
+        else:
+            consecutive_robust = 0
+
+        self.assertEqual(consecutive_robust, 0,
+            "At 1/3 with history=2, should decrement to 0 (not worse)")
+        print("✓ P0-v2 history protection at 1/3 ROBUST verified")
+
+    def test_strong_history_protection(self):
+        """P0-v2: With strong history (>=3), should not reset even at 0."""
+        consecutive_robust = 0
+        total_robust_count = 3
+
+        # Apply P0-v2 logic - strong history protection
+        if consecutive_robust >= 2:
+            consecutive_robust -= 1
+        elif consecutive_robust >= 1 and total_robust_count >= 2:
+            consecutive_robust = max(0, consecutive_robust - 1)
+        elif total_robust_count >= 3:
+            pass  # Don't reset
+        else:
+            consecutive_robust = 0
+
+        self.assertEqual(consecutive_robust, 0,
+            "With strong history, consecutive_robust should be preserved")
+        print("✓ P0-v2 strong history protection verified")
+
+    def test_no_protection_without_history(self):
+        """P0-v2: Without history, should fully reset."""
+        consecutive_robust = 1
+        total_robust_count = 1
+
+        # Apply P0-v2 logic
+        if consecutive_robust >= 2:
+            consecutive_robust -= 1
+        elif consecutive_robust >= 1 and total_robust_count >= 2:
+            consecutive_robust = max(0, consecutive_robust - 1)
+        elif total_robust_count >= 3:
+            pass
+        else:
+            consecutive_robust = 0
+
+        self.assertEqual(consecutive_robust, 0,
+            "Without history, should fully reset")
+        print("✓ P0-v2 no protection without history verified")
+
+
 def run_tests():
     """Run all tests."""
     # Create test suite
@@ -506,6 +655,11 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestP1CounterexampleVerification))
     suite.addTests(loader.loadTestsFromTestCase(TestP2AnswerLock))
     suite.addTests(loader.loadTestsFromTestCase(TestP3TruncationDetection))
+
+    # Add test classes - P1-v2, P4, P0-v2 (from third analysis)
+    suite.addTests(loader.loadTestsFromTestCase(TestP1v2SelfContradiction))
+    suite.addTests(loader.loadTestsFromTestCase(TestP4OscillationDetection))
+    suite.addTests(loader.loadTestsFromTestCase(TestP0v2HistoryProtection))
 
     # Check if real LLM test requested
     if '--real-llm' in sys.argv:

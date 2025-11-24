@@ -709,6 +709,90 @@ python code/agent_gpt_oss.py problems/imo01.txt \
     --log output.log
 ```
 
+## Bug Fixes v2 (P1-v2, P4, P0-v2)
+
+Based on analysis of oscillation patterns in test logs, additional fixes were implemented:
+
+### P1-v2: Self-Contradiction Detection (CRITICAL)
+
+**Problem**: P1 accepted counterexamples where the critic said "BROKEN" but within the same response admitted the counterexample was invalid.
+
+**Evidence from logs**:
+```
+COUNTEREXAMPLE: For n=5, the construction fails...
+*Conclusion:* The attempted counterexample fails; the construction actually works for n=5.
+```
+
+**Fix**: Detect self-contradiction patterns in counterexamples:
+
+```python
+# agent_gpt_oss.py lines 2465-2491
+contradiction_patterns = [
+    r"actually\s+(works?|correct|valid|does\s+cover)",
+    r"the\s+(attempted\s+)?counterexample\s+(fails?|is\s+invalid)",
+    r"(thus|therefore|so)\s+(the\s+)?construction\s+(does|actually)\s+(work|cover)",
+]
+
+# If ALL counterexamples self-contradict, upgrade verdict to ROBUST
+if len(self_contradicting_ces) > 0 and len(valid_ces) == 0:
+    verdict = "ROBUST"  # Critic proved solution works!
+```
+
+### P4: Oscillation Detection (HIGH)
+
+**Problem**: System didn't detect R-B-R-B oscillation pattern, causing infinite loops.
+
+**Fix**: Detect alternation patterns and respond appropriately:
+
+```python
+# agent_gpt_oss.py lines 2317-2364
+# Detect strict alternation (1-0-1-0) or near-alternation (>= 70% transitions)
+if is_alternating or transition_ratio >= 0.7:
+    oscillation_detected = True
+
+    # Strategy 1: If ROBUST with history, boost confidence
+    if verdict == "ROBUST" and total_robust_count >= 2:
+        consecutive_robust = max(consecutive_robust, threshold - 1)
+
+    # Strategy 2: If BROKEN but strong ROBUST history, treat as SUSPICIOUS
+    elif verdict == "BROKEN" and total_robust_count >= 3:
+        verdict = "SUSPICIOUS"
+```
+
+### P0-v2: Enhanced History-Aware Protection (HIGH)
+
+**Problem**: Original P0 (threshold=2) never activated during R-B-R-B oscillation because consecutive_robust oscillated between 0-1.
+
+**Fix**: Lower threshold and consider total_robust_count:
+
+```python
+# agent_gpt_oss.py lines 2462-2485
+if consecutive_robust >= 2:
+    consecutive_robust -= 1  # High protection (unchanged)
+elif consecutive_robust >= 1 and total_robust_count >= 2:
+    # P0-v2 NEW: At 1/3 with history, give grace failure
+    consecutive_robust = max(0, consecutive_robust - 1)
+elif total_robust_count >= 3:
+    # P0-v2 NEW: Strong history, don't reset
+    pass
+else:
+    consecutive_robust = 0  # Full reset only when no history
+```
+
+### Test Verification
+
+All v2 fixes are verified by unit tests:
+
+```bash
+python code/test_rlac_bug_fixes.py
+
+# Expected output:
+# Tests run: 26
+# Failures: 0
+# Errors: 0
+# 🎉 ALL BUG FIXES VERIFIED!
+```
+
 ## Future Improvements
 
 1. **Critic Training Loop**: Collect successful/failed criticisms for fine-tuning

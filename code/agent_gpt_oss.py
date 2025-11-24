@@ -2269,6 +2269,14 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     rlac_history = []
     consecutive_broken = 0  # Track consecutive BROKEN verdicts for constructive mode
 
+    # P0-v2 FIX: Track total ROBUST count and verdict history for better protection
+    total_robust_count = 0
+    verdict_history = []
+
+    # P4 FIX: Oscillation detection variables
+    oscillation_detected = False
+    oscillation_handled = False
+
     for round_num in range(max_adversarial_rounds):
         print(f"\n{'='*80}")
         print(f">>>>>>> [RLAC ROUND {round_num + 1}/{max_adversarial_rounds}]")
@@ -2306,6 +2314,55 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                     attack_result['verdict'] = "SUSPICIOUS"
                     attack_result['truncation_detected'] = True
 
+            # P4 FIX: Oscillation detection BEFORE processing verdict
+            # Record verdict in history for pattern detection
+            verdict_history.append(verdict)
+
+            # Detect oscillation pattern (need at least 4 verdicts)
+            if len(verdict_history) >= 4 and not oscillation_handled:
+                recent_verdicts = verdict_history[-6:] if len(verdict_history) >= 6 else verdict_history[-4:]
+
+                # Convert to binary: ROBUST=1, others=0
+                binary_verdicts = [1 if v == "ROBUST" else 0 for v in recent_verdicts]
+
+                # Check for strict alternation (1-0-1-0 or 0-1-0-1)
+                is_alternating = True
+                for i in range(1, len(binary_verdicts)):
+                    if binary_verdicts[i] == binary_verdicts[i-1]:
+                        is_alternating = False
+                        break
+
+                # Check for near-alternation (>= 70% transitions)
+                transitions = sum(1 for i in range(1, len(binary_verdicts)) if binary_verdicts[i] != binary_verdicts[i-1])
+                transition_ratio = transitions / (len(binary_verdicts) - 1) if len(binary_verdicts) > 1 else 0
+
+                if is_alternating or transition_ratio >= 0.7:
+                    oscillation_detected = True
+                    pattern_type = "strict" if is_alternating else "near"
+
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [RLAC P4] OSCILLATION DETECTED!")
+                    print(f">>>>>>> [RLAC P4] Pattern: {pattern_type} alternation")
+                    print(f">>>>>>> [RLAC P4] Recent verdicts: {recent_verdicts}")
+                    print(f">>>>>>> [RLAC P4] Total ROBUST so far: {total_robust_count}")
+                    print(f"{'='*80}\n")
+
+                    # P4 Strategy: If we've had multiple ROBUSTs and are oscillating,
+                    # accept the current ROBUST if this verdict is ROBUST
+                    if verdict == "ROBUST" and total_robust_count >= 2:
+                        print(f">>>>>>> [RLAC P4] Oscillation with ROBUST history - boosting confidence")
+                        print(f">>>>>>> [RLAC P4] Setting consecutive_robust to threshold-1 for faster convergence")
+                        consecutive_robust = max(consecutive_robust, consecutive_robust_threshold - 1)
+                        oscillation_handled = True
+
+                    # If verdict is BROKEN but we have good ROBUST history, use high-reasoning tiebreaker
+                    elif verdict == "BROKEN" and total_robust_count >= 3 and not oscillation_handled:
+                        print(f">>>>>>> [RLAC P4] BROKEN verdict but strong ROBUST history ({total_robust_count})")
+                        print(f">>>>>>> [RLAC P4] Treating as SUSPICIOUS instead of BROKEN")
+                        verdict = "SUSPICIOUS"
+                        attack_result['verdict'] = "SUSPICIOUS"
+                        attack_result['p4_oscillation_override'] = True
+
             # Log round metrics
             rlac_round_data = {
                 'round': round_num + 1,
@@ -2314,13 +2371,16 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 'penalty': total_penalty,
                 'solution_length': len(solution),
                 'consecutive_robust': consecutive_robust,
-                'stuck_count': stuck_count
+                'stuck_count': stuck_count,
+                'total_robust': total_robust_count,
+                'oscillation_detected': oscillation_detected
             }
             rlac_history.append(rlac_round_data)
 
             print(f"\n>>>>>>> [RLAC CRITIC] Attack complete")
             print(f">>>>>>> [RLAC RESULT] Verdict: {verdict}")
             print(f">>>>>>> [RLAC RESULT] Penalty: -{total_penalty} points")
+            print(f">>>>>>> [RLAC RESULT] Total ROBUST history: {total_robust_count}")
 
         except Exception as e:
             print(f">>>>>>> [RLAC CRITIC] Error during attack: {e}")
@@ -2330,6 +2390,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         # Handle verdict
         if verdict == "ROBUST":
             consecutive_robust += 1
+            total_robust_count += 1  # P0-v2: Track total ROBUST count
             consecutive_broken = 0  # Reset broken counter
             stuck_count = 0  # Reset stuck counter on progress
 
@@ -2399,16 +2460,28 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                     consecutive_robust = 0  # Reset and continue
 
         elif verdict == "BROKEN" or verdict == "SUSPICIOUS":
-            # P0 FIX: Near-success protection - don't fully reset when close to success
+            # P0-v2 FIX: Enhanced near-success protection with lower threshold and history awareness
+            # Changed from threshold=2 to threshold=1 + consider total_robust_count
             if consecutive_robust >= 2:
-                # At 2/3 ROBUST, give one grace failure - decrement instead of reset
+                # At 2/3 ROBUST, give grace failure - decrement instead of reset
                 old_robust = consecutive_robust
                 consecutive_robust -= 1
-                print(f"\n>>>>>>> [RLAC PROTECTION] Near-success protection activated!")
-                print(f">>>>>>> [RLAC PROTECTION] {old_robust}/3 -> {consecutive_robust}/3 (grace failure)")
-                print(f">>>>>>> [RLAC PROTECTION] One more BROKEN will fully reset")
+                print(f"\n>>>>>>> [RLAC P0-v2] High protection activated!")
+                print(f">>>>>>> [RLAC P0-v2] {old_robust}/3 -> {consecutive_robust}/3 (grace failure)")
+            elif consecutive_robust >= 1 and total_robust_count >= 2:
+                # P0-v2 NEW: At 1/3 ROBUST with history of robustness - give grace failure
+                old_robust = consecutive_robust
+                consecutive_robust = max(0, consecutive_robust - 1)
+                print(f"\n>>>>>>> [RLAC P0-v2] History-aware protection activated!")
+                print(f">>>>>>> [RLAC P0-v2] {old_robust}/3 -> {consecutive_robust}/3")
+                print(f">>>>>>> [RLAC P0-v2] Total ROBUST history: {total_robust_count}")
+            elif total_robust_count >= 3:
+                # P0-v2 NEW: Strong ROBUST history - partial protection even at 0 consecutive
+                print(f"\n>>>>>>> [RLAC P0-v2] Strong history protection (total_robust={total_robust_count})")
+                print(f">>>>>>> [RLAC P0-v2] Not resetting consecutive_robust due to strong history")
+                # Don't reset - keep whatever consecutive_robust we have
             else:
-                consecutive_robust = 0  # Full reset when not near success
+                consecutive_robust = 0  # Full reset when no history
             consecutive_broken += 1  # Track consecutive broken verdicts
 
             print(f"\n{'='*80}")
@@ -2443,52 +2516,119 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 print(f">>>>>>> [RLAC GENERATOR] Using defense-first mode for proactive defense")
 
             try:
-                # P1 FIX: Counterexample verification before defense
+                # P1-v2 FIX: Enhanced counterexample verification with self-contradiction detection
                 # Verify that counterexamples are actually valid before using them to guide defense
                 verified_counterexamples = []
+                p1_downgrade_reasons = []
+
                 if counterexamples and len(counterexamples) > 0:
-                    print(f">>>>>>> [RLAC P1] Verifying {len(counterexamples)} counterexample(s)...")
+                    print(f">>>>>>> [RLAC P1-v2] Verifying {len(counterexamples)} counterexample(s)...")
+
+                    # Also check full attack text for self-contradiction
+                    full_attack_text = attack_result.get('full_attack', '')
 
                     for i, ce in enumerate(counterexamples[:3]):  # Verify up to 3 counterexamples
+                        ce_lower = ce.lower()
+
                         # Quick validation: check if counterexample is substantive
                         if len(ce) < 20:
-                            print(f">>>>>>> [RLAC P1]   CE #{i+1}: Too short ({len(ce)} chars) - skipping")
+                            print(f">>>>>>> [RLAC P1-v2]   CE #{i+1}: Too short ({len(ce)} chars) - skipping")
                             continue
 
-                        # Check for vague/non-specific counterexamples
+                        # P1-v2 NEW: Self-contradiction detection patterns
+                        # These patterns indicate the critic realized its counterexample is invalid
+                        contradiction_patterns = [
+                            r"actually\s+(works?|correct|valid|does\s+cover)",
+                            r"the\s+(attempted\s+)?counterexample\s+(fails?|is\s+invalid|doesn't\s+work)",
+                            r"(never\s*mind|on\s+second\s+thought|wait|correction:)",
+                            r"(thus|therefore|so)\s+(the\s+)?construction\s+(does|actually)\s+(work|cover)",
+                            r"this\s+(proves?|shows?)\s+(the\s+)?solution\s+(is\s+)?(correct|valid)",
+                            r"the\s+solution\s+does\s+cover",
+                            r"construction\s+(\*\*)?does(\*\*)?\s+cover",
+                            r"works?\s+for\s+n\s*=\s*\d+",
+                        ]
+
+                        is_self_contradicting = False
+                        contradiction_match = None
+                        for pattern in contradiction_patterns:
+                            match = re.search(pattern, ce_lower)
+                            if match:
+                                is_self_contradicting = True
+                                contradiction_match = match.group(0)
+                                break
+
+                        if is_self_contradicting:
+                            print(f">>>>>>> [RLAC P1-v2]   CE #{i+1}: SELF-CONTRADICTION detected!")
+                            print(f">>>>>>> [RLAC P1-v2]   Matched: '{contradiction_match}'")
+                            p1_downgrade_reasons.append(f"CE #{i+1} self-contradicts: '{contradiction_match}'")
+                            verified_counterexamples.append(("self_contradicting", ce))
+                            continue
+
+                        # P1-v2 NEW: Check for explicit "but it works" conclusions
+                        conclusion_patterns = [
+                            r"\*?conclusion:?\*?.*?(works|correct|valid|cover)",
+                            r"therefore.*?(works|valid)",
+                            r"we\s+must\s+look\s+for\s+(a\s+)?different",
+                        ]
+
+                        has_invalidating_conclusion = False
+                        for pattern in conclusion_patterns:
+                            if re.search(pattern, ce_lower):
+                                has_invalidating_conclusion = True
+                                break
+
+                        if has_invalidating_conclusion:
+                            print(f">>>>>>> [RLAC P1-v2]   CE #{i+1}: Contains invalidating conclusion")
+                            p1_downgrade_reasons.append(f"CE #{i+1} has invalidating conclusion")
+                            verified_counterexamples.append(("invalidated", ce))
+                            continue
+
+                        # Original P1 checks: vague indicators
                         vague_indicators = ["might fail", "could fail", "may not work", "unclear", "possibly wrong"]
-                        is_vague = any(ind in ce.lower() for ind in vague_indicators)
+                        is_vague = any(ind in ce_lower for ind in vague_indicators)
 
                         if is_vague:
-                            print(f">>>>>>> [RLAC P1]   CE #{i+1}: Appears vague/hypothetical - downgrading priority")
+                            print(f">>>>>>> [RLAC P1-v2]   CE #{i+1}: Appears vague/hypothetical")
                             verified_counterexamples.append(("vague", ce))
-                        else:
-                            # Look for concrete values (n=, k=, x=, etc.)
-                            import re
-                            concrete_value_pattern = r'[nkxyzabcm]\s*[=≤≥<>]\s*\d+'
-                            has_concrete_values = bool(re.search(concrete_value_pattern, ce, re.IGNORECASE))
+                            continue
 
-                            if has_concrete_values:
-                                print(f">>>>>>> [RLAC P1]   CE #{i+1}: VERIFIED - contains concrete values")
-                                verified_counterexamples.append(("verified", ce))
-                            else:
-                                print(f">>>>>>> [RLAC P1]   CE #{i+1}: No concrete values found - keeping but flagged")
-                                verified_counterexamples.append(("unverified", ce))
+                        # Original P1 check: concrete values
+                        concrete_value_pattern = r'[nkxyzabcm]\s*[=≤≥<>]\s*\d+'
+                        has_concrete_values = bool(re.search(concrete_value_pattern, ce, re.IGNORECASE))
 
-                    # Update counterexamples list for defense prompt
-                    if verified_counterexamples:
-                        # Prioritize verified counterexamples
-                        verified_only = [ce for status, ce in verified_counterexamples if status == "verified"]
-                        if verified_only:
-                            print(f">>>>>>> [RLAC P1] Using {len(verified_only)} verified counterexample(s) for defense")
-                            attack_result['verified_counterexamples'] = verified_only
+                        if has_concrete_values:
+                            print(f">>>>>>> [RLAC P1-v2]   CE #{i+1}: VERIFIED - contains concrete values")
+                            verified_counterexamples.append(("verified", ce))
                         else:
-                            print(f">>>>>>> [RLAC P1] No verified counterexamples - using all {len(counterexamples)}")
+                            print(f">>>>>>> [RLAC P1-v2]   CE #{i+1}: No concrete values - flagged")
+                            verified_counterexamples.append(("unverified", ce))
+
+                    # P1-v2 NEW: Verdict adjustment based on self-contradiction detection
+                    valid_ces = [ce for status, ce in verified_counterexamples if status == "verified"]
+                    self_contradicting_ces = [ce for status, ce in verified_counterexamples
+                                              if status in ("self_contradicting", "invalidated")]
+
+                    if len(self_contradicting_ces) > 0 and len(valid_ces) == 0:
+                        print(f"\n>>>>>>> [RLAC P1-v2] ALL counterexamples self-contradicting!")
+                        print(f">>>>>>> [RLAC P1-v2] Critic proved solution works - upgrading to ROBUST")
+                        verdict = "ROBUST"
+                        attack_result['verdict'] = "ROBUST"
+                        attack_result['p1_upgraded'] = True
+                        attack_result['p1_reasons'] = p1_downgrade_reasons
+                    elif len(self_contradicting_ces) > len(valid_ces) and len(valid_ces) == 0:
+                        print(f"\n>>>>>>> [RLAC P1-v2] Majority of counterexamples self-contradicting")
+                        print(f">>>>>>> [RLAC P1-v2] Downgrading verdict from BROKEN to SUSPICIOUS")
+                        verdict = "SUSPICIOUS"
+                        attack_result['verdict'] = "SUSPICIOUS"
+                        attack_result['p1_downgraded'] = True
+                        attack_result['p1_reasons'] = p1_downgrade_reasons
+                    elif len(valid_ces) > 0:
+                        print(f">>>>>>> [RLAC P1-v2] Using {len(valid_ces)} verified counterexample(s)")
+                        attack_result['verified_counterexamples'] = valid_ces
                     else:
-                        print(f">>>>>>> [RLAC P1] WARNING: No counterexamples passed verification")
-                        # If no counterexamples verified and verdict was BROKEN, reconsider
-                        if verdict == "BROKEN" and not verified_counterexamples:
-                            print(f">>>>>>> [RLAC P1] Verdict BROKEN but no valid counterexamples - treating as SUSPICIOUS")
+                        print(f">>>>>>> [RLAC P1-v2] WARNING: No valid counterexamples")
+                        if verdict == "BROKEN":
+                            print(f">>>>>>> [RLAC P1-v2] Treating as SUSPICIOUS")
                             verdict = "SUSPICIOUS"
                             attack_result['verdict'] = "SUSPICIOUS"
                             attack_result['p1_downgraded'] = True

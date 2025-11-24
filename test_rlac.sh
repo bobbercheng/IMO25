@@ -27,7 +27,13 @@
 # P2: Answer lock - locks answer after 2 consecutive ROBUST verdicts
 # P3: Truncation detection - downgrades BROKEN on short/truncated responses
 #
-# Run unit tests: python code/test_rlac_bug_fixes.py
+# P1-v2/P4/P0-v2 Fixes (based on oscillation analysis):
+# -----------------------------------------------------
+# P1-v2: Self-contradiction detection - detects "actually works" in counterexamples
+# P4: Oscillation detection - detects R-B-R-B patterns, boosts ROBUST confidence
+# P0-v2: History-aware protection - considers total_robust_count, lowers threshold
+#
+# Run unit tests: python code/test_rlac_bug_fixes.py (26 tests)
 
 echo "=========================================="
 echo "RLAC Implementation Test"
