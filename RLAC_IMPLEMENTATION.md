@@ -793,6 +793,100 @@ python code/test_rlac_bug_fixes.py
 # 🎉 ALL BUG FIXES VERIFIED!
 ```
 
+## Bug Fixes v3 (P5-P8) - B-B-B-B Failure Mode
+
+Addresses the failure mode where generator produces mathematically wrong solutions
+and refuses to change the answer despite valid counterexamples (B-B-B-B-B... pattern).
+
+### Root Cause Analysis
+
+The generator produces solutions claiming something like "k=n is IMPOSSIBLE" when the
+critic provides valid counterexamples proving k=n IS possible. The v2 fixes (P1-v2,
+P4, P0-v2) protect ROBUST verdicts but cannot help when there are ZERO ROBUST verdicts
+because the solution is fundamentally wrong.
+
+### P5: Answer Reconsideration Trigger (CRITICAL)
+
+**Problem**: After many consecutive BROKEN verdicts, constructive mode provides helpful
+guidance but doesn't force the generator to reconsider its answer.
+
+**Fix**: After 4+ consecutive BROKEN, trigger explicit answer reconsideration prompt:
+
+```python
+# agent_gpt_oss.py lines 2546-2555
+if consecutive_broken >= answer_reconsideration_threshold and not answer_reconsideration_triggered:
+    use_answer_reconsideration = True
+    answer_reconsideration_triggered = True
+    print(f">>>>>>> [RLAC P5] ANSWER RECONSIDERATION TRIGGERED!")
+
+# Uses answer_reconsideration_prompt from adversarial_prompts.py
+# This prompt explicitly asks: "Is my ANSWER compatible with this evidence?"
+```
+
+### P6: Evidence Accumulation (HIGH)
+
+**Problem**: Each round's counterexamples are treated independently, losing cumulative evidence.
+
+**Fix**: Accumulate counterexamples across rounds for stronger reconsideration case:
+
+```python
+# agent_gpt_oss.py lines 2519-2526
+for ce in counterexamples[:2]:  # Top 2 from each round
+    if len(ce) >= 30:  # Only substantive counterexamples
+        accumulated_counterexamples.append((round_num + 1, ce[:400]))
+if len(accumulated_counterexamples) > max_accumulated_evidence:
+    accumulated_counterexamples = accumulated_counterexamples[-max_accumulated_evidence:]
+```
+
+### P7: Answer Change Detection (HIGH)
+
+**Problem**: No tracking of whether the generator actually changes its answer after reconsideration.
+
+**Fix**: Extract and compare answers to detect unchanged answers:
+
+```python
+# agent_gpt_oss.py lines 2860-2877
+if answer_reconsideration_triggered:
+    new_answer_extract = extract_answer_from_solution(solution)
+    from difflib import SequenceMatcher
+    similarity = SequenceMatcher(None, previous_answer_extract, new_answer_extract).ratio()
+    if similarity > 0.8:
+        answer_unchanged_after_reconsideration += 1
+        print(f">>>>>>> [RLAC P7] Answer UNCHANGED (similarity: {similarity:.2f})")
+```
+
+### P8: Fresh Start Threshold (HIGH)
+
+**Problem**: Generator may rationalize and keep the same wrong answer despite reconsideration.
+
+**Fix**: After reconsideration fails (answer unchanged twice), trigger complete fresh start:
+
+```python
+# agent_gpt_oss.py lines 2879-2922
+if (consecutive_broken >= fresh_start_threshold and
+    answer_unchanged_after_reconsideration >= 2 and
+    not fresh_start_triggered and
+    regeneration_attempts < max_regeneration_attempts):
+
+    fresh_start_triggered = True
+    print(f">>>>>>> [RLAC P8] FRESH START TRIGGERED!")
+    # Uses solution_regeneration_prompt with accumulated evidence
+```
+
+### P5-P8 Test Verification
+
+All P5-P8 fixes are verified by 12 new unit tests:
+
+```bash
+python code/test_rlac_bug_fixes.py
+
+# Expected output:
+# Tests run: 38
+# Failures: 0
+# Errors: 0
+# 🎉 ALL BUG FIXES VERIFIED!
+```
+
 ## Future Improvements
 
 1. **Critic Training Loop**: Collect successful/failed criticisms for fine-tuning

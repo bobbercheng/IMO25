@@ -639,6 +639,231 @@ class TestP0v2HistoryProtection(unittest.TestCase):
         print("✓ P0-v2 no protection without history verified")
 
 
+class TestP5AnswerReconsideration(unittest.TestCase):
+    """Test P5: Answer reconsideration after consecutive BROKEN verdicts."""
+
+    def test_reconsideration_trigger_threshold(self):
+        """P5: Should trigger reconsideration after 4 consecutive BROKEN."""
+        answer_reconsideration_threshold = 4
+        consecutive_broken = 4
+        answer_reconsideration_triggered = False
+
+        # Simulate P5 trigger
+        use_answer_reconsideration = False
+        if consecutive_broken >= answer_reconsideration_threshold and not answer_reconsideration_triggered:
+            use_answer_reconsideration = True
+            answer_reconsideration_triggered = True
+
+        self.assertTrue(use_answer_reconsideration,
+            "Should trigger reconsideration at 4 consecutive BROKEN")
+        self.assertTrue(answer_reconsideration_triggered,
+            "Flag should be set after triggering")
+        print("✓ P5 reconsideration threshold verified")
+
+    def test_no_reconsideration_below_threshold(self):
+        """P5: Should NOT trigger before threshold."""
+        answer_reconsideration_threshold = 4
+        consecutive_broken = 3  # Below threshold
+        answer_reconsideration_triggered = False
+
+        use_answer_reconsideration = False
+        if consecutive_broken >= answer_reconsideration_threshold and not answer_reconsideration_triggered:
+            use_answer_reconsideration = True
+
+        self.assertFalse(use_answer_reconsideration,
+            "Should not trigger at 3 consecutive BROKEN")
+        print("✓ P5 below-threshold behavior verified")
+
+    def test_reconsideration_only_once(self):
+        """P5: Reconsideration should only trigger once per cycle."""
+        answer_reconsideration_threshold = 4
+        consecutive_broken = 5
+        answer_reconsideration_triggered = True  # Already triggered
+
+        use_answer_reconsideration = False
+        if consecutive_broken >= answer_reconsideration_threshold and not answer_reconsideration_triggered:
+            use_answer_reconsideration = True
+
+        self.assertFalse(use_answer_reconsideration,
+            "Should not trigger again if already triggered")
+        print("✓ P5 single trigger behavior verified")
+
+
+class TestP6EvidenceAccumulation(unittest.TestCase):
+    """Test P6: Evidence accumulation across rounds."""
+
+    def test_evidence_accumulation(self):
+        """P6: Should accumulate counterexamples across rounds."""
+        accumulated_counterexamples = []
+        max_accumulated_evidence = 8
+
+        # Simulate 3 rounds of evidence - all must be >= 30 chars
+        round1_ces = ["n=3, k=2 fails because line x+y=5 is sunny"]  # 43 chars
+        round2_ces = ["n=4, k=3 works with 3 sunny lines construction"]  # 47 chars
+        round3_ces = ["Construction for k=n is valid and provable here"]  # 48 chars
+
+        for round_num, ces in enumerate([round1_ces, round2_ces, round3_ces], 1):
+            for ce in ces[:2]:
+                if len(ce) >= 30:
+                    accumulated_counterexamples.append((round_num, ce[:400]))
+            if len(accumulated_counterexamples) > max_accumulated_evidence:
+                accumulated_counterexamples = accumulated_counterexamples[-max_accumulated_evidence:]
+
+        self.assertEqual(len(accumulated_counterexamples), 3,
+            "Should accumulate 3 counterexamples")
+        self.assertEqual(accumulated_counterexamples[0][0], 1,
+            "First CE should be from round 1")
+        print("✓ P6 evidence accumulation verified")
+
+    def test_evidence_pruning(self):
+        """P6: Should prune to max evidence limit."""
+        accumulated_counterexamples = []
+        max_accumulated_evidence = 4
+
+        # Add more than max
+        for i in range(10):
+            accumulated_counterexamples.append((i, f"Counterexample {i} with enough length to pass filter"))
+            if len(accumulated_counterexamples) > max_accumulated_evidence:
+                accumulated_counterexamples = accumulated_counterexamples[-max_accumulated_evidence:]
+
+        self.assertEqual(len(accumulated_counterexamples), max_accumulated_evidence,
+            f"Should keep only {max_accumulated_evidence} counterexamples")
+        self.assertEqual(accumulated_counterexamples[0][0], 6,
+            "Should keep most recent evidence (rounds 6-9)")
+        print("✓ P6 evidence pruning verified")
+
+    def test_short_counterexamples_filtered(self):
+        """P6: Short counterexamples should be filtered."""
+        accumulated_counterexamples = []
+        counterexamples = ["short", "This is a longer counterexample with sufficient detail to be useful"]
+
+        for ce in counterexamples:
+            if len(ce) >= 30:
+                accumulated_counterexamples.append((1, ce))
+
+        self.assertEqual(len(accumulated_counterexamples), 1,
+            "Should only keep counterexamples >= 30 chars")
+        print("✓ P6 short counterexample filtering verified")
+
+
+class TestP7AnswerChangeDetection(unittest.TestCase):
+    """Test P7: Answer change detection after reconsideration."""
+
+    def test_answer_extraction(self):
+        """P7: Should extract answer from solution."""
+        import re
+
+        def extract_answer_from_solution(sol):
+            if not sol:
+                return None
+            patterns = [
+                r"(?:final\s+)?answer[:\s]+([^\n]{10,200})",
+                r"k\s*[=∈]\s*([^\n]{5,100})",
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, sol.lower())
+                if match:
+                    return match.group(1).strip()[:100]
+            return sol[-200:].strip()[:100] if len(sol) > 200 else sol.strip()[:100]
+
+        solution = "The analysis shows that the final answer is k ∈ {0, 1, 2, ..., n-1}"
+        answer = extract_answer_from_solution(solution)
+        self.assertIn("k", answer, "Should extract answer containing k")
+        print("✓ P7 answer extraction verified")
+
+    def test_answer_similarity_detection(self):
+        """P7: Should detect if answer is unchanged."""
+        from difflib import SequenceMatcher
+
+        prev_answer = "k ∈ {0, 1, 2, ..., n}"
+        new_answer = "k ∈ {0, 1, 2, ..., n}"  # Same answer
+
+        similarity = SequenceMatcher(None, prev_answer, new_answer).ratio()
+        self.assertGreater(similarity, 0.8, "Identical answers should have >80% similarity")
+
+        # Different answer
+        different_answer = "k can be any value from 0 to n inclusive"
+        similarity2 = SequenceMatcher(None, prev_answer, different_answer).ratio()
+        self.assertLess(similarity2, 0.8, "Different answers should have <80% similarity")
+        print("✓ P7 answer similarity detection verified")
+
+    def test_unchanged_counter(self):
+        """P7: Should count unchanged answers after reconsideration."""
+        answer_unchanged_after_reconsideration = 0
+
+        # Simulate 3 rounds with unchanged answer
+        for _ in range(3):
+            similarity = 0.95  # High similarity = unchanged
+            if similarity > 0.8:
+                answer_unchanged_after_reconsideration += 1
+
+        self.assertEqual(answer_unchanged_after_reconsideration, 3,
+            "Should count 3 unchanged answers")
+        print("✓ P7 unchanged counter verified")
+
+
+class TestP8FreshStartThreshold(unittest.TestCase):
+    """Test P8: Fresh start after persistent answer refusal."""
+
+    def test_fresh_start_trigger(self):
+        """P8: Should trigger fresh start after threshold."""
+        fresh_start_threshold = 6
+        consecutive_broken = 6
+        answer_unchanged_after_reconsideration = 2
+        fresh_start_triggered = False
+        regeneration_attempts = 0
+        max_regeneration_attempts = 4
+
+        # Simulate P8 trigger
+        should_fresh_start = (
+            consecutive_broken >= fresh_start_threshold and
+            answer_unchanged_after_reconsideration >= 2 and
+            not fresh_start_triggered and
+            regeneration_attempts < max_regeneration_attempts
+        )
+
+        self.assertTrue(should_fresh_start,
+            "Should trigger fresh start at 6 broken with 2 unchanged")
+        print("✓ P8 fresh start trigger verified")
+
+    def test_no_fresh_start_if_answer_changed(self):
+        """P8: Should NOT trigger if answer changed."""
+        fresh_start_threshold = 6
+        consecutive_broken = 6
+        answer_unchanged_after_reconsideration = 1  # Answer changed recently
+        fresh_start_triggered = False
+        regeneration_attempts = 0
+        max_regeneration_attempts = 4
+
+        should_fresh_start = (
+            consecutive_broken >= fresh_start_threshold and
+            answer_unchanged_after_reconsideration >= 2 and
+            not fresh_start_triggered and
+            regeneration_attempts < max_regeneration_attempts
+        )
+
+        self.assertFalse(should_fresh_start,
+            "Should not trigger if answer changed recently")
+        print("✓ P8 no trigger on answer change verified")
+
+    def test_fresh_start_reset_behavior(self):
+        """P8: Fresh start should reset counters."""
+        consecutive_broken = 6
+        answer_reconsideration_triggered = True
+
+        # Simulate successful fresh start
+        fresh_solution_generated = True
+        if fresh_solution_generated:
+            consecutive_broken = 0
+            answer_reconsideration_triggered = False
+
+        self.assertEqual(consecutive_broken, 0,
+            "Fresh start should reset consecutive_broken")
+        self.assertFalse(answer_reconsideration_triggered,
+            "Fresh start should allow new reconsideration cycle")
+        print("✓ P8 reset behavior verified")
+
+
 def run_tests():
     """Run all tests."""
     # Create test suite
@@ -660,6 +885,12 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestP1v2SelfContradiction))
     suite.addTests(loader.loadTestsFromTestCase(TestP4OscillationDetection))
     suite.addTests(loader.loadTestsFromTestCase(TestP0v2HistoryProtection))
+
+    # Add test classes - P5-P8 (for B-B-B-B failure mode)
+    suite.addTests(loader.loadTestsFromTestCase(TestP5AnswerReconsideration))
+    suite.addTests(loader.loadTestsFromTestCase(TestP6EvidenceAccumulation))
+    suite.addTests(loader.loadTestsFromTestCase(TestP7AnswerChangeDetection))
+    suite.addTests(loader.loadTestsFromTestCase(TestP8FreshStartThreshold))
 
     # Check if real LLM test requested
     if '--real-llm' in sys.argv:

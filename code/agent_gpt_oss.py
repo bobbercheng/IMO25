@@ -2117,7 +2117,9 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             adversarial_defense_prompt,
             constructive_defense_prompt,
             solution_regeneration_prompt,
-            approach_diversification_prompt
+            approach_diversification_prompt,
+            answer_reconsideration_prompt,  # P5 FIX: Answer reconsideration for B-B-B-B failures
+            defense_first_revision_prompt   # P5 FIX: Enhanced revision prompt with answer checkpoint
         )
     except ImportError as e:
         print(f">>>>>>> [RLAC ERROR] Could not import adversarial modules: {e}")
@@ -2276,6 +2278,23 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     # P4 FIX: Oscillation detection variables
     oscillation_detected = False
     oscillation_handled = False
+
+    # P5-P8 FIX: Answer reconsideration for B-B-B-B failures
+    # P5: Trigger reconsideration after consecutive BROKEN verdicts
+    answer_reconsideration_threshold = 4  # After 4 consecutive BROKEN, trigger reconsideration
+    answer_reconsideration_triggered = False
+
+    # P6: Evidence accumulation - collect counterexamples across rounds
+    accumulated_counterexamples = []  # (round_num, counterexample) tuples
+    max_accumulated_evidence = 8  # Keep last 8 counterexamples
+
+    # P7: Answer change detection - track if answer changes
+    previous_answer_extract = None  # Extract of answer from solution
+    answer_unchanged_after_reconsideration = 0  # Count of unchanged answers after reconsideration
+
+    # P8: Fresh start threshold - after reconsideration fails
+    fresh_start_threshold = 6  # After 6 consecutive BROKEN with same answer, fresh start
+    fresh_start_triggered = False
 
     for round_num in range(max_adversarial_rounds):
         print(f"\n{'='*80}")
@@ -2497,6 +2516,15 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                     print(f">>>>>>> [RLAC GENERATOR]   {i}. {ce[:150]}{'...' if len(ce) > 150 else ''}")
                 print()
 
+                # P6 FIX: Accumulate counterexamples across rounds for evidence building
+                for ce in counterexamples[:2]:  # Keep top 2 from each round
+                    if len(ce) >= 30:  # Only substantive counterexamples
+                        accumulated_counterexamples.append((round_num + 1, ce[:400]))
+                # Keep only the most recent evidence
+                if len(accumulated_counterexamples) > max_accumulated_evidence:
+                    accumulated_counterexamples = accumulated_counterexamples[-max_accumulated_evidence:]
+                print(f">>>>>>> [RLAC P6] Accumulated evidence: {len(accumulated_counterexamples)} counterexamples")
+
             # Calculate current solution score for best solution tracking
             current_score = -total_penalty - len(counterexamples) * 5
             if current_score > best_solution_score:
@@ -2514,6 +2542,38 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 print(f">>>>>>> [RLAC GENERATOR] Using CONSTRUCTIVE mode (after {consecutive_broken} consecutive broken)")
             elif defense_first:
                 print(f">>>>>>> [RLAC GENERATOR] Using defense-first mode for proactive defense")
+
+            # P5 FIX: Answer reconsideration after threshold consecutive BROKEN verdicts
+            use_answer_reconsideration = False
+            if consecutive_broken >= answer_reconsideration_threshold and not answer_reconsideration_triggered:
+                use_answer_reconsideration = True
+                answer_reconsideration_triggered = True
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [RLAC P5] ANSWER RECONSIDERATION TRIGGERED!")
+                print(f">>>>>>> [RLAC P5] {consecutive_broken} consecutive BROKEN verdicts - answer may be fundamentally wrong")
+                print(f">>>>>>> [RLAC P5] Accumulated evidence: {len(accumulated_counterexamples)} counterexamples")
+                print(f"{'='*80}\n")
+
+            # P7 FIX: Extract current answer for change detection
+            def extract_answer_from_solution(sol):
+                """Extract the final answer portion from solution for comparison."""
+                if not sol:
+                    return None
+                # Look for common answer markers
+                patterns = [
+                    r"(?:final\s+)?answer[:\s]+([^\n]{10,200})",
+                    r"k\s*[=∈]\s*([^\n]{5,100})",
+                    r"conclusion[:\s]+([^\n]{10,200})",
+                    r"therefore[,:\s]+([^\n]{10,200})",
+                ]
+                for pattern in patterns:
+                    match = re.search(pattern, sol.lower())
+                    if match:
+                        return match.group(1).strip()[:100]
+                # Fallback: last 200 chars
+                return sol[-200:].strip()[:100] if len(sol) > 200 else sol.strip()[:100]
+
+            current_answer_extract = extract_answer_from_solution(solution)
 
             try:
                 # P1-v2 FIX: Enhanced counterexample verification with self-contradiction detection
@@ -2644,8 +2704,23 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
 """
                     print(f">>>>>>> [RLAC LOCK] Adding answer lock instruction to defense prompt")
 
-                # Build defense prompt (constructive or defense-first mode)
-                if use_constructive:
+                # Build defense prompt (P5: reconsideration, constructive, or defense-first mode)
+                if use_answer_reconsideration:
+                    # P5/P6 FIX: Use answer reconsideration with accumulated evidence
+                    evidence_summary = "\n".join([
+                        f"Round {r}: {ce}" for r, ce in accumulated_counterexamples
+                    ]) if accumulated_counterexamples else "Multiple counterexamples found"
+
+                    # Extract previous answer for P7 tracking
+                    prev_answer = current_answer_extract or "Unknown answer"
+
+                    defense_prompt = answer_reconsideration_prompt.format(
+                        counterexample_evidence=evidence_summary,
+                        previous_answer=prev_answer
+                    )
+                    print(f">>>>>>> [RLAC P5] Using ANSWER RECONSIDERATION prompt")
+                    print(f">>>>>>> [RLAC P5] Previous answer: {prev_answer[:80]}...")
+                elif use_constructive:
                     defense_prompt = constructive_defense_prompt.format(
                         constructive_feedback=attack_result.get('full_attack', str(counterexamples))
                     )
@@ -2653,11 +2728,12 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     defense_prompt = critic.get_defense_prompt(attack_result, defense_first=defense_first)
 
                 # Create revision request with answer lock instruction if active
+                # P5 NOTE: Skip answer lock when doing reconsideration (opposite goals)
                 revision_prompts = other_prompts + [
                     f"Previous solution:\n{solution}",
                     defense_prompt
                 ]
-                if answer_lock_instruction:
+                if answer_lock_instruction and not use_answer_reconsideration:
                     revision_prompts.append(answer_lock_instruction)
 
                 payload = build_request_payload(
@@ -2780,6 +2856,73 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
 
                     print(f">>>>>>> [RLAC GENERATOR] ✓ Solution revised")
                     print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(solution)} chars)")
+
+                    # P7 FIX: Check if answer actually changed after reconsideration
+                    if answer_reconsideration_triggered:
+                        new_answer_extract = extract_answer_from_solution(solution)
+                        if previous_answer_extract and new_answer_extract:
+                            # Simple similarity check - if >80% overlap, consider unchanged
+                            from difflib import SequenceMatcher
+                            similarity = SequenceMatcher(None, previous_answer_extract, new_answer_extract).ratio()
+                            if similarity > 0.8:
+                                answer_unchanged_after_reconsideration += 1
+                                print(f">>>>>>> [RLAC P7] Answer UNCHANGED after reconsideration (similarity: {similarity:.2f})")
+                                print(f">>>>>>> [RLAC P7] Previous: {previous_answer_extract[:60]}...")
+                                print(f">>>>>>> [RLAC P7] Current:  {new_answer_extract[:60]}...")
+                                print(f">>>>>>> [RLAC P7] Unchanged count: {answer_unchanged_after_reconsideration}")
+                            else:
+                                print(f">>>>>>> [RLAC P7] Answer CHANGED after reconsideration (similarity: {similarity:.2f})")
+                                print(f">>>>>>> [RLAC P7] Previous: {previous_answer_extract[:60]}...")
+                                print(f">>>>>>> [RLAC P7] New:      {new_answer_extract[:60]}...")
+                                answer_unchanged_after_reconsideration = 0  # Reset on change
+
+                        # P8 FIX: Fresh start if answer unchanged after reconsideration and still broken
+                        if (consecutive_broken >= fresh_start_threshold and
+                            answer_unchanged_after_reconsideration >= 2 and
+                            not fresh_start_triggered and
+                            regeneration_attempts < max_regeneration_attempts):
+
+                            fresh_start_triggered = True
+                            print(f"\n{'='*80}")
+                            print(f">>>>>>> [RLAC P8] FRESH START TRIGGERED!")
+                            print(f">>>>>>> [RLAC P8] {consecutive_broken} consecutive BROKEN with same answer")
+                            print(f">>>>>>> [RLAC P8] Generator refuses to change answer despite evidence")
+                            print(f">>>>>>> [RLAC P8] Starting from scratch with different approach")
+                            print(f"{'='*80}\n")
+
+                            # Build fresh start prompt
+                            failed_summary = "\n".join(failed_approach_summaries[-3:]) if failed_approach_summaries else "Previous attempts failed"
+                            evidence_summary = "\n".join([f"- {ce}" for _, ce in accumulated_counterexamples[-5:]])
+
+                            fresh_prompt = solution_regeneration_prompt.format(
+                                failed_approaches=failed_summary,
+                                problem_requirements=problem_statement[:500]
+                            ) + f"\n\n**Evidence from critic that previous answer was wrong:**\n{evidence_summary}"
+
+                            fresh_payload = build_request_payload(
+                                system_prompt=step1_prompt,
+                                question_prompt=problem_statement,
+                                other_prompts=other_prompts + [fresh_prompt],
+                                reasoning_effort="medium"
+                            )
+
+                            fresh_response = send_api_request(get_api_key(), fresh_payload, request_label="RLAC P8 fresh start")
+                            fresh_solution = extract_solution(extract_text_from_response(fresh_response))
+
+                            if fresh_solution and fresh_solution != solution:
+                                print(f">>>>>>> [RLAC P8] ✓ Fresh solution generated ({len(fresh_solution)} chars)")
+                                solution = fresh_solution
+                                consecutive_broken = 0
+                                answer_reconsideration_triggered = False  # Allow reconsideration again
+                                regeneration_attempts += 1
+                                # Update answer extract for next comparison
+                                previous_answer_extract = extract_answer_from_solution(solution)
+                                continue
+                            else:
+                                print(f">>>>>>> [RLAC P8] ⚠️  Fresh start did not produce different solution")
+
+                    # Update previous answer for next iteration
+                    previous_answer_extract = extract_answer_from_solution(solution)
 
                     # Answer stability tracking using enhanced session's LaTeX parser
                     new_answer_result = enhanced_session.extract_answer(solution)

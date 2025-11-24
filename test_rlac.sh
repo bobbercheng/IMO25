@@ -33,7 +33,14 @@
 # P4: Oscillation detection - detects R-B-R-B patterns, boosts ROBUST confidence
 # P0-v2: History-aware protection - considers total_robust_count, lowers threshold
 #
-# Run unit tests: python code/test_rlac_bug_fixes.py (26 tests)
+# P5-P8 Fixes (for B-B-B-B failure mode):
+# ----------------------------------------
+# P5: Answer reconsideration trigger - forces answer reconsideration after 4+ BROKEN
+# P6: Evidence accumulation - collects counterexamples across rounds for stronger case
+# P7: Answer change detection - tracks if generator actually changes answer
+# P8: Fresh start threshold - triggers complete regeneration if answer unchanged
+#
+# Run unit tests: python code/test_rlac_bug_fixes.py (38 tests)
 
 echo "=========================================="
 echo "RLAC Implementation Test"
