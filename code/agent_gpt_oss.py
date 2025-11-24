@@ -2403,10 +2403,11 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
         return common / max(total, 1) if total > 0 else 0.0
 
-    def semantic_similarity(fp1, fp2):
+    def semantic_similarity_fuzzy(fp1, fp2):
         """
-        Proposal C: Improved semantic fingerprint comparison with fuzzy matching.
+        Fast rule-based semantic fingerprint comparison with fuzzy matching.
         Returns similarity score (0-1) based on mathematical meaning, not exact text match.
+        Used as first tier in hybrid approach.
         """
         if not fp1 or not fp2:
             return 0.0
@@ -2487,6 +2488,124 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             return 0.1  # Small non-zero to indicate uncertainty
 
         return score / total_weight if total_weight > 0 else 0.0
+
+    def llm_semantic_comparison(answer1_text, answer2_text):
+        """
+        Use LLM to compare mathematical meaning of two answers.
+        Returns similarity score 0.0-1.0 based on semantic equivalence.
+        Used for ambiguous cases in hybrid approach.
+        """
+        if not answer1_text or not answer2_text:
+            return 0.0
+
+        # Truncate to avoid excessive tokens
+        ans1 = answer1_text[:400]
+        ans2 = answer2_text[:400]
+
+        comparison_prompt = f"""Compare these two mathematical answers semantically.
+
+**Answer 1**: {ans1}
+
+**Answer 2**: {ans2}
+
+**Task**: Determine if these answers are mathematically equivalent, considering:
+- Different notations for the same meaning (e.g., "k ≤ n-1" vs "k < n" vs "k ∈ {{0,1,...,n-1}}")
+- Rephrasing (e.g., "impossible for k=n" vs "k cannot equal n" vs "k≠n required")
+- Set representations (e.g., "{{0,1,2}}" vs "0, 1, or 2" vs "k ∈ [0,2]")
+- Equivalent impossibility claims
+
+**Similarity Scale**:
+- 1.0 = Mathematically identical meaning
+- 0.8-0.9 = Very similar, only minor notation differences
+- 0.5-0.7 = Partially similar, some overlap
+- 0.2-0.4 = Somewhat different
+- 0.0-0.1 = Completely different meanings
+
+**Output Format** (single line):
+SIMILARITY: [score] | REASON: [one-line explanation]
+
+Example: "SIMILARITY: 0.85 | REASON: Both claim k≤n-1, just different notation"
+"""
+
+        try:
+            payload = build_request_payload(
+                system_prompt="You are a mathematical equivalence checker. Compare answers precisely.",
+                question_prompt=comparison_prompt,
+                other_prompts=[],
+                reasoning_effort="low"  # Fast comparison, no need for deep reasoning
+            )
+
+            response = send_api_request(get_api_key(), payload, request_label="LLM semantic comparison")
+            response_text = extract_text_from_response(response)
+
+            # Parse similarity score from response
+            import re
+            match = re.search(r'SIMILARITY:\s*([0-9.]+)', response_text, re.IGNORECASE)
+            if match:
+                score = float(match.group(1))
+                # Clamp to valid range
+                score = max(0.0, min(1.0, score))
+
+                # Extract reason for debugging
+                reason_match = re.search(r'REASON:\s*(.+?)(?:\n|$)', response_text, re.IGNORECASE)
+                reason = reason_match.group(1).strip() if reason_match else "No reason provided"
+
+                print(f">>>>>>> [RLAC LLM-SEM] LLM comparison score: {score:.2f}")
+                print(f">>>>>>> [RLAC LLM-SEM] Reason: {reason[:100]}")
+
+                return score
+            else:
+                print(f">>>>>>> [RLAC LLM-SEM] Failed to parse LLM response, falling back to 0.5")
+                return 0.5  # Neutral fallback if parsing fails
+
+        except Exception as e:
+            print(f">>>>>>> [RLAC LLM-SEM] Error in LLM comparison: {e}")
+            return 0.5  # Neutral fallback on error
+
+    def semantic_similarity(fp1, fp2, answer1_text="", answer2_text=""):
+        """
+        HYBRID semantic similarity: Fast rule-based + LLM for ambiguous cases.
+
+        Proposal C Enhanced: Two-tier approach
+        - Tier 1: Fast fuzzy matching for obvious cases (>0.8 or <0.2)
+        - Tier 2: LLM comparison for ambiguous cases (0.2-0.8)
+
+        Args:
+            fp1, fp2: Semantic fingerprints (dicts with formulas, bounds, etc.)
+            answer1_text, answer2_text: Full answer text for LLM comparison
+
+        Returns:
+            Similarity score 0.0-1.0
+        """
+        # Tier 1: Fast rule-based check
+        fuzzy_score = semantic_similarity_fuzzy(fp1, fp2)
+
+        # Clear cases: skip LLM
+        if fuzzy_score >= 0.8:
+            print(f">>>>>>> [RLAC Hybrid] Fuzzy score {fuzzy_score:.2f} >= 0.8 (clearly similar), skipping LLM")
+            return fuzzy_score
+
+        if fuzzy_score <= 0.2:
+            print(f">>>>>>> [RLAC Hybrid] Fuzzy score {fuzzy_score:.2f} <= 0.2 (clearly different), skipping LLM")
+            return fuzzy_score
+
+        # Ambiguous case (0.2 < score < 0.8): Use LLM to disambiguate
+        print(f">>>>>>> [RLAC Hybrid] Fuzzy score {fuzzy_score:.2f} is ambiguous (0.2-0.8), using LLM tier")
+
+        # Need full answer text for LLM comparison
+        if not answer1_text or not answer2_text:
+            # Fallback: reconstruct from fingerprint
+            answer1_text = fp1.get('raw', '') if fp1 else ''
+            answer2_text = fp2.get('raw', '') if fp2 else ''
+
+        if answer1_text and answer2_text:
+            llm_score = llm_semantic_comparison(answer1_text, answer2_text)
+            print(f">>>>>>> [RLAC Hybrid] LLM score: {llm_score:.2f}, Fuzzy score: {fuzzy_score:.2f}")
+            # Use LLM score as authoritative for ambiguous cases
+            return llm_score
+        else:
+            print(f">>>>>>> [RLAC Hybrid] No answer text available, using fuzzy score: {fuzzy_score:.2f}")
+            return fuzzy_score
 
     previous_semantic_fingerprint = None
     semantic_unchanged_count = 0  # P9: Track semantically unchanged answers
@@ -3135,10 +3254,18 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                             from difflib import SequenceMatcher
                             text_similarity = SequenceMatcher(None, previous_answer_extract, new_answer_extract).ratio()
 
-                        # P9: Semantic similarity (new)
+                        # P9: Semantic similarity (new) - with hybrid LLM approach
                         sem_similarity = 0.0
                         if previous_semantic_fingerprint:
-                            sem_similarity = semantic_similarity(previous_semantic_fingerprint, new_semantic_fp)
+                            # Pass answer text for hybrid LLM comparison
+                            prev_ans_text = previous_answer_extract if previous_answer_extract else ""
+                            new_ans_text = new_answer_extract if new_answer_extract else ""
+                            sem_similarity = semantic_similarity(
+                                previous_semantic_fingerprint,
+                                new_semantic_fp,
+                                answer1_text=prev_ans_text,
+                                answer2_text=new_ans_text
+                            )
 
                         # Use BOTH metrics - answer is unchanged only if BOTH are high
                         # This prevents superficial text changes from resetting counters
@@ -3189,9 +3316,12 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                             recent_answers = answer_history[-convergence_window:]
                             similarities = []
                             for i in range(len(recent_answers) - 1):
+                                # Pass answer text for hybrid LLM comparison
                                 sim = semantic_similarity(
                                     recent_answers[i]['fingerprint'],
-                                    recent_answers[i + 1]['fingerprint']
+                                    recent_answers[i + 1]['fingerprint'],
+                                    answer1_text=recent_answers[i]['answer_text'],
+                                    answer2_text=recent_answers[i + 1]['answer_text']
                                 )
                                 similarities.append(sim)
 
