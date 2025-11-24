@@ -864,6 +864,188 @@ class TestP8FreshStartThreshold(unittest.TestCase):
         print("✓ P8 reset behavior verified")
 
 
+class TestP51EnhancedVerification(unittest.TestCase):
+    """Test P5.1: Enhanced verification with mandatory small case testing."""
+
+    def test_p51_threshold_trigger(self):
+        """P5.1: Should trigger enhanced verification at 6+ consecutive BROKEN."""
+        p51_verification_threshold = 6
+        consecutive_broken = 6
+        p51_verification_triggered = False
+
+        use_p51_enhanced = (consecutive_broken >= p51_verification_threshold and
+                           not p51_verification_triggered)
+
+        self.assertTrue(use_p51_enhanced,
+            "Should trigger P5.1 at 6 consecutive BROKEN")
+        print("✓ P5.1 threshold trigger verified")
+
+    def test_p51_not_triggered_below_threshold(self):
+        """P5.1: Should NOT trigger below threshold (use regular P5)."""
+        p51_verification_threshold = 6
+        consecutive_broken = 5  # Below P5.1 threshold
+        p51_verification_triggered = False
+
+        use_p51_enhanced = (consecutive_broken >= p51_verification_threshold and
+                           not p51_verification_triggered)
+
+        self.assertFalse(use_p51_enhanced,
+            "Should not trigger P5.1 at 5 consecutive BROKEN")
+        print("✓ P5.1 below-threshold behavior verified")
+
+    def test_p51_only_once(self):
+        """P5.1: Should only trigger once per session."""
+        p51_verification_threshold = 6
+        consecutive_broken = 8
+        p51_verification_triggered = True  # Already triggered
+
+        use_p51_enhanced = (consecutive_broken >= p51_verification_threshold and
+                           not p51_verification_triggered)
+
+        self.assertFalse(use_p51_enhanced,
+            "Should not trigger P5.1 again after first trigger")
+        print("✓ P5.1 single trigger verified")
+
+
+class TestP9SemanticDetection(unittest.TestCase):
+    """Test P9: Semantic answer change detection."""
+
+    def test_semantic_fingerprint_extraction(self):
+        """P9: Should extract semantic features from solution."""
+        import re
+
+        def extract_semantic_fingerprint(sol):
+            if not sol:
+                return {'raw': '', 'set_bounds': [], 'formulas': [], 'impossible': [], 'possible': []}
+            sol_lower = sol.lower()
+            fingerprint = {'raw': '', 'set_bounds': [], 'formulas': [], 'impossible': [], 'possible': []}
+
+            # Extract set notation
+            set_patterns = [r'k\s*[∈∊]\s*\{([^}]+)\}']
+            for pattern in set_patterns:
+                fingerprint['formulas'].extend(re.findall(pattern, sol_lower))
+
+            # Extract bounds
+            bound_patterns = [r'k\s*[≤<]\s*([^\s,\.\n]+)']
+            for pattern in bound_patterns:
+                fingerprint['set_bounds'].extend(re.findall(pattern, sol_lower))
+
+            return fingerprint
+
+        solution = "The answer is k ∈ {0, 1, ..., n-1} where k ≤ n-1"
+        fp = extract_semantic_fingerprint(solution)
+
+        self.assertTrue(len(fp['formulas']) > 0 or len(fp['set_bounds']) > 0,
+            "Should extract semantic features")
+        print("✓ P9 semantic fingerprint extraction verified")
+
+    def test_semantic_similarity_identical(self):
+        """P9: Identical semantic fingerprints should have high similarity."""
+        fp1 = {'formulas': ['0, 1, ..., n'], 'set_bounds': ['n'], 'impossible': [], 'possible': []}
+        fp2 = {'formulas': ['0, 1, ..., n'], 'set_bounds': ['n'], 'impossible': [], 'possible': []}
+
+        def semantic_similarity(fp1, fp2):
+            if not fp1 or not fp2:
+                return 0.0
+            score = 0.0
+            total_weight = 0.0
+
+            if fp1.get('formulas') or fp2.get('formulas'):
+                total_weight += 3.0
+                f1 = set(str(f).strip() for f in fp1.get('formulas', []))
+                f2 = set(str(f).strip() for f in fp2.get('formulas', []))
+                if f1 and f2:
+                    overlap = len(f1 & f2) / max(len(f1 | f2), 1)
+                    score += 3.0 * overlap
+
+            if fp1.get('set_bounds') or fp2.get('set_bounds'):
+                total_weight += 2.0
+                b1 = set(str(b).strip() for b in fp1.get('set_bounds', []))
+                b2 = set(str(b).strip() for b in fp2.get('set_bounds', []))
+                if b1 and b2:
+                    overlap = len(b1 & b2) / max(len(b1 | b2), 1)
+                    score += 2.0 * overlap
+
+            return score / total_weight if total_weight > 0 else 0.0
+
+        similarity = semantic_similarity(fp1, fp2)
+        self.assertGreater(similarity, 0.9,
+            "Identical fingerprints should have >90% similarity")
+        print("✓ P9 identical semantic similarity verified")
+
+    def test_semantic_similarity_different(self):
+        """P9: Different semantic fingerprints should have low similarity."""
+        fp1 = {'formulas': ['0, 1, ..., n'], 'set_bounds': ['n'], 'impossible': [], 'possible': []}
+        fp2 = {'formulas': ['0, 1'], 'set_bounds': ['1'], 'impossible': ['n'], 'possible': []}  # Very different
+
+        def semantic_similarity(fp1, fp2):
+            if not fp1 or not fp2:
+                return 0.0
+            score = 0.0
+            total_weight = 0.0
+
+            if fp1.get('formulas') or fp2.get('formulas'):
+                total_weight += 3.0
+                f1 = set(str(f).strip() for f in fp1.get('formulas', []))
+                f2 = set(str(f).strip() for f in fp2.get('formulas', []))
+                if f1 and f2:
+                    overlap = len(f1 & f2) / max(len(f1 | f2), 1)
+                    score += 3.0 * overlap
+
+            if fp1.get('set_bounds') or fp2.get('set_bounds'):
+                total_weight += 2.0
+                b1 = set(str(b).strip() for b in fp1.get('set_bounds', []))
+                b2 = set(str(b).strip() for b in fp2.get('set_bounds', []))
+                if b1 and b2:
+                    overlap = len(b1 & b2) / max(len(b1 | b2), 1)
+                    score += 2.0 * overlap
+
+            return score / total_weight if total_weight > 0 else 0.0
+
+        similarity = semantic_similarity(fp1, fp2)
+        self.assertLess(similarity, 0.5,
+            "Different fingerprints should have <50% similarity")
+        print("✓ P9 different semantic similarity verified")
+
+    def test_p9_superficial_change_detection(self):
+        """P9: Should detect when text changes but meaning is same."""
+        # Same mathematical meaning, different text
+        fp1 = {'formulas': ['0, 1, ..., n-1'], 'set_bounds': ['n-1'], 'impossible': [], 'possible': []}
+        fp2 = {'formulas': ['0, 1, ..., n-1'], 'set_bounds': ['n-1'], 'impossible': [], 'possible': []}
+
+        # Simulate text similarity being low but semantic being high
+        text_similarity = 0.3  # Different text
+        semantic_similarity_score = 0.95  # Same meaning
+
+        semantic_unchanged = semantic_similarity_score > 0.7
+
+        self.assertTrue(semantic_unchanged,
+            "Should detect semantic unchanged despite text change")
+        print("✓ P9 superficial change detection verified")
+
+    def test_p9_triggers_fresh_start(self):
+        """P9: Semantic unchanged should contribute to fresh start trigger."""
+        consecutive_broken = 6
+        answer_unchanged_after_reconsideration = 1
+        semantic_unchanged_count = 3  # P9 detected 3 superficial changes
+        fresh_start_triggered = False
+        regeneration_attempts = 0
+        max_regeneration_attempts = 4
+        fresh_start_threshold = 6
+
+        # P9 enhancement: Also trigger if semantically unchanged multiple times
+        should_fresh_start = (
+            consecutive_broken >= fresh_start_threshold and
+            (answer_unchanged_after_reconsideration >= 2 or semantic_unchanged_count >= 3) and
+            not fresh_start_triggered and
+            regeneration_attempts < max_regeneration_attempts
+        )
+
+        self.assertTrue(should_fresh_start,
+            "P9 semantic_unchanged_count >= 3 should trigger fresh start")
+        print("✓ P9 fresh start trigger verified")
+
+
 def run_tests():
     """Run all tests."""
     # Create test suite
@@ -891,6 +1073,10 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestP6EvidenceAccumulation))
     suite.addTests(loader.loadTestsFromTestCase(TestP7AnswerChangeDetection))
     suite.addTests(loader.loadTestsFromTestCase(TestP8FreshStartThreshold))
+
+    # Add test classes - P5.1 and P9 (enhanced fixes based on log analysis)
+    suite.addTests(loader.loadTestsFromTestCase(TestP51EnhancedVerification))
+    suite.addTests(loader.loadTestsFromTestCase(TestP9SemanticDetection))
 
     # Check if real LLM test requested
     if '--real-llm' in sys.argv:

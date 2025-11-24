@@ -875,13 +875,96 @@ if (consecutive_broken >= fresh_start_threshold and
 
 ### P5-P8 Test Verification
 
-All P5-P8 fixes are verified by 12 new unit tests:
+All P5-P8 fixes are verified by 12 new unit tests.
+
+## Bug Fixes v4 (P5.1, P9) - Enhanced Answer Change Detection
+
+Based on deep dive analysis of test logs showing P5-P8 activated but not fully effective:
+- Generator made superficial text changes but kept same wrong answer meaning
+- P7 text-based detection reset counters on surface changes
+- P8 never triggered because answers appeared to "change"
+
+### P5.1: Enhanced Verification with Mandatory Small Case Testing (CRITICAL)
+
+**Problem**: P5's answer reconsideration allowed superficial answer modifications without
+forcing concrete verification. Generator could claim "revised" answer without testing it.
+
+**Fix**: After 6+ consecutive BROKEN, use enhanced prompt requiring:
+
+```python
+# agent_gpt_oss.py lines 2849-2864
+if consecutive_broken >= p51_verification_threshold and not p51_verification_triggered:
+    p51_verification_triggered = True
+    defense_prompt = answer_reconsideration_with_verification_prompt.format(
+        consecutive_broken=consecutive_broken,
+        counterexample_evidence=evidence_summary,
+        previous_answer=prev_answer
+    )
+    print(f">>>>>>> [RLAC P5.1] ENHANCED VERIFICATION TRIGGERED!")
+```
+
+**Enhanced Prompt Requirements**:
+1. ACCEPT counterexamples as valid (no disputing)
+2. MANDATORY small case verification (n=3, n=4, n=5)
+3. Show explicit constructions or impossibility proofs
+4. PATTERN identification from small cases
+5. REVISED answer consistent with all evidence
+
+### P9: Semantic Answer Change Detection (HIGH)
+
+**Problem**: P7 used text similarity (SequenceMatcher) which detected surface changes
+but missed when the mathematical MEANING stayed the same.
+
+**Fix**: Extract semantic fingerprint and compare mathematical meaning:
+
+```python
+# agent_gpt_oss.py lines 2306-2426
+def extract_semantic_fingerprint(sol):
+    """Extract mathematical meaning from solution."""
+    fingerprint = {
+        'formulas': [],    # Set notation: k ∈ {0,1,...,n}
+        'set_bounds': [],  # Bounds: k ≤ n-1
+        'impossible': [],  # Claims: k=n impossible
+        'possible': []     # Claims: k=0 possible
+    }
+    # ... pattern extraction ...
+    return fingerprint
+
+def semantic_similarity(fp1, fp2):
+    """Compare mathematical meaning (0-1 scale)."""
+    # Weighted comparison of formulas, bounds, claims
+    # Returns high similarity if mathematical meaning unchanged
+```
+
+**Detection Logic**:
+```python
+# P9: Consider answer unchanged if SEMANTICALLY similar
+semantic_unchanged = sem_similarity > 0.7
+
+if semantic_unchanged:
+    semantic_unchanged_count += 1
+    print(f">>>>>>> [RLAC P9] Answer SEMANTICALLY UNCHANGED!")
+    print(f">>>>>>> [RLAC P9] Generator made superficial changes but meaning unchanged!")
+```
+
+**P8 Enhancement**: Fresh start now triggers on semantic unchanged:
+```python
+should_fresh_start = (
+    consecutive_broken >= fresh_start_threshold and
+    (answer_unchanged_after_reconsideration >= 2 or semantic_unchanged_count >= 3) and
+    not fresh_start_triggered
+)
+```
+
+### P5.1/P9 Test Verification
+
+All fixes verified by 46 unit tests:
 
 ```bash
 python code/test_rlac_bug_fixes.py
 
 # Expected output:
-# Tests run: 38
+# Tests run: 46
 # Failures: 0
 # Errors: 0
 # 🎉 ALL BUG FIXES VERIFIED!

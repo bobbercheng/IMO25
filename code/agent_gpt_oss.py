@@ -2119,6 +2119,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             solution_regeneration_prompt,
             approach_diversification_prompt,
             answer_reconsideration_prompt,  # P5 FIX: Answer reconsideration for B-B-B-B failures
+            answer_reconsideration_with_verification_prompt,  # P5.1 FIX: Enhanced with mandatory verification
             defense_first_revision_prompt   # P5 FIX: Enhanced revision prompt with answer checkpoint
         )
     except ImportError as e:
@@ -2295,6 +2296,137 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     # P8: Fresh start threshold - after reconsideration fails
     fresh_start_threshold = 6  # After 6 consecutive BROKEN with same answer, fresh start
     fresh_start_triggered = False
+
+    # P5.1 FIX: Enhanced reconsideration with mandatory verification
+    p51_verification_threshold = 6  # After 6 consecutive BROKEN, use enhanced verification prompt
+    p51_verification_triggered = False
+
+    # P9 FIX: Semantic answer change detection
+    # Track the mathematical MEANING of answers, not just text
+    def extract_semantic_fingerprint(sol):
+        """
+        Extract semantic fingerprint of answer for meaningful change detection.
+        Returns dict with key mathematical elements that define the answer's meaning.
+        """
+        if not sol:
+            return {'raw': '', 'set_bounds': [], 'formulas': [], 'key_values': []}
+
+        sol_lower = sol.lower()
+        fingerprint = {
+            'raw': '',
+            'set_bounds': [],  # e.g., ['k <= n', 'k >= 0']
+            'formulas': [],    # e.g., ['k = n-1', 'k ∈ {0,1,...,n}']
+            'key_values': [],  # e.g., ['n=3', 'k=2']
+            'impossible': [],  # e.g., ['k=n impossible']
+            'possible': []     # e.g., ['k=0 possible']
+        }
+
+        # Extract set notation patterns
+        set_patterns = [
+            r'k\s*[∈∊]\s*\{([^}]+)\}',  # k ∈ {0, 1, ..., n}
+            r'k\s*=\s*\{([^}]+)\}',      # k = {0, 1, ..., n}
+            r'answer[:\s]+\{([^}]+)\}',  # answer: {0, 1, ..., n}
+        ]
+        for pattern in set_patterns:
+            matches = re.findall(pattern, sol_lower)
+            fingerprint['formulas'].extend(matches)
+
+        # Extract bound patterns
+        bound_patterns = [
+            r'k\s*[≤<]\s*([^\s,\.\n]+)',   # k ≤ n-1
+            r'k\s*[≥>]\s*([^\s,\.\n]+)',   # k ≥ 0
+            r'0\s*[≤<]\s*k\s*[≤<]\s*([^\s,\.\n]+)',  # 0 ≤ k ≤ n
+        ]
+        for pattern in bound_patterns:
+            matches = re.findall(pattern, sol_lower)
+            fingerprint['set_bounds'].extend(matches)
+
+        # Extract impossibility claims
+        impossible_patterns = [
+            r'k\s*=\s*(\d+|n)[^\w]*(?:is\s+)?impossible',
+            r'(\d+|n)\s+(?:is\s+)?impossible',
+            r'cannot\s+(?:have\s+)?k\s*=\s*(\d+|n)',
+        ]
+        for pattern in impossible_patterns:
+            matches = re.findall(pattern, sol_lower)
+            fingerprint['impossible'].extend(matches)
+
+        # Extract possibility claims
+        possible_patterns = [
+            r'k\s*=\s*(\d+|n)[^\w]*(?:is\s+)?possible',
+            r'(\d+|n)\s+(?:is\s+)?(?:achievable|valid|possible)',
+        ]
+        for pattern in possible_patterns:
+            matches = re.findall(pattern, sol_lower)
+            fingerprint['possible'].extend(matches)
+
+        # Create normalized raw answer (last 100 chars of answer section)
+        answer_match = re.search(r'(?:answer|conclusion)[:\s]+([^\n]{10,200})', sol_lower)
+        if answer_match:
+            fingerprint['raw'] = answer_match.group(1).strip()[:100]
+
+        return fingerprint
+
+    def semantic_similarity(fp1, fp2):
+        """
+        Compare two semantic fingerprints and return similarity score (0-1).
+        Returns 1.0 if semantically identical, 0.0 if completely different.
+        """
+        if not fp1 or not fp2:
+            return 0.0
+
+        score = 0.0
+        total_weight = 0.0
+
+        # Compare formulas (high weight)
+        if fp1.get('formulas') or fp2.get('formulas'):
+            total_weight += 3.0
+            f1 = set(str(f).strip() for f in fp1.get('formulas', []))
+            f2 = set(str(f).strip() for f in fp2.get('formulas', []))
+            if f1 and f2:
+                overlap = len(f1 & f2) / max(len(f1 | f2), 1)
+                score += 3.0 * overlap
+
+        # Compare bounds (high weight)
+        if fp1.get('set_bounds') or fp2.get('set_bounds'):
+            total_weight += 2.0
+            b1 = set(str(b).strip() for b in fp1.get('set_bounds', []))
+            b2 = set(str(b).strip() for b in fp2.get('set_bounds', []))
+            if b1 and b2:
+                overlap = len(b1 & b2) / max(len(b1 | b2), 1)
+                score += 2.0 * overlap
+
+        # Compare impossibility claims (medium weight)
+        if fp1.get('impossible') or fp2.get('impossible'):
+            total_weight += 1.5
+            i1 = set(str(i).strip() for i in fp1.get('impossible', []))
+            i2 = set(str(i).strip() for i in fp2.get('impossible', []))
+            if i1 and i2:
+                overlap = len(i1 & i2) / max(len(i1 | i2), 1)
+                score += 1.5 * overlap
+
+        # Compare possibility claims (medium weight)
+        if fp1.get('possible') or fp2.get('possible'):
+            total_weight += 1.5
+            p1 = set(str(p).strip() for p in fp1.get('possible', []))
+            p2 = set(str(p).strip() for p in fp2.get('possible', []))
+            if p1 and p2:
+                overlap = len(p1 & p2) / max(len(p1 | p2), 1)
+                score += 1.5 * overlap
+
+        # Fallback to raw text similarity if no semantic features found
+        if total_weight == 0:
+            total_weight = 1.0
+            from difflib import SequenceMatcher
+            raw1 = fp1.get('raw', '')
+            raw2 = fp2.get('raw', '')
+            if raw1 and raw2:
+                score = SequenceMatcher(None, raw1, raw2).ratio()
+
+        return score / total_weight if total_weight > 0 else 0.0
+
+    previous_semantic_fingerprint = None
+    semantic_unchanged_count = 0  # P9: Track semantically unchanged answers
 
     for round_num in range(max_adversarial_rounds):
         print(f"\n{'='*80}")
@@ -2704,7 +2836,7 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
 """
                     print(f">>>>>>> [RLAC LOCK] Adding answer lock instruction to defense prompt")
 
-                # Build defense prompt (P5: reconsideration, constructive, or defense-first mode)
+                # Build defense prompt (P5/P5.1: reconsideration, constructive, or defense-first mode)
                 if use_answer_reconsideration:
                     # P5/P6 FIX: Use answer reconsideration with accumulated evidence
                     evidence_summary = "\n".join([
@@ -2714,12 +2846,29 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     # Extract previous answer for P7 tracking
                     prev_answer = current_answer_extract or "Unknown answer"
 
-                    defense_prompt = answer_reconsideration_prompt.format(
-                        counterexample_evidence=evidence_summary,
-                        previous_answer=prev_answer
-                    )
-                    print(f">>>>>>> [RLAC P5] Using ANSWER RECONSIDERATION prompt")
-                    print(f">>>>>>> [RLAC P5] Previous answer: {prev_answer[:80]}...")
+                    # P5.1 FIX: Use enhanced verification prompt after higher threshold
+                    use_p51_enhanced = (consecutive_broken >= p51_verification_threshold and
+                                        not p51_verification_triggered)
+
+                    if use_p51_enhanced:
+                        p51_verification_triggered = True
+                        defense_prompt = answer_reconsideration_with_verification_prompt.format(
+                            consecutive_broken=consecutive_broken,
+                            counterexample_evidence=evidence_summary,
+                            previous_answer=prev_answer
+                        )
+                        print(f"\n{'='*80}")
+                        print(f">>>>>>> [RLAC P5.1] ENHANCED VERIFICATION TRIGGERED!")
+                        print(f">>>>>>> [RLAC P5.1] {consecutive_broken} consecutive BROKEN - mandatory small case verification")
+                        print(f">>>>>>> [RLAC P5.1] Previous answer: {prev_answer[:80]}...")
+                        print(f"{'='*80}\n")
+                    else:
+                        defense_prompt = answer_reconsideration_prompt.format(
+                            counterexample_evidence=evidence_summary,
+                            previous_answer=prev_answer
+                        )
+                        print(f">>>>>>> [RLAC P5] Using ANSWER RECONSIDERATION prompt")
+                        print(f">>>>>>> [RLAC P5] Previous answer: {prev_answer[:80]}...")
                 elif use_constructive:
                     defense_prompt = constructive_defense_prompt.format(
                         constructive_feedback=attack_result.get('full_attack', str(counterexamples))
@@ -2858,29 +3007,66 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(solution)} chars)")
 
                     # P7 FIX: Check if answer actually changed after reconsideration
+                    # P9 FIX: Use semantic fingerprinting for meaningful change detection
                     if answer_reconsideration_triggered:
                         new_answer_extract = extract_answer_from_solution(solution)
+
+                        # P9: Extract semantic fingerprint for meaningful comparison
+                        new_semantic_fp = extract_semantic_fingerprint(solution)
+
+                        # P7: Text-based similarity (original)
+                        text_similarity = 0.0
                         if previous_answer_extract and new_answer_extract:
-                            # Simple similarity check - if >80% overlap, consider unchanged
                             from difflib import SequenceMatcher
-                            similarity = SequenceMatcher(None, previous_answer_extract, new_answer_extract).ratio()
-                            if similarity > 0.8:
-                                answer_unchanged_after_reconsideration += 1
-                                print(f">>>>>>> [RLAC P7] Answer UNCHANGED after reconsideration (similarity: {similarity:.2f})")
-                                print(f">>>>>>> [RLAC P7] Previous: {previous_answer_extract[:60]}...")
-                                print(f">>>>>>> [RLAC P7] Current:  {new_answer_extract[:60]}...")
-                                print(f">>>>>>> [RLAC P7] Unchanged count: {answer_unchanged_after_reconsideration}")
-                            else:
-                                print(f">>>>>>> [RLAC P7] Answer CHANGED after reconsideration (similarity: {similarity:.2f})")
-                                print(f">>>>>>> [RLAC P7] Previous: {previous_answer_extract[:60]}...")
-                                print(f">>>>>>> [RLAC P7] New:      {new_answer_extract[:60]}...")
-                                answer_unchanged_after_reconsideration = 0  # Reset on change
+                            text_similarity = SequenceMatcher(None, previous_answer_extract, new_answer_extract).ratio()
+
+                        # P9: Semantic similarity (new)
+                        sem_similarity = 0.0
+                        if previous_semantic_fingerprint:
+                            sem_similarity = semantic_similarity(previous_semantic_fingerprint, new_semantic_fp)
+
+                        # Use BOTH metrics - answer is unchanged only if BOTH are high
+                        # This prevents superficial text changes from resetting counters
+                        text_unchanged = text_similarity > 0.8
+                        semantic_unchanged = sem_similarity > 0.7
+
+                        print(f">>>>>>> [RLAC P7] Text similarity: {text_similarity:.2f}")
+                        print(f">>>>>>> [RLAC P9] Semantic similarity: {sem_similarity:.2f}")
+                        if new_semantic_fp.get('formulas'):
+                            print(f">>>>>>> [RLAC P9] Formulas detected: {new_semantic_fp['formulas'][:3]}")
+                        if new_semantic_fp.get('impossible'):
+                            print(f">>>>>>> [RLAC P9] Impossibility claims: {new_semantic_fp['impossible'][:3]}")
+
+                        # P9: Consider answer unchanged if SEMANTICALLY similar (even if text changed)
+                        if semantic_unchanged:
+                            semantic_unchanged_count += 1
+                            answer_unchanged_after_reconsideration += 1
+                            print(f">>>>>>> [RLAC P9] Answer SEMANTICALLY UNCHANGED (sem: {sem_similarity:.2f}, text: {text_similarity:.2f})")
+                            print(f">>>>>>> [RLAC P9] Generator made superficial changes but meaning unchanged!")
+                            print(f">>>>>>> [RLAC P9] Semantic unchanged count: {semantic_unchanged_count}")
+                        elif text_unchanged:
+                            answer_unchanged_after_reconsideration += 1
+                            print(f">>>>>>> [RLAC P7] Answer TEXT UNCHANGED (similarity: {text_similarity:.2f})")
+                            print(f">>>>>>> [RLAC P7] Unchanged count: {answer_unchanged_after_reconsideration}")
+                        else:
+                            print(f">>>>>>> [RLAC P7/P9] Answer MEANINGFULLY CHANGED!")
+                            print(f">>>>>>> [RLAC P7] Previous: {previous_answer_extract[:60] if previous_answer_extract else 'N/A'}...")
+                            print(f">>>>>>> [RLAC P7] New:      {new_answer_extract[:60] if new_answer_extract else 'N/A'}...")
+                            answer_unchanged_after_reconsideration = 0  # Reset on meaningful change
+                            semantic_unchanged_count = 0
+
+                        # Update semantic fingerprint for next comparison
+                        previous_semantic_fingerprint = new_semantic_fp
 
                         # P8 FIX: Fresh start if answer unchanged after reconsideration and still broken
-                        if (consecutive_broken >= fresh_start_threshold and
-                            answer_unchanged_after_reconsideration >= 2 and
+                        # P9 enhancement: Also trigger if semantically unchanged multiple times
+                        should_fresh_start = (
+                            consecutive_broken >= fresh_start_threshold and
+                            (answer_unchanged_after_reconsideration >= 2 or semantic_unchanged_count >= 3) and
                             not fresh_start_triggered and
-                            regeneration_attempts < max_regeneration_attempts):
+                            regeneration_attempts < max_regeneration_attempts
+                        )
+                        if should_fresh_start:
 
                             fresh_start_triggered = True
                             print(f"\n{'='*80}")

@@ -617,6 +617,84 @@ Do NOT defend the old answer - prove the NEW one.
 3. [PROOF] Complete rigorous proof of the revised answer
 """
 
+# P5.1 FIX: Enhanced answer reconsideration with MANDATORY small case verification
+answer_reconsideration_with_verification_prompt = """
+### ANSWER RECONSIDERATION MODE - MANDATORY VERIFICATION ###
+
+**CRITICAL**: You have received {consecutive_broken} consecutive BROKEN verdicts.
+The critic has provided VALID counterexamples proving your answer is WRONG.
+
+**Evidence Summary**:
+{counterexample_evidence}
+
+**Your Previous Answer**: {previous_answer}
+
+### MANDATORY VERIFICATION PROTOCOL ###
+
+**BEFORE proposing ANY new answer, you MUST complete these steps:**
+
+**Step 1: ACCEPT the Counterexamples as VALID**
+The counterexamples above are mathematically correct. Do NOT dispute them.
+State explicitly: "I accept that [counterexample] proves [what it proves]"
+
+**Step 2: SMALL CASE VERIFICATION (MANDATORY)**
+You MUST explicitly verify your answer for small cases:
+
+For COMBINATORICS/NUMBER THEORY problems:
+- n=3: List ALL valid values. Show explicit constructions or proofs of impossibility.
+- n=4: List ALL valid values. Show explicit constructions or proofs of impossibility.
+- n=5: List ALL valid values. Show explicit constructions or proofs of impossibility.
+
+For GEOMETRY problems:
+- Test with specific coordinates (unit triangle, simple square)
+- Verify distance/angle calculations with actual numbers
+
+**FORMAT FOR SMALL CASE VERIFICATION**:
+```
+SMALL CASE n=3:
+- Possible values: [list them]
+- For each value k, either:
+  * Construction: [explicit construction that works]
+  * Impossibility: [proof why k is impossible]
+- Conclusion for n=3: k ∈ [set]
+
+SMALL CASE n=4:
+[same format]
+
+SMALL CASE n=5:
+[same format]
+```
+
+**Step 3: PATTERN IDENTIFICATION**
+Based on your small case analysis:
+- What pattern emerges? (e.g., k ≤ f(n) for some function f)
+- Does this pattern match what the counterexamples proved?
+
+**Step 4: REVISED ANSWER**
+State your NEW answer that is CONSISTENT with:
+1. All counterexamples provided
+2. Your small case verification
+3. The identified pattern
+
+**Step 5: PROOF**
+Prove your revised answer. The proof must:
+- Handle the cases where counterexamples showed your old answer was wrong
+- Be consistent with your small case verification
+
+### CRITICAL RULES ###
+- If your small case verification contradicts your proposed answer, CHANGE THE ANSWER
+- Do NOT skip the small case verification
+- Do NOT claim "this obviously works" - show explicit constructions
+- If n=3 case already disproves your answer, STOP and fix the answer
+
+**Output Format**:
+1. [ACCEPTANCE] Which counterexamples you accept and what they prove
+2. [SMALL CASES] Complete verification for n=3, n=4, n=5
+3. [PATTERN] The pattern you identified
+4. [REVISED ANSWER] Your new answer
+5. [PROOF] Rigorous proof of the revised answer
+"""
+
 
 def get_constructive_prompt(previous_verdict, attack_result, round_num):
     """

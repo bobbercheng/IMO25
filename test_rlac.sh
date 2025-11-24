@@ -40,7 +40,12 @@
 # P7: Answer change detection - tracks if generator actually changes answer
 # P8: Fresh start threshold - triggers complete regeneration if answer unchanged
 #
-# Run unit tests: python code/test_rlac_bug_fixes.py (38 tests)
+# P5.1/P9 Fixes (for superficial answer changes):
+# ------------------------------------------------
+# P5.1: Enhanced verification - mandatory small case (n=3,4,5) testing after 6+ BROKEN
+# P9: Semantic detection - detects when text changes but mathematical meaning unchanged
+#
+# Run unit tests: python code/test_rlac_bug_fixes.py (46 tests)
 
 echo "=========================================="
 echo "RLAC Implementation Test"
