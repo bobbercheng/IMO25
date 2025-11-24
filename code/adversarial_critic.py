@@ -253,8 +253,9 @@ Follow the output format specified in your system prompt.
             return "low"
         elif round_num < 7:
             return "medium"
-        else:
-            return "high"
+        # high reason effort takes too long, let's avoid it unless there is a strong reason.
+        # else:
+        #     return "high"
 
     def _parse_attack_result(self, attack_text: str, round_num: int) -> Dict[str, Any]:
         """
