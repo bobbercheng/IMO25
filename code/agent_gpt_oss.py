@@ -2933,7 +2933,9 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                 # P6 FIX: Accumulate counterexamples across rounds for evidence building
                 for ce in counterexamples[:2]:  # Keep top 2 from each round
                     if len(ce) >= 30:  # Only substantive counterexamples
-                        accumulated_counterexamples.append((round_num + 1, ce[:400]))
+                        # BUGFIX: Increased from 400 to 2000 chars to prevent truncation
+                        # Geometry problems need full coordinate specifications and calculations
+                        accumulated_counterexamples.append((round_num + 1, ce[:2000]))
                 # Keep only the most recent evidence
                 if len(accumulated_counterexamples) > max_accumulated_evidence:
                     accumulated_counterexamples = accumulated_counterexamples[-max_accumulated_evidence:]

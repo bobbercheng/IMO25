@@ -44,6 +44,51 @@ SELF_IMPROVEMENT_REASONING_EFFORT = "high" # Proactive error detection
 - `init_explorations()` - Uses high reasoning for self-improvement step
 - Memory system with state persistence and resume capability
 
+### RLAC (Reinforcement Learning with Adversarial Critics)
+
+The GPT-OSS agent includes an integrated RLAC mode (`--use-rlac`) that implements adversarial refinement:
+
+**Architecture:**
+- **Location:** `code/agent_gpt_oss.py` function `rlac_agent()` (line ~2053)
+- **Components:**
+  - `code/adversarial_critic.py` - Adversarial attack generation with progressive intensity
+  - `code/adversarial_prompts.py` - Attack templates and system prompts
+- **DEPRECATED:** `code/deprecated/agent_rlac.py` - Old standalone implementation (no longer maintained)
+
+**Key Features:**
+- P0-P3: Near-success protection, counterexample verification, answer lock (auto-disabled during P5), truncation detection
+- P5-P9: Answer reconsideration after 4+ BROKEN verdicts, evidence accumulation, semantic change detection
+- Progressive critic reasoning: LOW (rounds 0-2) → MEDIUM (rounds 3-6) for efficiency
+- Defense-first mode: Generator responds to attacks before generating new solution
+
+**Running RLAC:**
+```bash
+# Recommended: Use test script
+./test_rlac.sh problems/imo01.txt output.log memory.json
+
+# Direct invocation:
+python code/agent_gpt_oss.py problems/imo01.txt \
+  --use-rlac \
+  --rlac-max-rounds 15 \
+  --rlac-robust-threshold 3 \
+  --solution-reasoning low \
+  --rlac-critic-reasoning medium \
+  --log output.log
+```
+
+**RLAC Environment Variables:**
+- `RLAC_MAX_ROUNDS` - Maximum adversarial rounds (default: 15)
+- `RLAC_ROBUST_THRESHOLD` - Consecutive ROBUST verdicts needed (default: 3)
+- `RLAC_STUCK_THRESHOLD` - Failures before strategy shift (default: 4)
+- `RLAC_MAX_REGEN` - Maximum regeneration attempts (default: 4)
+- `RLAC_SOL_REASONING` - Solution reasoning effort (default: low)
+- `RLAC_CRITIC_REASONING` - Critic reasoning effort (default: medium)
+
+**Recent Fixes (2025-11-25):**
+- **BUGFIX:** Counterexample truncation increased from 400 to 2000 chars (geometry problems need full specifications)
+- Answer lock properly disabled during P5/P5.1 reconsideration
+- Architecture consolidated: all RLAC code in agent_gpt_oss.py
+
 ## Common Commands
 
 ### Environment Setup
