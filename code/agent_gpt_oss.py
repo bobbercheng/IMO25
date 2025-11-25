@@ -2120,18 +2120,54 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             approach_diversification_prompt,
             answer_reconsideration_prompt,  # P5 FIX: Answer reconsideration for B-B-B-B failures
             answer_reconsideration_with_verification_prompt,  # P5.1 FIX: Enhanced with mandatory verification
-            defense_first_revision_prompt   # P5 FIX: Enhanced revision prompt with answer checkpoint
+            defense_first_revision_prompt,   # P5 FIX: Enhanced revision prompt with answer checkpoint
+            proof_reconsideration_prompt    # PROOF FIX: Prevent "theorem is false" error for prove-X problems
         )
     except ImportError as e:
         print(f">>>>>>> [RLAC ERROR] Could not import adversarial modules: {e}")
         print(f">>>>>>> [RLAC ERROR] Falling back to standard agent")
         return None
 
+    # Helper function: Detect problem type (prove vs find)
+    def detect_problem_type(problem_statement):
+        """
+        Detect if this is a "prove X" problem (where statement is TRUE)
+        vs a "find X" problem (where answer can change).
+
+        Returns: "prove" or "find"
+        """
+        # Keywords indicating proof problems
+        prove_keywords = [
+            r'\bprove\b',
+            r'\bshow that\b',
+            r'\bdemonstrate that\b',
+            r'\bverify that\b',
+            r'\bestablish that\b',
+            r'\bjustify that\b'
+        ]
+
+        # Check for prove keywords (case-insensitive)
+        problem_lower = problem_statement.lower()
+        for keyword in prove_keywords:
+            if re.search(keyword, problem_lower):
+                return "prove"
+
+        # Default to "find" for problems asking to find/determine values
+        return "find"
+
     # Initialize adversarial critic
     critic = AdversarialCritic(
         reasoning_effort=ver_reasoning,
         verbose=verbose
     )
+
+    # Detect problem type (prove vs find) for appropriate reconsideration prompts
+    problem_type = detect_problem_type(problem_statement)
+    print(f">>>>>>> [RLAC CONFIG] Problem type detected: {problem_type.upper()}")
+    if problem_type == "prove":
+        print(f">>>>>>> [RLAC CONFIG] Using proof reconsideration (prevents 'theorem is false' errors)")
+    else:
+        print(f">>>>>>> [RLAC CONFIG] Using answer reconsideration (allows answer changes)")
 
     # Create enhanced session with counter-proposal improvements
     enhanced_session = critic.create_enhanced_session()
@@ -2846,11 +2882,40 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
             print(f">>>>>>> [RLAC SUCCESS] Solution survived attack! ({consecutive_robust}/{consecutive_robust_threshold})")
             print(f"{'='*80}\n")
 
-            if consecutive_robust >= consecutive_robust_threshold:
-                print(f"\n{'='*80}")
-                print(f">>>>>>> [RLAC SUCCESS] Solution ROBUST after {consecutive_robust_threshold} consecutive attacks!")
-                print(f">>>>>>> [RLAC SUCCESS] Total rounds: {round_num + 1}")
-                print(f"{'='*80}\n")
+            # ENHANCEMENT: Cumulative success criteria (more practical for round-limited scenarios)
+            # This addresses the issue where solutions get 2/3 robust near round limit but timeout
+            cumulative_success = False
+            if round_num >= 11:  # Only check after sufficient rounds (12+)
+                recent_12 = verdict_history[-12:] if len(verdict_history) >= 12 else verdict_history
+                robust_count_recent = recent_12.count("ROBUST")
+
+                # Success condition 1: 10+ robust verdicts in last 12 rounds (83% robust rate)
+                if robust_count_recent >= 10:
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [RLAC CUMULATIVE SUCCESS] High robust rate achieved!")
+                    print(f">>>>>>> [RLAC CUMULATIVE SUCCESS] {robust_count_recent}/12 rounds were ROBUST (83%+)")
+                    print(f">>>>>>> [RLAC CUMULATIVE SUCCESS] Total rounds: {round_num + 1}")
+                    print(f"{'='*80}\n")
+                    cumulative_success = True
+
+                # Success condition 2: Last 5 rounds all non-BROKEN + good overall robust rate
+                elif round_num >= 11:
+                    recent_5 = verdict_history[-5:]
+                    if "BROKEN" not in recent_5 and robust_count_recent >= 7:
+                        print(f"\n{'='*80}")
+                        print(f">>>>>>> [RLAC CUMULATIVE SUCCESS] Stable convergence detected!")
+                        print(f">>>>>>> [RLAC CUMULATIVE SUCCESS] Last 5 rounds: {recent_5}")
+                        print(f">>>>>>> [RLAC CUMULATIVE SUCCESS] Overall robust rate: {robust_count_recent}/12 (58%+)")
+                        print(f">>>>>>> [RLAC CUMULATIVE SUCCESS] Total rounds: {round_num + 1}")
+                        print(f"{'='*80}\n")
+                        cumulative_success = True
+
+            if consecutive_robust >= consecutive_robust_threshold or cumulative_success:
+                if not cumulative_success:
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [RLAC SUCCESS] Solution ROBUST after {consecutive_robust_threshold} consecutive attacks!")
+                    print(f">>>>>>> [RLAC SUCCESS] Total rounds: {round_num + 1}")
+                    print(f"{'='*80}\n")
 
                 # Final cooperative verification as sanity check
                 print(">>>>>>> [RLAC FINAL] Running cooperative verification as sanity check...")
@@ -3130,31 +3195,50 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     # Extract previous answer for P7 tracking
                     prev_answer = current_answer_extract or "Unknown answer"
 
-                    # P5.1 FIX: Use enhanced verification prompt after higher threshold
-                    # Proposal A: Use total_broken_in_session instead of consecutive_broken
-                    # This prevents ROBUST verdicts from resetting the counter
-                    use_p51_enhanced = (total_broken_in_session >= p51_verification_threshold and
-                                        not p51_verification_triggered)
+                    # PROOF FIX: Branch based on problem type
+                    if problem_type == "prove":
+                        # For "prove X" problems, use proof reconsideration (prevents "theorem is false" errors)
+                        # Create failed approach summary from previous solution
+                        failed_approach_summary = f"Previous approach (failed):\n{solution[:1000]}..."
 
-                    if use_p51_enhanced:
-                        p51_verification_triggered = True
-                        defense_prompt = answer_reconsideration_with_verification_prompt.format(
-                            consecutive_broken=total_broken_in_session,
-                            counterexample_evidence=evidence_summary,
-                            previous_answer=prev_answer
+                        defense_prompt = proof_reconsideration_prompt.format(
+                            problem_statement=problem_statement,
+                            failed_approach_summary=failed_approach_summary,
+                            counterexample_evidence=evidence_summary
                         )
                         print(f"\n{'='*80}")
-                        print(f">>>>>>> [RLAC P5.1] ENHANCED VERIFICATION TRIGGERED!")
-                        print(f">>>>>>> [RLAC P5.1] {total_broken_in_session} total BROKEN verdicts - mandatory small case verification")
-                        print(f">>>>>>> [RLAC P5.1] Previous answer: {prev_answer[:80]}...")
+                        print(f">>>>>>> [RLAC PROOF] PROOF RECONSIDERATION TRIGGERED!")
+                        print(f">>>>>>> [RLAC PROOF] Problem type: PROVE (statement is TRUE)")
+                        print(f">>>>>>> [RLAC PROOF] Focusing on finding DIFFERENT PROOF METHOD")
+                        print(f">>>>>>> [RLAC PROOF] Evidence accumulated: {len(accumulated_counterexamples)} rounds")
                         print(f"{'='*80}\n")
                     else:
-                        defense_prompt = answer_reconsideration_prompt.format(
-                            counterexample_evidence=evidence_summary,
-                            previous_answer=prev_answer
-                        )
-                        print(f">>>>>>> [RLAC P5] Using ANSWER RECONSIDERATION prompt")
-                        print(f">>>>>>> [RLAC P5] Previous answer: {prev_answer[:80]}...")
+                        # For "find X" problems, use answer reconsideration (allows answer changes)
+                        # P5.1 FIX: Use enhanced verification prompt after higher threshold
+                        # Proposal A: Use total_broken_in_session instead of consecutive_broken
+                        # This prevents ROBUST verdicts from resetting the counter
+                        use_p51_enhanced = (total_broken_in_session >= p51_verification_threshold and
+                                            not p51_verification_triggered)
+
+                        if use_p51_enhanced:
+                            p51_verification_triggered = True
+                            defense_prompt = answer_reconsideration_with_verification_prompt.format(
+                                consecutive_broken=total_broken_in_session,
+                                counterexample_evidence=evidence_summary,
+                                previous_answer=prev_answer
+                            )
+                            print(f"\n{'='*80}")
+                            print(f">>>>>>> [RLAC P5.1] ENHANCED VERIFICATION TRIGGERED!")
+                            print(f">>>>>>> [RLAC P5.1] {total_broken_in_session} total BROKEN verdicts - mandatory small case verification")
+                            print(f">>>>>>> [RLAC P5.1] Previous answer: {prev_answer[:80]}...")
+                            print(f"{'='*80}\n")
+                        else:
+                            defense_prompt = answer_reconsideration_prompt.format(
+                                counterexample_evidence=evidence_summary,
+                                previous_answer=prev_answer
+                            )
+                            print(f">>>>>>> [RLAC P5] Using ANSWER RECONSIDERATION prompt")
+                            print(f">>>>>>> [RLAC P5] Previous answer: {prev_answer[:80]}...")
                 elif use_constructive:
                     defense_prompt = constructive_defense_prompt.format(
                         constructive_feedback=attack_result.get('full_attack', str(counterexamples))
@@ -3185,7 +3269,8 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                 # Check if solution actually changed
                 if revised_solution == solution or not revised_solution:
                     # Proposal B: If P5 failed (gentle reconsideration didn't work), immediately escalate to P5.1
-                    if use_answer_reconsideration and not use_p51_enhanced:
+                    # Note: Only for "find" problems - proof problems already use strong proof reconsideration
+                    if use_answer_reconsideration and not use_p51_enhanced and problem_type != "prove":
                         print(f"\n{'='*80}")
                         print(f">>>>>>> [RLAC P5] ⚠️  P5 RECONSIDERATION FAILED - solution unchanged")
                         print(f">>>>>>> [RLAC Proposal B] Immediate escalation to P5.1 ENHANCED VERIFICATION")

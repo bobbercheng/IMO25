@@ -567,7 +567,80 @@ Generate a COMPLETELY NEW solution with a DIFFERENT approach.
 """
 
 # ==============================================================================
-# ANSWER RECONSIDERATION PROMPT (NEW - for when answer is fundamentally wrong)
+# PROOF RECONSIDERATION PROMPT (for "prove X" problems where X is true)
+# ==============================================================================
+
+proof_reconsideration_prompt = """
+### PROOF APPROACH RECONSIDERATION MODE ###
+
+**CRITICAL**: The critic has found flaws in your PROOF APPROACH.
+This does NOT mean the statement is false - it means YOUR METHOD is incorrect.
+
+**The Problem Statement**:
+{problem_statement}
+
+**IMPORTANT**: The statement above is TRUE (this is a validated problem).
+Your job is to find a DIFFERENT PROOF METHOD that establishes this truth.
+
+**Failed Approach Summary**:
+{failed_approach_summary}
+
+**Counterexamples to Your Proof**:
+{counterexample_evidence}
+
+### MANDATORY RESPONSE PROTOCOL ###
+
+**Step 1: Acknowledge the Proof Failure (NOT Statement Failure)**
+State explicitly: "My proof approach using [method] failed because [specific flaw]."
+"The problem statement is still TRUE - I need a different proof strategy."
+
+**Step 2: Identify Why Your Approach Failed**
+- What specific assumption in your proof was invalid?
+- At which step did the logic break down?
+- What did the counterexample specifically reveal about your method?
+- Why doesn't your current approach lead to the required conclusion?
+
+**Step 3: Choose a DIFFERENT Proof Strategy**
+The problem statement is TRUE. You must find a different way to prove it.
+
+**For GEOMETRY problems, consider:**
+1. **Analytic/Coordinate Geometry** - Use Cartesian coordinates and algebra
+2. **Synthetic Geometry** - Pure angle-chasing, similar triangles, power of a point
+3. **Transformation Geometry** - Inversion, homothety, spiral similarity, reflection
+4. **Radical Axis Methods** - Use radical axis theorems and power of a point
+5. **Projective Geometry** - Use cross-ratios, harmonic division, poles/polars
+
+**For OTHER problem types, consider:**
+- Induction vs direct proof vs contradiction
+- Algebraic vs combinatorial approaches
+- Constructive vs existence proofs
+
+**Step 4: Sketch Your New Approach (3-5 Steps)**
+Before writing the full proof, outline your new strategy:
+1. [First major step]
+2. [Second major step]
+3. [Final step leading to conclusion]
+
+**Step 5: Execute Complete Proof**
+Now write the full rigorous proof using your NEW approach.
+
+### CRITICAL RULES ###
+- The problem statement is TRUE - do not doubt it
+- Your previous approach was WRONG - abandon it completely
+- Find a DIFFERENT method, not a variant of the same method
+- Do NOT reuse any lemmas that were broken by counterexamples
+
+**Output Format**:
+### Summary ###
+**a. Verdict** - [State you are providing a new proof approach]
+**b. Method Sketch** - [Outline of new strategy]
+
+### Detailed Solution ###
+[Complete rigorous proof using NEW method]
+"""
+
+# ==============================================================================
+# ANSWER RECONSIDERATION PROMPT (for "find X" problems where answer can change)
 # ==============================================================================
 
 answer_reconsideration_prompt = """
