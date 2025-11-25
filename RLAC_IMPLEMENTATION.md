@@ -2,6 +2,14 @@
 
 This document covers the technical implementation of the RLAC (Reinforcement Learning with Adversarial Critics) system.
 
+## ⚠️ Architecture Note (Updated 2025-11-25)
+
+**CURRENT IMPLEMENTATION**: All RLAC functionality is integrated into `code/agent_gpt_oss.py` via the `rlac_agent()` function (line ~2053).
+
+**DEPRECATED**: `code/deprecated/agent_rlac.py` was a standalone implementation that is no longer maintained. See `code/deprecated/README.md` for migration guide.
+
+**To use RLAC**: Run `./test_rlac.sh` or `python code/agent_gpt_oss.py --use-rlac`
+
 ## Architecture Overview
 
 ### Core Components
@@ -28,13 +36,13 @@ This document covers the technical implementation of the RLAC (Reinforcement Lea
 
 ### File Structure
 
-| File | Purpose |
-|------|---------|
-| `code/adversarial_critic.py` | AdversarialCritic class with attack methods |
-| `code/adversarial_prompts.py` | All prompt templates |
-| `code/rlac_improvements.py` | Enhanced validation pipeline and state machine |
-| `code/agent_rlac.py` | Standalone RLAC agent |
-| `code/agent_gpt_oss.py` | Integrated RLAC mode |
+| File | Purpose | Status |
+|------|---------|--------|
+| **`code/agent_gpt_oss.py`** | **Main RLAC implementation** (`rlac_agent()` function ~line 2053) | ✅ Active |
+| `code/adversarial_critic.py` | AdversarialCritic class with attack methods | ✅ Active |
+| `code/adversarial_prompts.py` | All prompt templates (system prompts, attack intensities) | ✅ Active |
+| `code/rlac_improvements.py` | Enhanced validation pipeline and state machine (utility) | ⚠️ Optional |
+| `code/deprecated/agent_rlac.py` | Old standalone RLAC agent (no longer maintained) | ❌ Deprecated |
 
 ## Key Classes
 
@@ -263,7 +271,7 @@ class VerdictStateMachine:
 
 ## Main RLAC Loop
 
-### Solve Method (agent_rlac.py)
+### Main Loop (agent_gpt_oss.py `rlac_agent()` function)
 
 ```python
 def solve(self, problem: str, log_file: Optional[str] = None):
@@ -457,46 +465,62 @@ def _parse_attack_response(self, response: str) -> Dict[str, Any]:
 
 ## Integration Points
 
-### With agent_gpt_oss.py
+### Entry Point: agent_gpt_oss.py `rlac_agent()` function (line ~2053)
 
-The RLAC mode is integrated via the `rlac_agent()` function:
+All RLAC functionality is integrated directly into `agent_gpt_oss.py`. The `rlac_agent()` function is the main entry point:
 
 ```python
-def rlac_agent(problem_statement, log_file, memory_file, args):
-    """Run RLAC adversarial refinement loop."""
+def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
+               self_imp_reasoning="high", ver_reasoning="high",
+               max_adversarial_rounds=12, consecutive_robust_threshold=3,
+               stuck_threshold=2, memory_file=None, verbose=True,
+               defense_first=True, max_regeneration_attempts=2,
+               use_constructive_mode=True):
+    """
+    Main RLAC (Reinforcement Learning with Adversarial Critics) agent.
+    Implements Generator-Critic adversarial loop with P0-P9 fixes.
+    """
 
-    # Create enhanced session
+    # Create adversarial critic
     critic = AdversarialCritic(
-        reasoning_effort=args.verification_reasoning,
-        verbose=True,
-        log_file=log_file
+        reasoning_effort=ver_reasoning,
+        verbose=verbose
     )
-    session = critic.create_enhanced_session()
 
     # Main loop
-    for round_num in range(args.rlac_max_rounds):
-        # Generate/revise solution
+    for round_num in range(max_adversarial_rounds):
+        # Phase 1: Generate/revise solution
         if round_num == 0:
-            solution = generate_initial_solution(problem_statement, args)
+            solution = generate_initial_solution(problem_statement, sol_reasoning)
         else:
-            solution = revise_solution(solution, attack_result, args)
+            # Check for P5/P5.1 answer reconsideration trigger
+            if consecutive_broken >= 4:
+                use_answer_reconsideration = True
+            solution = revise_solution(solution, attack_result, use_answer_reconsideration)
 
-        # Validate solution
-        is_valid, validation_result = session.validate_solution(solution)
-        if not is_valid:
-            # Handle invalid solution
-            continue
-
-        # Attack solution
+        # Phase 2: Adversarial attack with progressive reasoning
         attack_result = critic.attack_solution(
-            problem_statement, solution, round_num, args.rlac_max_rounds
+            problem_statement, solution, round_num, max_adversarial_rounds
         )
 
-        # Check termination
-        if attack_result['verdict'] == 'ROBUST':
+        # Phase 3: Process verdict with P0-P9 fixes
+        verdict = attack_result['verdict']
+        if verdict == 'ROBUST':
             consecutive_robust += 1
-            if consecutive_robust >= args.rlac_robust_threshold:
+            if consecutive_robust >= consecutive_robust_threshold:
                 return {'success': True, 'solution': solution}
+        else:
+            # Apply P0-P9 fixes for answer reconsideration, stuck detection, etc.
+            consecutive_broken += 1
+```
+
+**How to invoke:**
+```bash
+# Via test script (recommended)
+./test_rlac.sh problems/imo01.txt output.log
+
+# Direct invocation
+python code/agent_gpt_oss.py problems/imo01.txt --use-rlac --log output.log
 ```
 
 ### API Request Integration
@@ -830,13 +854,17 @@ if consecutive_broken >= answer_reconsideration_threshold and not answer_reconsi
 **Fix**: Accumulate counterexamples across rounds for stronger reconsideration case:
 
 ```python
-# agent_gpt_oss.py lines 2519-2526
+# agent_gpt_oss.py lines 2933-2942
 for ce in counterexamples[:2]:  # Top 2 from each round
     if len(ce) >= 30:  # Only substantive counterexamples
-        accumulated_counterexamples.append((round_num + 1, ce[:400]))
+        # BUGFIX (2025-11-25): Increased from 400 to 2000 chars
+        # Geometry problems need full coordinate specifications and calculations
+        accumulated_counterexamples.append((round_num + 1, ce[:2000]))
 if len(accumulated_counterexamples) > max_accumulated_evidence:
     accumulated_counterexamples = accumulated_counterexamples[-max_accumulated_evidence:]
 ```
+
+**BUGFIX (2025-11-25):** Counterexample limit increased from 400 to 2000 characters. The 400 char limit was causing truncation of geometry counterexamples mid-sentence (e.g., "...The line MN meets \"), preventing P5/P5.1 answer reconsideration from receiving complete evidence.
 
 ### P7: Answer Change Detection (HIGH)
 
