@@ -280,11 +280,17 @@ def send_api_request(api_key, payload, stream=True, request_label="API Request")
             result = _handle_streaming_response(response)
             # Log the full response payload for streaming
             log_response_payload(result, label=f"{request_label} - Response", is_streaming=True)
+            # Safety check: ensure result is a dictionary
+            if not isinstance(result, dict):
+                raise TypeError(f"Streaming response handler returned {type(result).__name__} instead of dict")
             return result
         else:
             result = response.json()
             # Log the full response payload for non-streaming
             log_response_payload(result, label=f"{request_label} - Response", is_streaming=False)
+            # Safety check: ensure result is a dictionary
+            if not isinstance(result, dict):
+                raise TypeError(f"Non-streaming response returned {type(result).__name__} instead of dict")
             return result
     except requests.exceptions.RequestException as e:
         print(f"Error during API request: {e}")
@@ -411,6 +417,14 @@ def _handle_streaming_response(response):
         if accumulated_thinking:
             final_response["choices"][0]["message"]["thinking"] = accumulated_thinking
 
+        # Validate final response structure
+        if not isinstance(final_response, dict):
+            raise TypeError(f"Final response is not a dictionary: {type(final_response)}")
+        if "choices" not in final_response:
+            raise ValueError("Final response missing 'choices' key")
+        if not final_response["choices"] or len(final_response["choices"]) == 0:
+            raise ValueError("Final response has empty choices list")
+
         return final_response
 
     except Exception as e:
@@ -423,6 +437,13 @@ def extract_text_from_response(response_data):
     Handles potential errors if the response format is unexpected.
     Cleans reasoning tags from the content before returning.
     """
+    # Type check: ensure response_data is a dictionary
+    if not isinstance(response_data, dict):
+        print("Error: Could not extract text from the API response.")
+        print(f"Expected dict, got {type(response_data).__name__}")
+        print(f"Response data: {str(response_data)[:500]}")
+        raise TypeError(f"Expected dict, got {type(response_data).__name__}: {str(response_data)[:200]}")
+
     try:
         message = response_data['choices'][0]['message']
         content = message.get('content', '')
