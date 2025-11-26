@@ -2071,6 +2071,158 @@ def extract_answer_key(solution):
     return ""
 
 
+def is_case_split_answer(answer_text):
+    """
+    Detect if an answer contains case splits (e.g., "n=3: {...}; n≥4: {...}").
+
+    Returns:
+        bool: True if answer contains case-based conditions
+    """
+    if not answer_text:
+        return False
+
+    import re
+    # Patterns indicating case splits
+    case_patterns = [
+        r'(?:for|if|when)\s+n\s*[=<>≤≥]',  # "for n=3", "if n≥4"
+        r'n\s*=\s*\d+\s*:',  # "n=3:"
+        r'case\s+\d+',  # "Case 1", "Case 2"
+        r'(?:otherwise|else)',  # "otherwise", "else"
+        r'\d+\s+(?:if|when|for)',  # "k=0 if", "k=2 when"
+    ]
+
+    for pattern in case_patterns:
+        if re.search(pattern, answer_text, re.IGNORECASE):
+            return True
+
+    return False
+
+
+def normalize_answer_for_comparison(answer_text):
+    """
+    Normalize an answer for semantic comparison.
+    Removes formatting differences while preserving mathematical meaning.
+
+    Args:
+        answer_text: Raw answer string
+
+    Returns:
+        str: Normalized answer for comparison
+    """
+    if not answer_text:
+        return ""
+
+    import re
+
+    # Normalize whitespace
+    normalized = re.sub(r'\s+', ' ', answer_text)
+
+    # Normalize set notation: {0, 1, 2} → {0,1,2}
+    normalized = re.sub(r',\s+', ',', normalized)
+
+    # Normalize dots: ... → …
+    normalized = normalized.replace('...', '…')
+
+    # Normalize membership symbols: ∈ → in
+    normalized = normalized.replace('∈', ' in ').replace('∊', ' in ')
+
+    # Normalize inequality symbols
+    normalized = normalized.replace('≤', '<=').replace('≥', '>=')
+
+    # Remove trailing punctuation
+    normalized = normalized.strip(' .,;')
+
+    return normalized.lower()
+
+
+def answers_are_semantically_equal(prev_answer, new_answer, verbose=False):
+    """
+    Compare two answers semantically to detect if they're mathematically equivalent.
+
+    This function handles:
+    - Case-split answers vs uniform answers (e.g., "n=3: {0,1}; n≥4: {...}" vs "k ∈ {...}")
+    - Notation variations (set notation, inequalities, etc.)
+    - Whitespace and formatting differences
+
+    Args:
+        prev_answer: Previous answer (string or dict from extract_answer_from_solution)
+        new_answer: New answer (string or dict from extract_answer_from_solution)
+        verbose: If True, print comparison details
+
+    Returns:
+        bool: True if answers are semantically equivalent
+    """
+    # Handle dict format from extract_answer_from_solution
+    if isinstance(prev_answer, dict):
+        prev_text = prev_answer.get('raw', '')
+    else:
+        prev_text = prev_answer or ''
+
+    if isinstance(new_answer, dict):
+        new_text = new_answer.get('raw', '')
+    else:
+        new_text = new_answer or ''
+
+    # Empty answer check
+    if not prev_text and not new_text:
+        return True
+    if not prev_text or not new_text:
+        return False
+
+    # Exact match after normalization
+    prev_norm = normalize_answer_for_comparison(prev_text)
+    new_norm = normalize_answer_for_comparison(new_text)
+
+    if prev_norm == new_norm:
+        if verbose:
+            print(f">>>>>>> [SEMANTIC CMP] Exact match after normalization")
+        return True
+
+    # Case-split detection: If new answer has case splits but prev doesn't (or vice versa),
+    # they're semantically DIFFERENT even if they cover same values
+    prev_has_cases = is_case_split_answer(prev_text)
+    new_has_cases = is_case_split_answer(new_text)
+
+    if prev_has_cases != new_has_cases:
+        if verbose:
+            print(f">>>>>>> [SEMANTIC CMP] Case-split structure changed:")
+            print(f">>>>>>> [SEMANTIC CMP]   Previous has cases: {prev_has_cases}")
+            print(f">>>>>>> [SEMANTIC CMP]   New has cases: {new_has_cases}")
+        # Case-split is a SEMANTIC CHANGE - return False
+        return False
+
+    # Extract core mathematical objects for comparison
+    import re
+
+    # Extract sets: {0,1,...,n}
+    prev_sets = re.findall(r'\{([^}]+)\}', prev_norm)
+    new_sets = re.findall(r'\{([^}]+)\}', new_norm)
+
+    # If both have sets and they differ, answers differ
+    if prev_sets and new_sets:
+        prev_sets_str = ''.join(sorted(prev_sets))
+        new_sets_str = ''.join(sorted(new_sets))
+        if prev_sets_str != new_sets_str:
+            if verbose:
+                print(f">>>>>>> [SEMANTIC CMP] Set contents differ:")
+                print(f">>>>>>> [SEMANTIC CMP]   Previous sets: {prev_sets}")
+                print(f">>>>>>> [SEMANTIC CMP]   New sets: {new_sets}")
+            return False
+
+    # If we get here and normalized strings are very similar (>80% overlap), consider equal
+    # This handles minor notation differences
+    from difflib import SequenceMatcher
+    similarity = SequenceMatcher(None, prev_norm, new_norm).ratio()
+
+    if verbose:
+        print(f">>>>>>> [SEMANTIC CMP] Text similarity: {similarity:.2f}")
+        print(f">>>>>>> [SEMANTIC CMP]   Previous (normalized): {prev_norm[:100]}")
+        print(f">>>>>>> [SEMANTIC CMP]   New (normalized): {new_norm[:100]}")
+
+    # High similarity threshold (0.9) means semantically equal
+    return similarity >= 0.9
+
+
 def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                self_imp_reasoning="high", ver_reasoning="high",
                max_adversarial_rounds=12, consecutive_robust_threshold=3,
@@ -3287,8 +3439,30 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                 response = send_api_request(get_api_key(), payload, request_label="RLAC defense prompt")
                 revised_solution = extract_solution(extract_text_from_response(response))
 
-                # Check if solution actually changed
-                if revised_solution == solution or not revised_solution:
+                # Check if solution actually changed - USE SEMANTIC COMPARISON
+                prev_answer = extract_answer_from_solution(solution)
+                new_answer = extract_answer_from_solution(revised_solution)
+
+                print(f"\n>>>>>>> [RLAC ANSWER CMP] Comparing P5 answers:")
+                print(f">>>>>>> [RLAC ANSWER CMP]   Previous: {prev_answer}")
+                print(f">>>>>>> [RLAC ANSWER CMP]   New: {new_answer}")
+
+                # Semantic comparison instead of string matching
+                solution_unchanged = False
+                if not revised_solution:
+                    print(f">>>>>>> [RLAC ANSWER CMP] No solution extracted from P5 response")
+                    solution_unchanged = True
+                elif not new_answer:
+                    print(f">>>>>>> [RLAC ANSWER CMP] No answer extracted from P5 revised solution")
+                    solution_unchanged = True
+                elif answers_are_semantically_equal(prev_answer, new_answer, verbose=True):
+                    print(f">>>>>>> [RLAC ANSWER CMP] Answers are SEMANTICALLY EQUAL")
+                    solution_unchanged = True
+                else:
+                    print(f">>>>>>> [RLAC ANSWER CMP] Answers DIFFER - semantic change detected!")
+                    solution_unchanged = False
+
+                if solution_unchanged:
                     # Proposal B: If P5 failed (gentle reconsideration didn't work), immediately escalate to P5.1
                     # Note: Only for "find" problems - proof problems already use strong proof reconsideration
                     if use_answer_reconsideration and not use_p51_enhanced and problem_type != "prove":
@@ -3326,7 +3500,15 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
 
                         # Option 3: Critic Auto-Validation
                         # After P5.1 generates response, have critic validate small cases
-                        if revised_solution and revised_solution != solution:
+                        # Use semantic comparison to detect if P5.1 produced a change
+                        p51_answer = extract_answer_from_solution(revised_solution)
+                        p51_changed = False
+                        if revised_solution and p51_answer:
+                            if not answers_are_semantically_equal(prev_answer, p51_answer, verbose=False):
+                                p51_changed = True
+                                print(f">>>>>>> [RLAC P5.1] Semantic change detected - validating new answer")
+
+                        if revised_solution and p51_changed:
                             is_valid, failure_msg = critic_validate_small_cases(revised_solution, problem_statement)
 
                             if not is_valid:
@@ -3373,9 +3555,20 @@ Provide a corrected solution that passes validation for all small cases.
                                 retry_response = send_api_request(get_api_key(), retry_payload, request_label="RLAC validation retry")
                                 revised_solution = extract_solution(extract_text_from_response(retry_response))
                                 print(f">>>>>>> [RLAC Option 3] Retry response received")
+                                # Update p51_answer after retry
+                                p51_answer = extract_answer_from_solution(revised_solution)
+                                p51_changed = False
+                                if revised_solution and p51_answer:
+                                    if not answers_are_semantically_equal(prev_answer, p51_answer, verbose=False):
+                                        p51_changed = True
 
-                        # Check if P5.1 produced a change
-                        if revised_solution == solution or not revised_solution:
+                        # Check if P5.1 produced a change - USE SEMANTIC COMPARISON
+                        print(f"\n>>>>>>> [RLAC P5.1 FINAL CHECK] Comparing answers:")
+                        print(f">>>>>>> [RLAC P5.1 FINAL CHECK]   Previous: {prev_answer}")
+                        print(f">>>>>>> [RLAC P5.1 FINAL CHECK]   P5.1: {p51_answer}")
+                        print(f">>>>>>> [RLAC P5.1 FINAL CHECK]   Changed: {p51_changed}")
+
+                        if not revised_solution or not p51_changed:
                             print(f">>>>>>> [RLAC Proposal B] ⚠️  P5.1 also failed to change solution")
                             stuck_count += 1
                         else:
@@ -3414,9 +3607,20 @@ Provide a corrected solution that passes validation for all small cases.
                         diversify_response = send_api_request(get_api_key(), diversify_payload, request_label="RLAC approach diversification")
                         diversified_solution = extract_solution(extract_text_from_response(diversify_response))
 
-                        if diversified_solution and diversified_solution != solution:
+                        # Use semantic comparison to check if diversification worked
+                        diversified_answer = extract_answer_from_solution(diversified_solution)
+                        current_answer = extract_answer_from_solution(solution)
+                        diversification_changed = False
+
+                        if diversified_solution and diversified_answer:
+                            if not answers_are_semantically_equal(current_answer, diversified_answer, verbose=True):
+                                diversification_changed = True
+
+                        if diversified_solution and diversification_changed:
                             print(f">>>>>>> [RLAC DIVERSIFY] ✓ Generated new solution with different approach")
                             print(f">>>>>>> [RLAC DIVERSIFY] Length: {len(diversified_solution)} chars")
+                            print(f">>>>>>> [RLAC DIVERSIFY] Old answer: {current_answer}")
+                            print(f">>>>>>> [RLAC DIVERSIFY] New answer: {diversified_answer}")
                             solution = diversified_solution
                             stuck_count = 0  # Reset stuck counter
                             consecutive_broken = 0
@@ -3624,8 +3828,19 @@ Provide a corrected solution that passes validation for all small cases.
                                     response = send_api_request(get_api_key(), payload, request_label="RLAC convergence emergency")
                                     fresh_solution = extract_solution(extract_text_from_response(response))
 
-                                    if fresh_solution and fresh_solution != solution:
+                                    # Use semantic comparison for emergency fresh solution
+                                    emergency_answer = extract_answer_from_solution(fresh_solution)
+                                    current_answer_d = extract_answer_from_solution(solution)
+                                    emergency_changed = False
+
+                                    if fresh_solution and emergency_answer:
+                                        if not answers_are_semantically_equal(current_answer_d, emergency_answer, verbose=True):
+                                            emergency_changed = True
+
+                                    if fresh_solution and emergency_changed:
                                         print(f">>>>>>> [RLAC Proposal D] ✓ Emergency fresh solution generated")
+                                        print(f">>>>>>> [RLAC Proposal D] Old answer: {current_answer_d}")
+                                        print(f">>>>>>> [RLAC Proposal D] New answer: {emergency_answer}")
                                         solution = fresh_solution
                                         consecutive_broken = 0
                                         answer_reconsideration_triggered = False
@@ -3670,8 +3885,19 @@ Provide a corrected solution that passes validation for all small cases.
                             fresh_response = send_api_request(get_api_key(), fresh_payload, request_label="RLAC P8 fresh start")
                             fresh_solution = extract_solution(extract_text_from_response(fresh_response))
 
-                            if fresh_solution and fresh_solution != solution:
+                            # Use semantic comparison for P8 fresh solution
+                            p8_fresh_answer = extract_answer_from_solution(fresh_solution)
+                            p8_current_answer = extract_answer_from_solution(solution)
+                            p8_changed = False
+
+                            if fresh_solution and p8_fresh_answer:
+                                if not answers_are_semantically_equal(p8_current_answer, p8_fresh_answer, verbose=True):
+                                    p8_changed = True
+
+                            if fresh_solution and p8_changed:
                                 print(f">>>>>>> [RLAC P8] ✓ Fresh solution generated ({len(fresh_solution)} chars)")
+                                print(f">>>>>>> [RLAC P8] Old answer: {p8_current_answer}")
+                                print(f">>>>>>> [RLAC P8] New answer: {p8_fresh_answer}")
                                 solution = fresh_solution
                                 consecutive_broken = 0
                                 answer_reconsideration_triggered = False  # Allow reconsideration again
