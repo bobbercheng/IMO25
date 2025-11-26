@@ -3148,12 +3148,15 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                 print(f">>>>>>> [RLAC TRACKING] New best solution found (ROBUST, score: {current_score})")
 
             # P2 FIX: Answer lock mechanism - lock answer after near-success
+            # P0 FIX: This will re-engage automatically after P5 if new answer gets ROBUST
             if consecutive_robust >= lock_threshold and not answer_locked:
                 current_answer_result = enhanced_session.extract_answer(solution)
                 if current_answer_result.success:
                     locked_answer = current_answer_result.normalized
                     answer_locked = True
-                    print(f"\n>>>>>>> [RLAC LOCK] Answer locked after {consecutive_robust} consecutive ROBUST")
+                    # Check if this is a re-lock after P5 reconsideration
+                    relock_message = " (RE-LOCKED after P5)" if answer_reconsideration_triggered else ""
+                    print(f"\n>>>>>>> [RLAC LOCK] Answer locked after {consecutive_robust} consecutive ROBUST{relock_message}")
                     print(f">>>>>>> [RLAC LOCK] Locked answer: {locked_answer[:100]}...")
 
             print(f"\n{'='*80}")
@@ -3211,6 +3214,11 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
 
                 # P0 FIX: Return solution regardless of cooperative verification result
                 # If solution passed adversarial attacks, that's sufficient
+                # P0 FIX: Ensure locked answer is saved when success achieved
+                print(f">>>>>>> [RLAC FINAL] Answer lock status: {'LOCKED' if answer_locked else 'UNLOCKED'}")
+                if answer_locked and locked_answer:
+                    print(f">>>>>>> [RLAC FINAL] Locked answer saved: {locked_answer[:100]}...")
+
                 # Save attack history
                 if memory_file:
                     history_file = memory_file.replace('.json', '_rlac_history.json')
@@ -3223,6 +3231,8 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                         'consecutive_robust': consecutive_robust,
                         'cumulative_cost': cumulative_cost,
                         'total_tokens': total_prompt_tokens + total_completion_tokens,
+                        'answer_locked': answer_locked,
+                        'locked_answer': locked_answer if answer_locked else None,
                         'attack_history': rlac_history,
                         'critic_metrics': critic.get_metrics_summary(),
                         'timestamp': __import__('datetime').datetime.now().isoformat()
@@ -3311,6 +3321,15 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
             if consecutive_broken >= answer_reconsideration_threshold and not answer_reconsideration_triggered:
                 use_answer_reconsideration = True
                 answer_reconsideration_triggered = True
+
+                # P0 FIX: Disable answer lock during P5 reconsideration
+                # This allows the generator to change the answer fundamentally
+                if answer_locked:
+                    print(f"\n>>>>>>> [RLAC P5] Disabling answer lock to allow answer reconsideration")
+                    print(f">>>>>>> [RLAC P5] Previous locked answer: {locked_answer[:100] if locked_answer else 'None'}...")
+                    answer_locked = False
+                    locked_answer = None
+
                 print(f"\n{'='*80}")
                 print(f">>>>>>> [RLAC P5] ANSWER RECONSIDERATION TRIGGERED!")
                 print(f">>>>>>> [RLAC P5] {consecutive_broken} consecutive BROKEN verdicts - answer may be fundamentally wrong")
@@ -3955,6 +3974,10 @@ Provide a corrected solution that passes validation for all small cases.
                                         answer_reconsideration_triggered = False
                                         regeneration_attempts += 1
                                         answer_history = []  # Reset history for new approach
+                                        # P0 FIX: Clear answer lock for fresh solution - will re-lock if ROBUST
+                                        answer_locked = False
+                                        locked_answer = None
+                                        print(f">>>>>>> [RLAC Proposal D] Answer lock cleared for fresh solution")
                                         continue
 
                         # P8 FIX: Fresh start if answer unchanged after reconsideration and still broken
@@ -4013,6 +4036,10 @@ Provide a corrected solution that passes validation for all small cases.
                                 regeneration_attempts += 1
                                 # Update answer extract for next comparison
                                 previous_answer_extract = extract_answer_from_solution(solution)
+                                # P0 FIX: Clear answer lock for fresh solution - will re-lock if ROBUST
+                                answer_locked = False
+                                locked_answer = None
+                                print(f">>>>>>> [RLAC P8] Answer lock cleared for fresh solution")
                                 continue
                             else:
                                 print(f">>>>>>> [RLAC P8] ⚠️  Fresh start did not produce different solution")
