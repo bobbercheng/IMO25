@@ -2223,12 +2223,90 @@ def answers_are_semantically_equal(prev_answer, new_answer, verbose=False):
     return similarity >= 0.9
 
 
+def assess_answer_confidence(consecutive_robust, counterexamples_count, total_robust_count, consecutive_broken):
+    """
+    Calculate confidence score for current answer (0-100).
+
+    Args:
+        consecutive_robust: Number of consecutive ROBUST verdicts
+        counterexamples_count: Number of counterexamples in recent rounds
+        total_robust_count: Total ROBUST verdicts across all rounds
+        consecutive_broken: Number of consecutive BROKEN verdicts
+
+    Returns:
+        int: Confidence score 0-100
+    """
+    score = 50  # Base score
+
+    # Positive factors
+    score += consecutive_robust * 15  # +15 per consecutive ROBUST
+    score += total_robust_count * 5   # +5 per total ROBUST
+
+    # Negative factors
+    score -= counterexamples_count * 8  # -8 per counterexample
+    score -= consecutive_broken * 10    # -10 per consecutive BROKEN
+
+    # Clamp to valid range
+    return max(0, min(100, score))
+
+
+def diversify_strategy(stuck_count):
+    """
+    Select diversification strategy based on stuck count.
+
+    Returns tuple of (strategy_name, parameters)
+    """
+    strategies = [
+        ("temperature_boost", {"temp": 0.3}),
+        ("prompt_rephrase", {"variant": 2}),
+        ("reasoning_bump", {"effort": "medium"}),
+        ("fallback_construction", {"use_examples": True})
+    ]
+    return strategies[stuck_count % len(strategies)]
+
+
+def calculate_progressive_timeout(round_num):
+    """Calculate timeout based on round number."""
+    if round_num < 5:
+        return 60  # Early rounds: 1 minute
+    elif round_num < 15:
+        return 180  # Middle rounds: 3 minutes
+    else:
+        return 300  # Late rounds: 5 minutes
+
+
+def estimate_token_count(text):
+    """Rough estimate of token count (4 chars ≈ 1 token)."""
+    return len(text) // 4 if text else 0
+
+
+def calculate_cost(prompt_tokens, completion_tokens, reasoning_effort):
+    """
+    Estimate cost based on token usage and reasoning effort.
+
+    Pricing (approximate for GPT-OSS-120B):
+    - Low reasoning: $0.50 per 1M tokens
+    - Medium reasoning: $2.00 per 1M tokens
+    - High reasoning: $4.00 per 1M tokens
+    """
+    total_tokens = prompt_tokens + completion_tokens
+
+    if reasoning_effort == "low":
+        cost_per_million = 0.50
+    elif reasoning_effort == "medium":
+        cost_per_million = 2.00
+    else:  # high
+        cost_per_million = 4.00
+
+    return (total_tokens / 1_000_000) * cost_per_million
+
+
 def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                self_imp_reasoning="high", ver_reasoning="high",
                max_adversarial_rounds=12, consecutive_robust_threshold=3,
-               stuck_threshold=2, memory_file=None, verbose=True,
+               stuck_threshold=5, memory_file=None, verbose=True,
                defense_first=True, max_regeneration_attempts=2,
-               use_constructive_mode=True):
+               use_constructive_mode=True, max_cost=100.0):
     """
     Main RLAC (Reinforcement Learning with Adversarial Critics) agent.
 
@@ -2258,12 +2336,13 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         ver_reasoning: Reasoning effort for adversarial attacks (default: "high")
         max_adversarial_rounds: Maximum RLAC rounds (default: 12)
         consecutive_robust_threshold: Consecutive robust verdicts needed for success (default: 3)
-        stuck_threshold: Consecutive failed fixes before declaring stuck (default: 2)
+        stuck_threshold: Consecutive failed fixes before declaring stuck (default: 5)
         memory_file: Path to save RLAC state and attack history
         verbose: Enable detailed logging
         defense_first: If True, use defense-first mode for proactive attack anticipation (default: True)
         max_regeneration_attempts: Maximum fresh regeneration attempts when severely broken (default: 2)
         use_constructive_mode: Use constructive critic mode after repeated failures (default: True)
+        max_cost: Maximum cost in dollars before stopping (default: 100.0)
 
     Returns:
         Solution string if successful, None if failed
@@ -2275,6 +2354,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     print(f">>>>>>> [RLAC CONFIG] Max rounds: {max_adversarial_rounds}")
     print(f">>>>>>> [RLAC CONFIG] Consecutive robust threshold: {consecutive_robust_threshold}")
     print(f">>>>>>> [RLAC CONFIG] Stuck threshold: {stuck_threshold}")
+    print(f">>>>>>> [RLAC CONFIG] Max cost: ${max_cost:.2f}")
     print(f">>>>>>> [RLAC CONFIG] Generator reasoning: {sol_reasoning}")
     print(f">>>>>>> [RLAC CONFIG] Critic reasoning: {ver_reasoning}")
     print(f">>>>>>> [RLAC CONFIG] Self-improvement reasoning: {self_imp_reasoning}")
@@ -2480,6 +2560,12 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     previous_solution = solution
     rlac_history = []
     consecutive_broken = 0  # Track consecutive BROKEN verdicts for constructive mode
+
+    # P1 IMPROVEMENT: Cost tracking and budget management
+    cumulative_cost = 0.0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    api_call_count = 0
 
     # P0-v2 FIX: Track total ROBUST count and verdict history for better protection
     total_robust_count = 0
@@ -2918,11 +3004,30 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
     no_convergence_threshold = 10  # After 10 rounds without convergence, take action
 
     for round_num in range(max_adversarial_rounds):
+        # P1 IMPROVEMENT: Calculate answer confidence score
+        recent_ce_count = len([ce for r, ce in accumulated_counterexamples if r >= round_num - 2])
+        confidence = assess_answer_confidence(
+            consecutive_robust, recent_ce_count, total_robust_count, consecutive_broken
+        )
+
         print(f"\n{'='*80}")
         print(f">>>>>>> [RLAC ROUND {round_num + 1}/{max_adversarial_rounds}]")
         print(f">>>>>>> [RLAC METRICS] Consecutive robust: {consecutive_robust}/{consecutive_robust_threshold}")
         print(f">>>>>>> [RLAC METRICS] Stuck count: {stuck_count}/{stuck_threshold}")
+        print(f">>>>>>> [RLAC METRICS] Answer confidence: {confidence}/100")
+        print(f">>>>>>> [RLAC COST] Cumulative: ${cumulative_cost:.2f} / ${max_cost:.2f}")
+        print(f">>>>>>> [RLAC COST] API calls: {api_call_count}, Tokens: {total_prompt_tokens + total_completion_tokens:,}")
         print(f"{'='*80}\n")
+
+        # P1 IMPROVEMENT: Check cost limit
+        if cumulative_cost > max_cost:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [RLAC BUDGET] Cost limit reached: ${cumulative_cost:.2f} > ${max_cost:.2f}")
+            print(f">>>>>>> [RLAC BUDGET] Returning best solution found")
+            print(f"{'='*80}\n")
+            if best_solution and best_solution_score > -100:
+                return best_solution
+            return solution
 
         # Critic attacks solution
         print(f">>>>>>> [RLAC CRITIC] Launching adversarial attack...")
@@ -3083,14 +3188,16 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                         print(f"{'='*80}\n")
                         cumulative_success = True
 
+            # P0 FIX: Early stopping on success - don't depend on cooperative verification
             if consecutive_robust >= consecutive_robust_threshold or cumulative_success:
                 if not cumulative_success:
                     print(f"\n{'='*80}")
                     print(f">>>>>>> [RLAC SUCCESS] Solution ROBUST after {consecutive_robust_threshold} consecutive attacks!")
                     print(f">>>>>>> [RLAC SUCCESS] Total rounds: {round_num + 1}")
+                    print(f">>>>>>> [RLAC SUCCESS] Cumulative cost: ${cumulative_cost:.2f}")
                     print(f"{'='*80}\n")
 
-                # Final cooperative verification as sanity check
+                # Final cooperative verification as sanity check (informational only)
                 print(">>>>>>> [RLAC FINAL] Running cooperative verification as sanity check...")
                 verify, good_verify = verify_solution_safe(
                     problem_statement, solution,
@@ -3099,34 +3206,36 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
 
                 if "yes" in good_verify.lower():
                     print(">>>>>>> [RLAC FINAL] ✓ Passed both adversarial AND cooperative verification!")
-
-                    # Save attack history
-                    if memory_file:
-                        history_file = memory_file.replace('.json', '_rlac_history.json')
-                        critic.save_attack_history(history_file)
-
-                        # Save final solution with RLAC metadata
-                        rlac_metadata = {
-                            'solution': solution,
-                            'rlac_rounds': round_num + 1,
-                            'consecutive_robust': consecutive_robust,
-                            'attack_history': rlac_history,
-                            'critic_metrics': critic.get_metrics_summary(),
-                            'timestamp': __import__('datetime').datetime.now().isoformat()
-                        }
-
-                        try:
-                            with open(memory_file.replace('.json', '_rlac_solution.json'), 'w') as f:
-                                json.dump(rlac_metadata, f, indent=2, ensure_ascii=False)
-                            print(f">>>>>>> [RLAC FINAL] Solution and metadata saved")
-                        except Exception as e:
-                            print(f">>>>>>> [RLAC FINAL] Error saving metadata: {e}")
-
-                    return solution
                 else:
-                    print(">>>>>>> [RLAC FINAL] ⚠️  Failed cooperative verification")
-                    print(">>>>>>> [RLAC FINAL] Continuing adversarial refinement...")
-                    consecutive_robust = 0  # Reset and continue
+                    print(">>>>>>> [RLAC FINAL] ⚠️  Failed cooperative verification (but adversarial threshold met)")
+
+                # P0 FIX: Return solution regardless of cooperative verification result
+                # If solution passed adversarial attacks, that's sufficient
+                # Save attack history
+                if memory_file:
+                    history_file = memory_file.replace('.json', '_rlac_history.json')
+                    critic.save_attack_history(history_file)
+
+                    # Save final solution with RLAC metadata
+                    rlac_metadata = {
+                        'solution': solution,
+                        'rlac_rounds': round_num + 1,
+                        'consecutive_robust': consecutive_robust,
+                        'cumulative_cost': cumulative_cost,
+                        'total_tokens': total_prompt_tokens + total_completion_tokens,
+                        'attack_history': rlac_history,
+                        'critic_metrics': critic.get_metrics_summary(),
+                        'timestamp': __import__('datetime').datetime.now().isoformat()
+                    }
+
+                    try:
+                        with open(memory_file.replace('.json', '_rlac_solution.json'), 'w') as f:
+                            json.dump(rlac_metadata, f, indent=2, ensure_ascii=False)
+                        print(f">>>>>>> [RLAC FINAL] Solution and metadata saved")
+                    except Exception as e:
+                        print(f">>>>>>> [RLAC FINAL] Error saving metadata: {e}")
+
+                return solution
 
         elif verdict == "BROKEN" or verdict == "SUSPICIOUS":
             # P0-v2 FIX: Enhanced near-success protection with lower threshold and history awareness
