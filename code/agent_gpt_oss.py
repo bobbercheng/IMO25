@@ -632,10 +632,27 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     """
     Extracts the text after '### Detailed Solution ###' from the solution string.
     Returns the substring after the marker, stripped of leading/trailing whitespace.
-    If the marker is not found, returns an empty string.
+    If the marker is not found, returns the full solution as fallback (BUGFIX).
+
+    BUGFIX (2025-11-27): Previously returned empty string if marker not found,
+    causing verification failures on valid RLAC solutions that use different formatting.
+    Now returns full solution if it appears valid (>500 chars with mathematical content).
     """
     idx = solution.find(marker)
     if idx == -1:
+        # BUGFIX: Return full solution if marker not found but solution looks valid
+        # This fixes RLAC verification gap where adversarial testing succeeded
+        # but cooperative verification failed due to format mismatch
+        if len(solution) > 500 and (
+            'boxed' in solution.lower() or
+            'proof' in solution.lower() or
+            'solution' in solution.lower() or
+            '\\[' in solution  # LaTeX math mode
+        ):
+            print(f"[WARNING] Marker '{marker}' not found, using full solution ({len(solution)} chars)")
+            return solution.strip()
+        # Only return empty if solution genuinely looks invalid
+        print(f"[WARNING] Marker '{marker}' not found and solution looks invalid ({len(solution)} chars)")
         return ''
     if(after):
         return solution[idx + len(marker):].strip()
