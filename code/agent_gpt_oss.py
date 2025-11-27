@@ -678,6 +678,25 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
     """
     import time
 
+    # P0 FIX: Format validation - catch extraction bugs before calling verifier
+    # This prevents silent failures where empty solutions are sent to verifier
+    extracted_solution = extract_detailed_solution(solution)
+
+    if len(extracted_solution) < 100:
+        error_msg = (
+            f"[VERIFICATION BUG] Format extraction failed!\n"
+            f"  Input solution length: {len(solution)} chars\n"
+            f"  Extracted solution length: {len(extracted_solution)} chars\n"
+            f"  This indicates a format mismatch between generator and verifier.\n"
+            f"  Original solution preview: {solution[:200]}...\n"
+        )
+        if verbose:
+            print(f"\n{'='*80}")
+            print(error_msg)
+            print(f"{'='*80}\n")
+        # Return error result instead of calling verifier with invalid input
+        return error_msg, "no"
+
     # Use global defaults if not specified
     if max_attempts is None:
         max_attempts = VERIFICATION_MAX_ATTEMPTS
@@ -1966,6 +1985,181 @@ def validate_answer_change(prev_solution, new_solution, iteration, verbose=True)
 # ==============================================================================
 # NOTE: detect_stuck_pattern() is implemented in adversarial_critic.py as a method
 # of the AdversarialCritic class. The RLAC agent uses critic.detect_stuck_pattern().
+
+class RLACVerificationPipeline:
+    """
+    Unified verification pipeline ensuring both adversarial and cooperative
+    verification evaluate the SAME canonical solution artifact.
+
+    BUGFIX (2025-11-27): Previously, adversarial critic saw full solution
+    while cooperative verifier saw extract_detailed_solution() output,
+    causing representation mismatch. This class ensures consistency.
+
+    Usage:
+        pipeline = RLACVerificationPipeline(raw_solution)
+        solution_for_critic = pipeline.get_canonical()
+        solution_for_verifier = pipeline.get_canonical()  # Same artifact
+    """
+
+    def __init__(self, raw_solution, verbose=True):
+        """
+        Initialize pipeline with raw generator output.
+
+        Args:
+            raw_solution: Raw solution text from generator
+            verbose: Enable logging
+        """
+        self.raw = raw_solution
+        self.verbose = verbose
+        self.canonical = None
+        self.extraction_method = None
+        self._prepare_canonical()
+
+    def _prepare_canonical(self):
+        """
+        Prepare canonical solution representation.
+        Uses extraction with fallback to full solution if needed.
+        """
+        # Try extraction with marker
+        extracted = extract_detailed_solution(self.raw)
+
+        if len(extracted) >= 100:
+            # Extraction succeeded
+            self.canonical = extracted
+            self.extraction_method = "marker_extraction"
+            if self.verbose:
+                print(f"[RLAC PIPELINE] Using extracted solution ({len(extracted)} chars)")
+        elif len(self.raw) >= 500:
+            # Extraction failed but raw solution looks valid
+            self.canonical = self.raw.strip()
+            self.extraction_method = "full_solution_fallback"
+            if self.verbose:
+                print(f"[RLAC PIPELINE] Marker not found, using full solution ({len(self.raw)} chars)")
+        else:
+            # Both extraction and raw solution look invalid
+            self.canonical = ""
+            self.extraction_method = "failed"
+            if self.verbose:
+                print(f"[RLAC PIPELINE] WARNING: Solution appears invalid ({len(self.raw)} chars)")
+
+        # Validation assertion
+        if len(self.canonical) < 100 and len(self.raw) > 100:
+            raise ValueError(
+                f"[RLAC PIPELINE BUG] Extraction failed: {len(self.canonical)} chars "
+                f"from {len(self.raw)} chars solution"
+            )
+
+    def get_canonical(self):
+        """
+        Get canonical solution for verification.
+        Both adversarial and cooperative verification should use this.
+
+        Returns:
+            Canonical solution text
+        """
+        return self.canonical
+
+    def get_for_adversarial(self):
+        """Get solution for adversarial critic (alias for get_canonical)."""
+        return self.canonical
+
+    def get_for_cooperative(self):
+        """Get solution for cooperative verifier (alias for get_canonical)."""
+        return self.canonical
+
+    def is_valid(self):
+        """Check if canonical solution is valid."""
+        return len(self.canonical) >= 100
+
+    def get_stats(self):
+        """Get pipeline statistics."""
+        return {
+            'raw_length': len(self.raw),
+            'canonical_length': len(self.canonical),
+            'extraction_method': self.extraction_method,
+            'is_valid': self.is_valid()
+        }
+
+def generator_self_verification(solution, verbose=True):
+    """
+    P1 IMPROVEMENT: Generator checks its own solution format before submission.
+
+    Performs fast, local validation checks:
+    1. Solution length check (should be substantive)
+    2. Answer extraction check (should have \\boxed{} or clear answer)
+    3. Mathematical content check (should have proof indicators)
+    4. Format extraction check (verify no information loss)
+
+    This is a FAST pre-filter (no API calls) that catches common format errors
+    before expensive adversarial testing or verification.
+
+    Args:
+        solution: Raw solution text from generator
+        verbose: Print validation details
+
+    Returns:
+        Tuple of (is_valid, issues) where:
+        - is_valid: Boolean indicating if solution passes basic checks
+        - issues: List of issue descriptions (empty if valid)
+    """
+    issues = []
+
+    # Check 1: Minimum length (solutions should be substantive)
+    if len(solution) < 500:
+        issues.append(f"Solution too short: {len(solution)} chars (expected ≥500)")
+
+    # Check 2: Answer extraction
+    import re
+    has_boxed = bool(re.search(r'\\boxed\{', solution, re.IGNORECASE))
+    has_answer_section = bool(re.search(r'(answer|solution|result)[:：]', solution, re.IGNORECASE))
+
+    if not (has_boxed or has_answer_section):
+        issues.append("No clear answer found (missing \\boxed{} or answer section)")
+
+    # Check 3: Mathematical content indicators
+    math_indicators = [
+        r'\\[',  # LaTeX display math
+        r'proof',
+        r'theorem',
+        r'lemma',
+        r'therefore',
+        r'thus',
+        r'hence',
+        r'let\s+\w+\s+be',
+        r'suppose',
+        r'assume'
+    ]
+
+    math_content_count = sum(
+        1 for indicator in math_indicators
+        if re.search(indicator, solution, re.IGNORECASE)
+    )
+
+    if math_content_count < 3:
+        issues.append(f"Insufficient mathematical content ({math_content_count}/8 indicators)")
+
+    # Check 4: Format extraction check (verify no information loss)
+    extracted = extract_detailed_solution(solution)
+    extraction_loss = len(solution) - len(extracted)
+
+    if extracted and extraction_loss > len(solution) * 0.5:
+        issues.append(
+            f"Format extraction may lose information: "
+            f"{extraction_loss} chars lost ({extraction_loss*100//len(solution)}%)"
+        )
+
+    is_valid = len(issues) == 0
+
+    if verbose:
+        if is_valid:
+            print(f"[SELF-VERIFY] ✅ Solution passed all pre-checks ({len(solution)} chars)")
+        else:
+            print(f"[SELF-VERIFY] ⚠️  Found {len(issues)} issues:")
+            for issue in issues:
+                print(f"[SELF-VERIFY]    - {issue}")
+
+    return is_valid, issues
+
 
 def validate_solution_quality(solution, min_length=500, verbose=True):
     """
