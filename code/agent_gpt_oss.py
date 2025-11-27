@@ -1944,65 +1944,11 @@ def validate_answer_change(prev_solution, new_solution, iteration, verbose=True)
 
     return result
 
-def detect_stuck_pattern(correct_history, error_history, current_iteration, threshold=3, verbose=True):
-    """
-    Detect if agent is stuck in an error loop with no improvement.
-
-    Args:
-        correct_history: List of correct_count values over recent iterations
-        error_history: List of error_count values over recent iterations
-        current_iteration: Current iteration number
-        threshold: Number of iterations with 0 progress before declaring stuck
-        verbose: Print stuck detection warnings
-
-    Returns:
-        bool: True if stuck pattern detected
-    """
-    if len(correct_history) < threshold:
-        return False
-
-    # Check last N iterations
-    recent_corrects = correct_history[-threshold:]
-    recent_errors = error_history[-threshold:]
-
-    # Stuck if: all recent corrects are 0 AND errors are not decreasing over consecutive iterations
-    all_zero_corrects = all(c == 0 for c in recent_corrects)
-
-    # Bug fix: Compare consecutive errors instead of comparing all to first error
-    # This properly detects monotonic non-decrease: each error >= previous error
-    errors_not_decreasing = all(
-        recent_errors[i] >= recent_errors[i-1]
-        for i in range(1, len(recent_errors))
-    ) if len(recent_errors) > 1 else True
-
-    # Additional check: Errors staying consistently high (above threshold)
-    # This catches cases where errors oscillate but never truly decrease
-    avg_errors = sum(recent_errors) / len(recent_errors) if recent_errors else 0
-    errors_consistently_high = all(e >= avg_errors * 0.8 for e in recent_errors) and avg_errors > 0
-
-    if all_zero_corrects and (errors_not_decreasing or errors_consistently_high):
-        if verbose:
-            print(f"\n{'='*80}")
-            print(f">>>>>>> [STUCK DETECTION] Stuck pattern detected at iteration {current_iteration}")
-            print(f">>>>>>> [STUCK DETECTION] Last {threshold} iterations:")
-            for i, (c, e) in enumerate(zip(recent_corrects, recent_errors)):
-                iter_num = current_iteration - threshold + i + 1
-                print(f">>>>>>> [STUCK DETECTION]   Iteration {iter_num}: {c} corrects, {e} errors")
-            print(f">>>>>>> [STUCK DETECTION] Detection reasons:")
-            print(f">>>>>>> [STUCK DETECTION]   - Zero corrects: {all_zero_corrects}")
-            print(f">>>>>>> [STUCK DETECTION]   - Errors not decreasing (consecutive): {errors_not_decreasing}")
-            print(f">>>>>>> [STUCK DETECTION]   - Errors consistently high (avg={avg_errors:.1f}): {errors_consistently_high}")
-            print(f">>>>>>> [STUCK DETECTION] ⚠️  No improvement in {threshold} iterations")
-            print(f">>>>>>> [STUCK DETECTION] ⚠️  Recommendation: Stop or escalate reasoning effort")
-            print(f"{'='*80}\n")
-
-        return True
-
-    return False
-
 # ==============================================================================
 # RLAC (ADVERSARIAL CRITIC) IMPLEMENTATION
 # ==============================================================================
+# NOTE: detect_stuck_pattern() is implemented in adversarial_critic.py as a method
+# of the AdversarialCritic class. The RLAC agent uses critic.detect_stuck_pattern().
 
 def validate_solution_quality(solution, min_length=500, verbose=True):
     """
@@ -4483,17 +4429,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             correct_history.append(correct_count)
             error_history.append(error_count)
 
-            # Detect stuck pattern - DISABLED for low/low/low compatibility
-            # Threshold of 3 is too aggressive for low reasoning which needs more iterations
-            # To re-enable, uncomment and increase threshold to 10+ for low reasoning
-            # if detect_stuck_pattern(correct_history, error_history, i, threshold=3, verbose=True):
-            #     print(f">>>>>>> [STUCK DETECTION] Stopping due to stuck pattern")
-            #     print(f">>>>>>> [STUCK DETECTION] Recommendation: Try different reasoning level or approach")
-            #     # Save final state before stopping
-            #     if memory_file:
-            #         save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
-            #                    sol_reasoning, self_imp_reasoning, ver_reasoning)
-            #     return None
+            # NOTE: Stuck detection is now handled by RLAC mode (critic.detect_stuck_pattern)
+            # Legacy standalone stuck detection has been removed
 
             # Update previous solution for next iteration
             previous_solution = solution
