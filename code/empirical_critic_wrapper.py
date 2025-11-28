@@ -33,7 +33,7 @@ class EmpiricalCriticWrapper:
     def __init__(self, base_critic: AdversarialCritic = None, enable_empirical: bool = True):
         """
         Initialize wrapper.
-        
+
         Args:
             base_critic: Existing AdversarialCritic instance (creates new if None)
             enable_empirical: Enable empirical verification (default: True)
@@ -41,6 +41,15 @@ class EmpiricalCriticWrapper:
         self.base_critic = base_critic or AdversarialCritic()
         self.enable_empirical = enable_empirical
         self.empirical_history = []
+
+    def __getattr__(self, name):
+        """
+        Forward all missing method calls to the base_critic.
+
+        This makes EmpiricalCriticWrapper a transparent wrapper that supports
+        all AdversarialCritic methods (create_enhanced_session, get_defense_prompt, etc.)
+        """
+        return getattr(self.base_critic, name)
     
     def attack_solution(self, problem_statement, solution, round_num=0, **kwargs):
         """
