@@ -2566,10 +2566,13 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         return "find"
 
     # Initialize adversarial critic
-    critic = AdversarialCritic(
+    base_critic = AdversarialCritic(
         reasoning_effort=ver_reasoning,
         verbose=verbose
     )
+    from empirical_critic_wrapper import EmpiricalCriticWrapper
+    critic = EmpiricalCriticWrapper(base_critic, enable_empirical=True)
+
 
     # Detect problem type (prove vs find) for appropriate reconsideration prompts
     problem_type = detect_problem_type(problem_statement)
