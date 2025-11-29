@@ -54,8 +54,8 @@ echo ""
 
 # Configuration (adjustable)
 PROBLEM_FILE="${1:-problems/imo01.txt}"
-LOG_FILE="${2:-test_rlac_output.log}"
-MEMORY_FILE="${3:-test_rlac_memory.json}"
+LOG_FILE="${2:-test_rlac_log/test_rlac_output.log}"
+MEMORY_FILE="${3:-test_rlac_log/test_rlac_memory.json}"
 
 # RLAC parameters (can be adjusted for different scenarios)
 MAX_ROUNDS="${RLAC_MAX_ROUNDS:-15}"           # Increased from 10 for hard problems
