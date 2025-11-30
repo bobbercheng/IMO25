@@ -2705,10 +2705,18 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
     # BUGFIX: answer_history must contain dicts (same format as line 4046), not strings
     # Later code at line 4063-4066 expects all items to have ['fingerprint'] and ['answer_text'] keys
-    initial_semantic_fp = extract_semantic_fingerprint(solution)
+    # Note: extract_semantic_fingerprint is defined later (line 2772), so use empty fingerprint for now
+    initial_fingerprint = {
+        'raw': initial_answer[:100] if initial_answer else '',
+        'set_bounds': [],
+        'formulas': [],
+        'key_values': [],
+        'impossible': [],
+        'possible': []
+    }
     answer_history.append({
         'round': 0,
-        'fingerprint': initial_semantic_fp,
+        'fingerprint': initial_fingerprint,
         'answer_text': initial_answer[:200] if initial_answer else ""
     })
 
