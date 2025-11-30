@@ -54,12 +54,17 @@ class EmpiricalCriticWrapper:
     def attack_solution(self, problem_statement, solution, round_num=0, **kwargs):
         """
         Attack solution with logical + empirical verification.
-        
+
         Process:
           1. Run adversarial attack (logical checks)
-          2. If ROBUST, run empirical verification
-          3. Combine verdicts
-        
+          2. If BROKEN/SUSPICIOUS, run empirical verification to validate
+          3. Override verdict if empirical tests contradict critic
+
+        Key Insight:
+          - Critic gives BROKEN → Test with ground truth
+          - If empirical tests PASS → Override to ROBUST (critic false negative)
+          - If empirical tests FAIL → Confirm BROKEN (critic was right)
+
         Returns:
             Attack result dict with combined verdict
         """
@@ -70,12 +75,18 @@ class EmpiricalCriticWrapper:
         
         original_verdict = attack_result.get('verdict', 'SUSPICIOUS')
         
-        # Step 2: If empirical verification enabled and solution claims to be ROBUST
-        if self.enable_empirical and original_verdict == 'ROBUST':
+        # Step 2: If empirical verification enabled and critic says BROKEN/SUSPICIOUS
+        # BUGFIX (2025-11-30): Run empirical on BROKEN verdicts to validate critic's counterexamples
+        # Previous logic only ran on ROBUST, which was backwards
+        if self.enable_empirical and original_verdict in ['BROKEN', 'SUSPICIOUS']:
             # Extract answer from solution
             answer_text = self._extract_answer(solution)
-            
+
             if answer_text:
+                print(f"\n{'='*80}")
+                print(f"[EMPIRICAL VERIFICATION] Critic says {original_verdict}, validating with ground truth...")
+                print(f"{'='*80}\n")
+
                 empirical_result = empirical_verifier_dispatcher(
                     problem_statement=problem_statement,
                     solution=solution,
@@ -83,34 +94,51 @@ class EmpiricalCriticWrapper:
                     problem_type='auto',
                     verbose=True
                 )
-                
+
                 # Store empirical history
                 self.empirical_history.append({
                     'round': round_num,
+                    'logical_verdict': original_verdict,
                     'empirical_verdict': empirical_result['verdict'],
                     'empirical_score': empirical_result['score'],
                     'empirical_errors': empirical_result.get('errors', [])
                 })
-                
+
                 # Step 3: Combine verdicts
-                if empirical_result['verdict'] == 'BROKEN':
-                    # Empirical verification failed - downgrade verdict
+                if empirical_result['verdict'] == 'ROBUST':
+                    # Empirical verification passed - override critic's BROKEN verdict
+                    # This catches critic FALSE NEGATIVES
                     print(f"\n{'='*80}")
                     print(f"[EMPIRICAL OVERRIDE] Logical verification: {original_verdict}")
                     print(f"[EMPIRICAL OVERRIDE] Empirical verification: {empirical_result['verdict']}")
                     print(f"[EMPIRICAL OVERRIDE] Empirical score: {empirical_result['score']:.1%}")
-                    print(f"[EMPIRICAL OVERRIDE] Final verdict: BROKEN")
+                    print(f"[EMPIRICAL OVERRIDE] Critic was TOO HARSH - empirical tests PASS")
+                    print(f"[EMPIRICAL OVERRIDE] Final verdict: ROBUST (critic overridden)")
                     print(f"{'='*80}\n")
-                    
-                    attack_result['verdict'] = 'BROKEN'
+
+                    attack_result['verdict'] = 'ROBUST'
                     attack_result['empirical_override'] = True
                     attack_result['empirical_score'] = empirical_result['score']
+                    attack_result['override_reason'] = 'Empirical tests passed despite critic saying BROKEN'
+
+                elif empirical_result['verdict'] == 'BROKEN':
+                    # Empirical verification confirms critic is right
+                    print(f"\n{'='*80}")
+                    print(f"[EMPIRICAL CONFIRMATION] Critic verdict: {original_verdict}")
+                    print(f"[EMPIRICAL CONFIRMATION] Empirical verification: {empirical_result['verdict']}")
+                    print(f"[EMPIRICAL CONFIRMATION] Empirical score: {empirical_result['score']:.1%}")
+                    print(f"[EMPIRICAL CONFIRMATION] Critic was CORRECT - empirical tests FAIL")
+                    print(f"{'='*80}\n")
+
+                    # Keep BROKEN verdict, add empirical errors
+                    attack_result['empirical_confirmed'] = True
+                    attack_result['empirical_score'] = empirical_result['score']
                     attack_result['empirical_errors'] = empirical_result['errors'][:5]  # Top 5 errors
-                    
+
                     # Add empirical errors to counterexamples
                     if 'counterexamples' not in attack_result:
                         attack_result['counterexamples'] = []
-                    
+
                     # Convert empirical errors to counterexample format
                     for error in empirical_result['errors'][:3]:  # Top 3
                         attack_result['counterexamples'].append(
