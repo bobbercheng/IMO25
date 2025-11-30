@@ -41,8 +41,9 @@ from agent_oai import (
 )
 
 # --- CONFIGURATION ---
-MODEL_NAME = "openai/gpt-oss-120b"
-# Use OpenAI-compatible API endpoint (e.g., sglang)
+# Model name - supports OpenRouter prefixes (e.g., "openrouter/openai/gpt-oss-120b")
+MODEL_NAME = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
+# Use OpenAI-compatible API endpoint (e.g., sglang, OpenRouter)
 API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
 
 # Asymmetric Reasoning Effort Configuration
@@ -63,6 +64,7 @@ if not hasattr(sys, '_agent_gpt_oss_config_printed'):
     # Use original_print before we override it
     _original_builtin_print = print
     _original_builtin_print(f"[CONFIG] GPT_OSS API URL: {API_URL}")
+    _original_builtin_print(f"[CONFIG] Model Name: {MODEL_NAME}")
     _original_builtin_print(f"[CONFIG] Solution Reasoning Effort: {SOLUTION_REASONING_EFFORT}")
     _original_builtin_print(f"[CONFIG] Self-Improvement Reasoning Effort: {SELF_IMPROVEMENT_REASONING_EFFORT}")
     _original_builtin_print(f"[CONFIG] Verification Reasoning Effort: {VERIFICATION_REASONING_EFFORT}")
@@ -216,6 +218,7 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
     # Use specified reasoning effort, or default to solution reasoning
     effort = reasoning_effort if reasoning_effort is not None else SOLUTION_REASONING_EFFORT
 
+    # Build base payload
     payload = {
         "messages": [
             {
@@ -228,13 +231,27 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
             }
         ],
         "model": MODEL_NAME,
-        "temperature": 0.1,
-        "reasoning": {
-            "effort": effort
-        }
+        "temperature": 0.1
         # Removed repetition_penalty (Option A improvement)
         # Allows natural token distribution for mathematical proofs
     }
+
+    # Detect if model uses a prefix (e.g., "openrouter/" for OpenRouter)
+    # OpenRouter requires reasoning in extra_body, not top-level
+    has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
+
+    if has_prefix:
+        # OpenRouter API spec: reasoning goes in extra_body
+        payload["extra_body"] = {
+            "reasoning": {
+                "effort": effort
+            }
+        }
+    else:
+        # Standard OpenAI-compatible API: reasoning at top level
+        payload["reasoning"] = {
+            "effort": effort
+        }
 
     if other_prompts:
         for prompt in other_prompts:

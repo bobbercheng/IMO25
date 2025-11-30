@@ -34,8 +34,11 @@ SELF_IMPROVEMENT_REASONING_EFFORT = "high" # Proactive error detection
 **Environment Variables:**
 - `GPT_OSS_API_URL` - API endpoint (default: http://localhost:30000/v1/chat/completions)
 - `GPT_OSS_API_KEY` - API key (optional for local deployments)
+- `GPT_OSS_MODEL_NAME` - Model name (default: openai/gpt-oss-120b)
+  - Standard models: `openai/gpt-oss-120b`, `gpt-oss-120b`
+  - OpenRouter: `openrouter/openai/gpt-oss-120b` (auto-detects API spec)
 - `GPT_OSS_SOLUTION_REASONING` - Override solution reasoning effort
-- `GPT_OSS_VERIFICATION_REASONING` - Override verification reasoning effort  
+- `GPT_OSS_VERIFICATION_REASONING` - Override verification reasoning effort
 - `GPT_OSS_SELF_IMPROVEMENT_REASONING` - Override self-improvement reasoning effort
 
 **Key Functions:**
@@ -98,10 +101,60 @@ pip install -r requirements.txt
 
 # Set API keys for different providers
 export GOOGLE_API_KEY=your_google_api_key
-export OPENAI_API_KEY=your_openai_api_key  
+export OPENAI_API_KEY=your_openai_api_key
 export XAI_API_KEY=your_xai_api_key
 export GPT_OSS_API_KEY=your_gpt_oss_api_key  # Optional for local deployments
-export GPT_OSS_API_URL=http://localhost:30000/v1/chat/completions  # For custom endpoints
+
+# GPT-OSS Configuration
+export GPT_OSS_API_URL=http://localhost:30000/v1/chat/completions  # API endpoint
+export GPT_OSS_MODEL_NAME=openai/gpt-oss-120b  # Model name (default)
+
+# Using OpenRouter (faster for medium/high reasoning)
+export GPT_OSS_API_URL=https://openrouter.ai/api/v1/chat/completions
+export GPT_OSS_MODEL_NAME=openrouter/openai/gpt-oss-120b
+export GPT_OSS_API_KEY=your_openrouter_api_key
+```
+
+### OpenRouter Support
+
+The GPT-OSS agent supports **OpenRouter API** for faster inference with medium/high reasoning modes.
+
+**Key Feature**: Automatic API spec detection based on model name prefix.
+
+**How it works**:
+- Model names with prefixes (e.g., `openrouter/`, `anthropic/`) → reasoning goes in `extra_body`
+- Standard models (`openai/gpt-oss-120b` or no prefix) → reasoning at top level
+
+**Example configurations**:
+
+```bash
+# Local deployment (standard API)
+export GPT_OSS_API_URL=http://localhost:30000/v1/chat/completions
+export GPT_OSS_MODEL_NAME=openai/gpt-oss-120b
+# Payload: {"reasoning": {"effort": "high"}, ...}
+
+# OpenRouter (automatically uses extra_body)
+export GPT_OSS_API_URL=https://openrouter.ai/api/v1/chat/completions
+export GPT_OSS_MODEL_NAME=openrouter/openai/gpt-oss-120b
+export GPT_OSS_API_KEY=sk-or-...
+# Payload: {"extra_body": {"reasoning": {"effort": "high"}}, ...}
+```
+
+**Why use OpenRouter**:
+- ✅ Faster inference for medium/high reasoning modes
+- ✅ No local deployment needed
+- ✅ Pay-per-use pricing
+- ✅ Automatic failover and load balancing
+
+**Running with OpenRouter**:
+```bash
+# Set environment variables
+export GPT_OSS_API_URL=https://openrouter.ai/api/v1/chat/completions
+export GPT_OSS_MODEL_NAME=openrouter/openai/gpt-oss-120b
+export GPT_OSS_API_KEY=your_openrouter_api_key
+
+# Run RLAC with medium reasoning (recommended for IMO problems)
+RLAC_SOL_REASONING=medium ./test_rlac.sh problems/imo01.txt
 ```
 
 ### Running Single Agents
