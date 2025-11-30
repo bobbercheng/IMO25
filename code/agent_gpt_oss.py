@@ -1607,7 +1607,16 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     # Use high reasoning for self-improvement (proactive error prevention)
     # This catches errors BEFORE verification, saving 5-7 correction iterations
     improvement_effort = self_improvement_reasoning if self_improvement_reasoning is not None else SELF_IMPROVEMENT_REASONING_EFFORT
-    p1["reasoning"]["effort"] = improvement_effort
+
+    # BUGFIX (2025-11-30): Handle both OpenRouter (extra_body) and standard API formats
+    has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
+    if has_prefix:
+        # OpenRouter: reasoning in extra_body
+        p1["extra_body"]["reasoning"]["effort"] = improvement_effort
+    else:
+        # Standard: reasoning at top level
+        p1["reasoning"]["effort"] = improvement_effort
+
     print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
 
     response2 = send_api_request(get_api_key(), p1, request_label="Self-improvement prompt")
