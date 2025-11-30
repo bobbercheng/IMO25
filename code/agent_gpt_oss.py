@@ -2702,7 +2702,16 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     # Track initial answer for stability monitoring using enhanced session's LaTeX parser
     initial_answer_result = enhanced_session.extract_answer(solution)
     initial_answer = initial_answer_result.normalized if initial_answer_result.success else extract_answer_key(solution)
-    answer_history.append(initial_answer)
+
+    # BUGFIX: answer_history must contain dicts (same format as line 4046), not strings
+    # Later code at line 4063-4066 expects all items to have ['fingerprint'] and ['answer_text'] keys
+    initial_semantic_fp = extract_semantic_fingerprint(solution)
+    answer_history.append({
+        'round': 0,
+        'fingerprint': initial_semantic_fp,
+        'answer_text': initial_answer[:200] if initial_answer else ""
+    })
+
     if initial_answer_result.success:
         print(f">>>>>>> [RLAC TRACKING] Initial answer (enhanced parser): {initial_answer[:50]}... (depth: {initial_answer_result.parse_depth})")
     elif initial_answer:
@@ -3158,7 +3167,8 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
     semantic_unchanged_count = 0  # P9: Track semantically unchanged answers
 
     # Proposal D: Convergence detection
-    answer_history = []  # Track last N answers for convergence analysis
+    # BUGFIX: Don't reset answer_history here - it was already initialized at line 2598
+    # and initial answer was appended at line 2709
     convergence_window = 5  # Look at last 5 rounds
     convergence_threshold = 0.6  # If average similarity > 0.6, answers are converging
     no_convergence_threshold = 10  # After 10 rounds without convergence, take action
@@ -4225,12 +4235,20 @@ Provide a corrected solution that passes validation for all small cases.
                                 # Try approach diversification if stuck in oscillation
                                 if regeneration_attempts < max_regeneration_attempts:
                                     print(f">>>>>>> [RLAC STABILITY] Triggering approach diversification due to oscillation")
-                                    failed_approach_summaries.append(f"Oscillating between answers: {', '.join(answer_history[-3:])}")
+                                    # BUGFIX: answer_history contains dicts, need to extract answer_text
+                                    recent_answers_text = [h['answer_text'][:50] for h in answer_history[-3:]]
+                                    failed_approach_summaries.append(f"Oscillating between answers: {', '.join(recent_answers_text)}")
 
                         elif stability['changes'] > 0:
                             print(f">>>>>>> [RLAC STABILITY] Answer changed ({stability['changes']} total changes)")
 
-                        answer_history.append(new_answer)
+                        # BUGFIX: answer_history must contain dicts, not strings (consistent with line 2709 and 4055)
+                        new_semantic_fp_stability = extract_semantic_fingerprint(solution)
+                        answer_history.append({
+                            'round': round_num + 1,
+                            'fingerprint': new_semantic_fp_stability,
+                            'answer_text': new_answer[:200] if new_answer else ""
+                        })
 
                     # Validate answer change
                     answer_validation = validate_answer_change(
