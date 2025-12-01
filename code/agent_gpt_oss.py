@@ -2778,6 +2778,9 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     oscillation_detected = False
     oscillation_handled = False
 
+    # P1 FIX: Oscillation tiebreaker flag
+    use_tiebreaker_next_round = False
+
     # P5-P8 FIX: Answer reconsideration for B-B-B-B failures
     # P5: Trigger reconsideration after consecutive BROKEN verdicts
     answer_reconsideration_threshold = 4  # After 4 consecutive BROKEN, trigger reconsideration
@@ -3236,6 +3239,17 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
         # Critic attacks solution
         print(f">>>>>>> [RLAC CRITIC] Launching adversarial attack...")
 
+        # P1 FIX: Apply oscillation tiebreaker if flag is set
+        original_critic_reasoning = None
+        if use_tiebreaker_next_round:
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [RLAC P1 TIEBREAKER] ACTIVATING high-reasoning verification")
+            print(f">>>>>>> [RLAC P1 TIEBREAKER] Upgrading critic: {critic.reasoning_effort} → high")
+            print(f"{'='*80}\n")
+            original_critic_reasoning = critic.reasoning_effort
+            critic.reasoning_effort = "high"
+            use_tiebreaker_next_round = False  # Reset flag after use
+
         try:
             attack_result = critic.attack_solution(
                 problem_statement=problem_statement,
@@ -3246,9 +3260,18 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                 api_key=get_api_key()
             )
 
+            # P1 FIX: Restore original reasoning after tiebreaker
+            if original_critic_reasoning is not None:
+                print(f">>>>>>> [RLAC P1 TIEBREAKER] Restoring critic reasoning: high → {original_critic_reasoning}")
+                critic.reasoning_effort = original_critic_reasoning
+
             verdict = attack_result['verdict']
             counterexamples = attack_result['counterexamples']
             total_penalty = attack_result['total_penalty']
+
+            # P0.5 FIX: Verdict audit logging (track all verdict changes)
+            original_critic_verdict = verdict
+            print(f"\n>>>>>>> [VERDICT AUDIT] Critic original verdict: {original_critic_verdict}")
 
             # P3 FIX: Truncation detection - check if attack response was truncated
             attack_text = attack_result.get('full_attack', '')
@@ -3262,6 +3285,7 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                     verdict = "SUSPICIOUS"
                     attack_result['verdict'] = "SUSPICIOUS"
                     attack_result['truncation_detected'] = True
+                    print(f">>>>>>> [VERDICT AUDIT] P3 Truncation downgrade: {original_critic_verdict} → {verdict}")
 
             # P4 FIX: Oscillation detection BEFORE processing verdict
             # Record verdict in history for pattern detection
@@ -3311,6 +3335,7 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                         verdict = "SUSPICIOUS"
                         attack_result['verdict'] = "SUSPICIOUS"
                         attack_result['p4_oscillation_override'] = True
+                        print(f">>>>>>> [VERDICT AUDIT] P4 Oscillation downgrade: {original_critic_verdict} → {verdict}")
 
             # Log round metrics
             rlac_round_data = {
@@ -3330,6 +3355,12 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
             print(f">>>>>>> [RLAC RESULT] Verdict: {verdict}")
             print(f">>>>>>> [RLAC RESULT] Penalty: -{total_penalty} points")
             print(f">>>>>>> [RLAC RESULT] Total ROBUST history: {total_robust_count}")
+
+            # P0.5 FIX: Final verdict audit (track if any downgrades occurred)
+            if verdict != original_critic_verdict:
+                print(f">>>>>>> [VERDICT AUDIT] ⚠️  DOWNGRADE DETECTED: {original_critic_verdict} → {verdict}")
+            else:
+                print(f">>>>>>> [VERDICT AUDIT] Verdict unchanged from critic: {verdict}")
 
         except Exception as e:
             print(f">>>>>>> [RLAC CRITIC] Error during attack: {e}")
@@ -3362,6 +3393,16 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                     relock_message = " (RE-LOCKED after P5)" if answer_reconsideration_triggered else ""
                     print(f"\n>>>>>>> [RLAC LOCK] Answer locked after {consecutive_robust} consecutive ROBUST{relock_message}")
                     print(f">>>>>>> [RLAC LOCK] Locked answer: {locked_answer[:100]}...")
+
+            # P1 FIX: Oscillation tiebreaker - High-reasoning double-check at threshold-1
+            # When we're ONE verdict away from success, use high-reasoning verification
+            # Set flag to be checked in next round before critic attack
+            use_tiebreaker_next_round = (consecutive_robust == consecutive_robust_threshold - 1)
+            if use_tiebreaker_next_round:
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [RLAC P1 TIEBREAKER] Near success ({consecutive_robust}/{consecutive_robust_threshold} ROBUST)")
+                print(f">>>>>>> [RLAC P1 TIEBREAKER] Will verify next solution with HIGH reasoning")
+                print(f"{'='*80}\n")
 
             print(f"\n{'='*80}")
             print(f">>>>>>> [RLAC SUCCESS] Solution survived attack! ({consecutive_robust}/{consecutive_robust_threshold})")
