@@ -1049,3 +1049,125 @@ def calculate_verdict_from_errors(errors: list) -> dict:
         'verdict': verdict,
         'error_summary': error_summary
     }
+
+
+# ==============================================================================
+# PHASE 0.2: GEOMETRY-SPECIFIC PROMPTS
+# ==============================================================================
+
+geometry_critic_requirements = """
+
+### GEOMETRY-SPECIFIC COUNTEREXAMPLE REQUIREMENTS ###
+
+For geometry problems, your counterexamples MUST be TESTABLE with concrete values:
+
+✅ VALID counterexample format:
+Example: "Set M=(0,0), N=(4,0), A=(2,√3). Circle ω has center M with radius r=2.
+Point P lies at the intersection: P=(1,√3). Computing distance MP = √((1-0)² + (√3-0)²) = 2 = r ✓
+However, the claim fails because [specific algebraic reason with these coordinates]."
+
+❌ INVALID counterexample format:
+- "The claim that P' is the midpoint might not hold in general" (no concrete test)
+- "Consider a degenerate configuration where..." (not specified)
+- "This could fail for certain values..." (not testable)
+- "The proof doesn't address all cases..." (too vague)
+
+**MANDATORY REQUIREMENTS for geometric counterexamples:**
+1. Concrete coordinates (x,y) OR angles with numerical values
+2. Explicit circle centers/radii OR line equations
+3. Algebraic verification showing where the claim fails
+4. At least 2 concrete geometric measurements (e.g., coordinates + radius)
+
+**If you cannot provide concrete values that disprove the claim, you MUST return verdict ROBUST.**
+
+Do NOT give SUSPICIOUS verdict with vague concerns - either provide testable counterexamples or declare ROBUST.
+"""
+
+geometry_defense_addendum = """
+
+### GEOMETRY PROOF DEFENSE STRATEGIES ###
+
+The adversarial critic will attack with CONCRETE COORDINATES. Defend proactively:
+
+**Defense Template:**
+1. State your claim clearly
+2. Provide synthetic proof (angles, similarity, congruence)
+3. VERIFY with coordinates: "Setting M=(0,0), N=(a,0), we compute..."
+4. Show algebraic verification
+
+**Common attacks to anticipate:**
+- **Midpoint claims**: Provide coordinate verification
+  Example: "Claim: P is midpoint of CD. Verification: Set C=(0,0), D=(2a,0). Then P=(a,0) ✓"
+
+- **Tangency claims**: Prove radius ⊥ tangent line (algebraically)
+  Example: "Tangency: Distance from center to line = radius. Computing: d = |mx₀ - y₀ + b|/√(1+m²) = r ✓"
+
+- **Inversion properties**: Cite specific theorems, verify invariants
+  Example: "Inversion at A with radius k preserves angles. This follows from [theorem]. Verification: ..."
+
+- **"In general" claims**: Test with M=(0,0), N=(1,0) configuration
+  Example: "This holds for all configurations. Testing M=(0,0), N=(1,0): [computation] ✓"
+
+**Example robust proof structure:**
+
+Claim: Line ℓ through H parallel to AP is tangent to circumcircle of △BEF.
+
+Proof:
+Step 1: [Synthetic argument using angle chasing]
+  - ∠BFE = ∠BAP (angles in same segment)
+  - Line ℓ ∥ AP implies ∠(ℓ, FE) = ∠(AP, FE) = ∠BFE
+
+Step 2: [Coordinate verification] Setting M=(0,0), N=(4,0):
+  - A = (2, 2√3) [construction of point A]
+  - P = (2, 0) [midpoint of MN]
+  - H = (2, 2) [orthocenter computation]
+  - Line ℓ: y - 2 = 0 (horizontal through H, parallel to AP which is vertical)
+
+Step 3: [Tangency algebraic verification]
+  - Circumcircle of △BEF has center C = (x₀, y₀) [computed]
+  - Distance from C to ℓ = |y₀ - 2| [distance formula]
+  - Radius R = [computed from B, E, F]
+  - Verification: |y₀ - 2| = R ✓ Therefore tangent.
+
+This anticipates coordinate attacks and provides algebraic proof at each step.
+"""
+
+
+def get_critic_system_prompt(domain='GENERAL'):
+    """
+    Get domain-specific critic system prompt.
+
+    Args:
+        domain: Problem domain ('GEOMETRY', 'COMBINATORICS', 'ALGEBRA', 'NUMBER_THEORY', 'GENERAL')
+
+    Returns:
+        str: System prompt with domain-specific requirements
+    """
+    base_prompt = adversarial_critic_system_prompt
+
+    if domain == 'GEOMETRY':
+        return base_prompt + geometry_critic_requirements
+
+    return base_prompt
+
+
+def get_defense_prompt(domain='GENERAL', defense_first=True):
+    """
+    Get domain-specific defense prompt for generator.
+
+    Args:
+        domain: Problem domain
+        defense_first: Whether using defense-first mode
+
+    Returns:
+        str: Defense prompt with domain-specific strategies
+    """
+    if defense_first:
+        base_prompt = adversarial_defense_prompt
+    else:
+        base_prompt = constructive_defense_prompt
+
+    if domain == 'GEOMETRY':
+        return base_prompt + geometry_defense_addendum
+
+    return base_prompt

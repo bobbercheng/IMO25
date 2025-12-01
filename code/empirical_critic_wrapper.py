@@ -72,9 +72,48 @@ class EmpiricalCriticWrapper:
         attack_result = self.base_critic.attack_solution(
             problem_statement, solution, round_num=round_num, **kwargs
         )
-        
+
         original_verdict = attack_result.get('verdict', 'SUSPICIOUS')
-        
+        counterexamples = attack_result.get('counterexamples', [])
+
+        # PHASE 1.2: Counterexample Quality Filter for geometry problems
+        if counterexamples and problem_statement:
+            filtered_ces = []
+            rejected_ces = []
+
+            # Detect if geometry problem
+            is_geometry = any(kw in problem_statement.lower() for kw in
+                             ['circle', 'triangle', 'geometry', 'angle', 'tangent',
+                              'perpendicular', 'parallel', 'line', 'point'])
+
+            if is_geometry:
+                for ce in counterexamples:
+                    is_valid = self._validate_geometric_counterexample(ce)
+
+                    if is_valid:
+                        filtered_ces.append(ce)
+                    else:
+                        rejected_ces.append(ce)
+
+                if rejected_ces:
+                    invalid_ratio = len(rejected_ces) / len(counterexamples)
+                    print(f"\n[CE FILTER] Rejected {len(rejected_ces)}/{len(counterexamples)} invalid counterexamples ({invalid_ratio:.0%})")
+
+                    # Show samples of rejected CEs
+                    for i, ce in enumerate(rejected_ces[:2]):
+                        print(f"[CE FILTER]   Sample {i+1}: {ce[:100]}...")
+
+                    # Downgrade verdict if too many invalid
+                    if invalid_ratio > 0.7 and original_verdict == 'BROKEN':
+                        print(f"[CE FILTER] >70% invalid - downgrading: BROKEN → SUSPICIOUS")
+                        attack_result['verdict'] = 'SUSPICIOUS'
+                        original_verdict = 'SUSPICIOUS'
+
+                # Update attack result
+                attack_result['counterexamples'] = filtered_ces
+                attack_result['rejected_counterexamples'] = rejected_ces
+                counterexamples = filtered_ces
+
         # Step 2: If empirical verification enabled and critic says BROKEN/SUSPICIOUS
         # BUGFIX (2025-11-30): Run empirical on BROKEN verdicts to validate critic's counterexamples
         # Previous logic only ran on ROBUST, which was backwards
@@ -216,6 +255,50 @@ class EmpiricalCriticWrapper:
             },
             'enabled': self.enable_empirical
         }
+
+    def _validate_geometric_counterexample(self, ce_text):
+        """
+        Validate that a geometric counterexample has concrete values.
+
+        PHASE 1.2: Quality filter for geometry counterexamples.
+
+        Args:
+            ce_text: Counterexample text
+
+        Returns:
+            bool: True if valid (has concrete geometric values), False otherwise
+        """
+        import re
+
+        # Check 1: Has coordinates: (x,y) or x=..., y=...
+        has_coords = bool(re.search(r'\([+-]?\d+\.?\d*\s*,\s*[+-]?\d+\.?\d*\)', ce_text))
+        has_coord_assign = bool(re.search(r'[xyz]\s*=\s*[+-]?\d+', ce_text))
+
+        # Check 2: Has angles: θ=30° or angle=45
+        has_angles = bool(re.search(r'(angle|θ|∠)\s*=\s*\d+', ce_text))
+
+        # Check 3: Has distances: r=5, distance=3
+        has_distances = bool(re.search(r'(radius|distance|length|r|d)\s*=\s*\d+', ce_text))
+
+        # Check 4: Not self-contradicting
+        contradictions = ['actually works', 'actually valid', 'seems to work',
+                         'appears to work', 'may work']
+        has_contradiction = any(phrase in ce_text.lower() for phrase in contradictions)
+
+        # Check 5: Not vague
+        vague_phrases = ['might not', 'could fail', 'in general', 'unclear',
+                        'not obvious', 'needs verification', 'without concrete']
+        is_vague = any(phrase in ce_text.lower() for phrase in vague_phrases)
+
+        # Check 6: Minimum length (avoid trivial rejections)
+        has_min_length = len(ce_text) >= 50
+
+        # Need at least 2 concrete measurements AND not vague/contradictory AND minimum length
+        concrete_count = sum([has_coords, has_coord_assign, has_angles, has_distances])
+
+        is_valid = (concrete_count >= 2) and (not has_contradiction) and (not is_vague) and has_min_length
+
+        return is_valid
 
 
 if __name__ == "__main__":

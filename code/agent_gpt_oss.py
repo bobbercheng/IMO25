@@ -2484,6 +2484,120 @@ def calculate_cost(prompt_tokens, completion_tokens, reasoning_effort):
     return (total_tokens / 1_000_000) * cost_per_million
 
 
+def detect_problem_difficulty(problem_statement, verbose=True):
+    """
+    Detect problem type, domain, and recommended reasoning budget.
+
+    This function analyzes the problem statement to determine:
+    - Problem type (FIND vs PROVE)
+    - Mathematical domain (GEOMETRY, COMBINATORICS, ALGEBRA, NUMBER_THEORY)
+    - Difficulty level
+    - Recommended reasoning efforts for generator and critic
+
+    Args:
+        problem_statement: The mathematical problem text
+        verbose: Print detection results
+
+    Returns:
+        dict with keys: type, domain, difficulty,
+                       generator_reasoning, critic_reasoning, min_critic_reasoning
+    """
+    problem_lower = problem_statement.lower()
+
+    # Type: FIND vs PROVE
+    is_find = any(kw in problem_lower for kw in
+                  ['find', 'determine', 'compute', 'what is', 'how many'])
+    is_prove = any(kw in problem_lower for kw in
+                   ['prove', 'show that', 'demonstrate'])
+    problem_type = 'FIND' if is_find else 'PROVE'
+
+    # Domain detection
+    domain_keywords = {
+        'GEOMETRY': ['circle', 'triangle', 'tangent', 'angle', 'orthocenter',
+                     'perpendicular', 'parallel', 'circumcircle', 'line', 'point',
+                     'segment', 'ray', 'polygon', 'quadrilateral'],
+        'COMBINATORICS': ['arrangement', 'permutation', 'combination',
+                         'coloring', 'graph', 'partition', 'subset', 'sequence'],
+        'ALGEBRA': ['function', 'equation', 'polynomial', 'f(x)', 'variable',
+                   'expression', 'inequality'],
+        'NUMBER_THEORY': ['integer', 'prime', 'divisible', 'gcd', 'modulo',
+                         'lcm', 'congruent', 'factor']
+    }
+
+    domain = 'UNKNOWN'
+    for domain_name, keywords in domain_keywords.items():
+        if any(kw in problem_lower for kw in keywords):
+            domain = domain_name
+            break
+
+    # Advanced geometry markers (inversion, homothety, etc.)
+    advanced_geo = any(kw in problem_lower for kw in
+                      ['inversion', 'homothety', 'projective', 'pole', 'polar',
+                       'radical axis', 'power of a point', 'cross-ratio'])
+
+    # Reasoning budget allocation
+    if domain == 'GEOMETRY':
+        if advanced_geo or problem_type == 'PROVE':
+            difficulty = 'high'
+            generator_reasoning = 'medium'  # Start medium, escalate if needed
+            critic_reasoning = 'medium'
+            min_critic_reasoning = 'medium'  # Never LOW for geometry
+        else:
+            difficulty = 'medium'
+            generator_reasoning = 'medium'
+            critic_reasoning = 'medium'
+            min_critic_reasoning = 'medium'
+    elif problem_type == 'FIND':
+        difficulty = 'medium'
+        generator_reasoning = 'low'
+        critic_reasoning = 'medium'
+        min_critic_reasoning = 'low'
+    else:
+        difficulty = 'medium'
+        generator_reasoning = 'medium'
+        critic_reasoning = 'medium'
+        min_critic_reasoning = 'medium'
+
+    result = {
+        'type': problem_type,
+        'domain': domain,
+        'difficulty': difficulty,
+        'generator_reasoning': generator_reasoning,
+        'critic_reasoning': critic_reasoning,
+        'min_critic_reasoning': min_critic_reasoning,
+        'is_advanced_geometry': advanced_geo if domain == 'GEOMETRY' else False
+    }
+
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f"[RLAC AUTO-DETECT]")
+        print(f"  Type: {problem_type}")
+        print(f"  Domain: {domain}")
+        print(f"  Difficulty: {difficulty}")
+        if domain == 'GEOMETRY' and advanced_geo:
+            print(f"  Advanced Geometry: True")
+        print(f"  Recommended Generator: {generator_reasoning}")
+        print(f"  Recommended Critic: {critic_reasoning}")
+        print(f"  Minimum Critic: {min_critic_reasoning}")
+        print(f"{'='*80}\n")
+
+    return result
+
+
+def compare_reasoning_effort(a, b):
+    """
+    Compare reasoning efforts. Returns -1 if a < b, 0 if equal, 1 if a > b.
+
+    Args:
+        a, b: Reasoning effort strings ('low', 'medium', 'high')
+
+    Returns:
+        int: -1, 0, or 1
+    """
+    levels = {'low': 0, 'medium': 1, 'high': 2}
+    return levels.get(a, 0) - levels.get(b, 0)
+
+
 def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                self_imp_reasoning="high", ver_reasoning="high",
                max_adversarial_rounds=12, consecutive_robust_threshold=3,
@@ -2564,6 +2678,20 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         print(f">>>>>>> [RLAC ERROR] Falling back to standard agent")
         return None
 
+    # PHASE 0.1: Auto-detect problem characteristics and enforce reasoning minimums
+    problem_analysis = detect_problem_difficulty(problem_statement, verbose=verbose)
+    problem_type_detected = problem_analysis['type']
+    domain = problem_analysis['domain']
+
+    # Enforce reasoning minimums based on problem characteristics
+    if compare_reasoning_effort(sol_reasoning, problem_analysis['generator_reasoning']) < 0:
+        print(f"[AUTO-UPGRADE] Generator reasoning: {sol_reasoning} → {problem_analysis['generator_reasoning']}")
+        sol_reasoning = problem_analysis['generator_reasoning']
+
+    if compare_reasoning_effort(ver_reasoning, problem_analysis['critic_reasoning']) < 0:
+        print(f"[AUTO-UPGRADE] Critic reasoning: {ver_reasoning} → {problem_analysis['critic_reasoning']}")
+        ver_reasoning = problem_analysis['critic_reasoning']
+
     # Helper function: Detect problem type (prove vs find)
     def detect_problem_type(problem_statement):
         """
@@ -2591,10 +2719,11 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
         # Default to "find" for problems asking to find/determine values
         return "find"
 
-    # Initialize adversarial critic
+    # Initialize adversarial critic with domain-specific prompts (PHASE 0.2)
     base_critic = AdversarialCritic(
         reasoning_effort=ver_reasoning,
-        verbose=verbose
+        verbose=verbose,
+        domain=domain  # Pass domain for geometry-enhanced prompts
     )
     from empirical_critic_wrapper import EmpiricalCriticWrapper
     critic = EmpiricalCriticWrapper(base_critic, enable_empirical=True)
@@ -3268,6 +3397,81 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
             verdict = attack_result['verdict']
             counterexamples = attack_result['counterexamples']
             total_penalty = attack_result['total_penalty']
+
+            # PHASE 1.1: P1 FAILURE RECOVERY MODE
+            if original_critic_reasoning is not None and verdict in ['SUSPICIOUS', 'BROKEN']:
+                print(f"\n{'='*80}")
+                print(f"[RLAC P1 RECOVERY] ⚠️  HIGH verification FAILED")
+                print(f"[RLAC P1 RECOVERY] Verdict: {verdict} (expected ROBUST)")
+                print(f"[RLAC P1 RECOVERY] Solution has fundamental flaw, not minor issue")
+                print(f"{'='*80}\n")
+
+                # Reset near-success state
+                consecutive_robust = 0
+
+                # Strategy 1: Escalate generator reasoning if not already HIGH
+                if sol_reasoning != 'high':
+                    print(f"[RLAC P1 RECOVERY] Escalating generator: {sol_reasoning} → high")
+                    sol_reasoning = 'high'
+
+                    # Get proof approach from solution
+                    def get_proof_approach(solution_text):
+                        """Detect proof approach from solution text."""
+                        approaches = {
+                            'inversion': ['inversion', 'invert', 'inverse'],
+                            'coordinate': ['coordinate', 'x=', 'y=', '(0,0)'],
+                            'synthetic': ['angle', 'similar', 'congruent'],
+                            'complex': ['complex number', 'arg', 'modulus'],
+                            'projective': ['projective', 'cross-ratio', 'harmonic']
+                        }
+                        solution_lower = solution_text.lower()
+                        for approach, keywords in approaches.items():
+                            if any(kw in solution_lower for kw in keywords):
+                                return approach
+                        return 'unknown'
+
+                    current_approach = get_proof_approach(solution)
+
+                    # Add strategy pivot prompt
+                    recovery_prompt = f"""
+CRITICAL: HIGH reasoning verification found fundamental flaw in your approach.
+
+**Detected flaw**:
+{counterexamples[0][:500] if counterexamples else "Geometric reasoning gap detected"}
+
+**Your previous approach**: {current_approach}
+
+**Recovery instructions**:
+1. DO NOT try to repair the old approach - it has a fatal conceptual error
+2. Choose a COMPLETELY DIFFERENT proof strategy:
+
+   Alternative strategies for this problem:
+   - If you used inversion: Try coordinate geometry with explicit calculations
+   - If you used synthetic proof: Try analytic/algebraic methods
+   - If you used angle-chasing: Try power-of-a-point or homothety
+   - If you used coordinates: Try pure synthetic proof with similar triangles
+
+3. For geometry problems: ALWAYS verify claims with concrete coordinates
+   Example: "Claim: P is midpoint of CD"
+   Verification: "Set C=(0,0), D=(2a,0). Then P=(a,0) by computation. ✓"
+
+4. Build proof incrementally with verified lemmas:
+   - State each lemma clearly
+   - Prove each step independently
+   - Cite theorems explicitly
+   - Verify algebraically where possible
+
+Start completely fresh with a different mathematical approach.
+"""
+
+                    other_prompts.append(recovery_prompt)
+                    print(f"[RLAC P1 RECOVERY] Strategy pivot prompt added")
+                    print(f"[RLAC P1 RECOVERY] Will regenerate with HIGH reasoning next round")
+
+                # Strategy 2: If already HIGH, problem is very hard
+                else:
+                    print(f"[RLAC P1 RECOVERY] Already using HIGH reasoning")
+                    print(f"[RLAC P1 RECOVERY] Problem at capability boundary - continuing with current approach")
 
             # P0.5 FIX: Verdict audit logging (track all verdict changes)
             original_critic_verdict = verdict

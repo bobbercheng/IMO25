@@ -63,7 +63,7 @@ class AdversarialCritic:
     - Provides structured feedback with severity scores
     """
 
-    def __init__(self, reasoning_effort="high", verbose=True, log_file=None):
+    def __init__(self, reasoning_effort="high", verbose=True, log_file=None, domain='GENERAL'):
         """
         Initialize the adversarial critic.
 
@@ -72,10 +72,12 @@ class AdversarialCritic:
                              Recommended: "high" for rigorous adversarial attacks
             verbose: Enable detailed logging
             log_file: Optional file handle for logging (uses agent's log_file if None)
+            domain: Problem domain for domain-specific prompts ('GEOMETRY', 'COMBINATORICS', etc.)
         """
         self.reasoning_effort = reasoning_effort
         self.verbose = verbose
         self.log_file = log_file
+        self.domain = domain  # PHASE 0.2: Store domain for prompt selection
 
         # Attack history for tracking progress
         self.attack_history = []
@@ -178,6 +180,10 @@ Follow the output format specified in your system prompt.
         if self.verbose:
             self._log(f"[ADVERSARIAL CRITIC] Attack prompt constructed ({len(attack_prompt)} chars)")
 
+        # PHASE 0.2: Use domain-specific system prompt
+        from adversarial_prompts import get_critic_system_prompt
+        system_prompt = get_critic_system_prompt(self.domain)
+
         # Send attack request
         if api_request_func is None:
             # Import from agent_gpt_oss if not provided
@@ -186,7 +192,7 @@ Follow the output format specified in your system prompt.
             api_key = get_api_key()
 
             payload = build_request_payload(
-                system_prompt=adversarial_critic_system_prompt,
+                system_prompt=system_prompt,
                 question_prompt=attack_prompt,
                 reasoning_effort=progressive_reasoning  # Use progressive reasoning
             )
@@ -194,7 +200,7 @@ Follow the output format specified in your system prompt.
             # Use provided function
             from agent_gpt_oss import build_request_payload, extract_text_from_response
             payload = build_request_payload(
-                system_prompt=adversarial_critic_system_prompt,
+                system_prompt=system_prompt,
                 question_prompt=attack_prompt,
                 reasoning_effort=progressive_reasoning  # Use progressive reasoning
             )
