@@ -287,11 +287,19 @@ However, the proof has some **presentation issues** that need refinement. Your t
 
 ### Output Format ###
 
-Provide the complete refined proof with:
+**IMPORTANT**: Format your response with the exact structure below:
+
+```
+### Detailed Solution ###
+
+[Your complete refined proof here, with:]
 - All issues from verification feedback addressed
 - Intermediate steps filled in for gaps
 - Correct notation for errors
 - Same answer in \\boxed{} at the end
+```
+
+**Critical**: Start your response with EXACTLY "### Detailed Solution ###" (this marker is required for the verification system).
 
 **Remember**: Your answer is CORRECT. This is proof refinement, not problem solving.
 """
