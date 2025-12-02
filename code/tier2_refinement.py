@@ -313,6 +313,7 @@ However, the proof has some **presentation issues** that need refinement. Your t
 def extract_boxed_answer(solution):
     """
     Extract answer from \\boxed{...} for verification.
+    Handles nested braces correctly (e.g., \\dfrac{a}{b}, \\Bigl(...\\Bigr)).
 
     Returns:
         Extracted answer string or None if not found
@@ -320,15 +321,30 @@ def extract_boxed_answer(solution):
     if not solution:
         return None
 
-    # Try to find \boxed{...}
-    match = re.search(r'\\boxed\{([^}]+)\}', solution)
-    if match:
-        return match.group(1).strip()
+    # Find \boxed{ or boxed{
+    pattern = r'\\?boxed\{'
+    match = re.search(pattern, solution)
 
-    # Try to find boxed{...} without backslash
-    match = re.search(r'boxed\{([^}]+)\}', solution)
-    if match:
-        return match.group(1).strip()
+    if not match:
+        return None
+
+    # Start after the opening brace
+    start = match.end()
+
+    # Count braces to find the matching closing brace
+    brace_count = 1
+    i = start
+
+    while i < len(solution) and brace_count > 0:
+        if solution[i] == '{':
+            brace_count += 1
+        elif solution[i] == '}':
+            brace_count -= 1
+        i += 1
+
+    if brace_count == 0:
+        # Successfully found matching brace
+        return solution[start:i-1].strip()
 
     return None
 
