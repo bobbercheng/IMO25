@@ -164,49 +164,59 @@ def parse_verification_feedback(bug_report):
     if not bug_report:
         return issues
 
-    # Pattern 1: Look for "List of Findings" section
-    if "**List of Findings:**" in bug_report or "List of Findings:" in bug_report:
-        # Find the findings section
-        findings_start = bug_report.find("List of Findings:")
-        if findings_start == -1:
-            findings_start = bug_report.find("**List of Findings:**")
+    # Pattern 1: Look for "List of Findings" section (flexible header matching)
+    # Support multiple formats: "### List of Findings", "**List of Findings:**", "List of Findings:"
+    if "List of Findings" in bug_report:
+        # Find the findings section - try multiple header formats
+        findings_start = -1
+        for header in ["### List of Findings", "**List of Findings:**", "List of Findings:", "**List of Findings**"]:
+            findings_start = bug_report.find(header)
+            if findings_start != -1:
+                break
 
-        findings_section = bug_report[findings_start:]
+        if findings_start != -1:
+            findings_section = bug_report[findings_start:]
 
-        # Parse each finding by looking for location markers
-        location_pattern = r'\*\s*(?:Location|location):\s*["\']?([^"\'\n]+)["\']?'
-        issue_pattern = r'\*\s*(?:Issue|issue):\s*([^\n]+)'
+            # Parse each finding by looking for location markers
+            # Updated regex to handle markdown bold: **Location:** and plain Location:
+            # Also handles quotes and special characters in location text
+            location_pattern = r'\*\s*(?:\*\*)?(?:Location|location)(?:\*\*)?:\s*(?:["\'])?(.+?)(?:["\'])?\s*\n'
+            issue_pattern = r'\*\s*(?:\*\*)?(?:Issue|issue)(?:\*\*)?:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*(?:\n|$)'
 
-        locations = re.findall(location_pattern, findings_section)
-        issue_descriptions = re.findall(issue_pattern, findings_section)
+            locations = re.findall(location_pattern, findings_section, re.DOTALL)
+            issue_descriptions = re.findall(issue_pattern, findings_section, re.DOTALL)
 
-        for i, (location, description) in enumerate(zip(locations, issue_descriptions)):
-            # Classify by keywords
-            if any(kw in description.lower() for kw in ['critical error', 'critical:', 'false', 'incorrect', 'wrong']):
-                issue_type = 'CRITICAL_ERROR'
-            else:
-                issue_type = 'JUSTIFICATION_GAP'
+            # Clean up captured text (remove markdown bold markers)
+            locations = [loc.replace('**', '').strip() for loc in locations]
+            issue_descriptions = [desc.replace('**', '').strip() for desc in issue_descriptions]
 
-            issues.append({
-                'type': issue_type,
-                'location': location.strip(),
-                'description': description.strip()
-            })
+            for i, (location, description) in enumerate(zip(locations, issue_descriptions)):
+                # Classify by keywords (accept multiple separator formats: colon, en-dash, em-dash)
+                if any(kw in description.lower() for kw in ['critical error', 'critical:', 'critical –', 'critical —', 'false', 'incorrect', 'wrong']):
+                    issue_type = 'CRITICAL_ERROR'
+                else:
+                    issue_type = 'JUSTIFICATION_GAP'
+
+                issues.append({
+                    'type': issue_type,
+                    'location': location.strip(),
+                    'description': description.strip()
+                })
 
     # Pattern 2: Direct error mentions (fallback if no structured list)
     if not issues:
-        # Look for explicit error statements
-        critical_pattern = r'(?:Critical Error|CRITICAL ERROR|critical error)[:\s]+([^\n\.]+)'
-        gap_pattern = r'(?:Justification Gap|justification gap|unjustified)[:\s]+([^\n\.]+)'
+        # Look for explicit error statements (accept multiple separators: :, –, —, -)
+        critical_pattern = r'(?:Critical Error|CRITICAL ERROR|critical error)[\s:–—-]+(.+?)(?:\n|$)'
+        gap_pattern = r'(?:Justification Gap|justification gap|unjustified)[\s:–—-]+(.+?)(?:\n|$)'
 
-        for match in re.finditer(critical_pattern, bug_report, re.IGNORECASE):
+        for match in re.finditer(critical_pattern, bug_report, re.IGNORECASE | re.DOTALL):
             issues.append({
                 'type': 'CRITICAL_ERROR',
                 'location': 'Unknown',
                 'description': match.group(1).strip()
             })
 
-        for match in re.finditer(gap_pattern, bug_report, re.IGNORECASE):
+        for match in re.finditer(gap_pattern, bug_report, re.IGNORECASE | re.DOTALL):
             issues.append({
                 'type': 'JUSTIFICATION_GAP',
                 'location': 'Unknown',
