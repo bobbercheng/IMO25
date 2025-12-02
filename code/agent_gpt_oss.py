@@ -40,6 +40,14 @@ from agent_oai import (
     verification_remider
 )
 
+# Import TIER 2 refinement module
+try:
+    from tier2_refinement import tier2_refinement_loop, extract_boxed_answer
+    TIER2_AVAILABLE = True
+except ImportError:
+    print("[WARNING] TIER 2 refinement module not available")
+    TIER2_AVAILABLE = False
+
 # --- CONFIGURATION ---
 # Model name - supports OpenRouter prefixes (e.g., "openrouter/openai/gpt-oss-120b")
 MODEL_NAME = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
@@ -56,6 +64,12 @@ VERIFICATION_REASONING_EFFORT = os.getenv("GPT_OSS_VERIFICATION_REASONING", "hig
 
 # Legacy single reasoning effort (for backward compatibility)
 REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", SOLUTION_REASONING_EFFORT)
+
+# TIER 2 Refinement Configuration
+ENABLE_TIER2_REFINEMENT = os.getenv("ENABLE_TIER2_REFINEMENT", "true").lower() == "true"
+TIER2_MAX_ROUNDS = int(os.getenv("TIER2_MAX_ROUNDS", "5"))
+TIER2_REFINEMENT_REASONING = os.getenv("TIER2_REFINEMENT_REASONING", "high")
+TIER2_VERIFICATION_REASONING = os.getenv("TIER2_VERIFICATION_REASONING", "high")
 
 # Print configuration on module load
 import sys
@@ -3656,14 +3670,88 @@ Start completely fresh with a different mathematical approach.
                     reasoning_effort=ver_reasoning
                 )
 
-                if "yes" in good_verify.lower():
-                    print(">>>>>>> [RLAC FINAL] ✓ Passed both adversarial AND cooperative verification!")
+                cooperative_verified = "yes" in good_verify.lower()
+
+                if cooperative_verified:
+                    print(">>>>>>> [RLAC FINAL] ✓ TIER 2 ACHIEVED: Passed both adversarial AND cooperative verification!")
+                    tier_status = "TIER_2_VERIFIED"
                 else:
-                    print(">>>>>>> [RLAC FINAL] ⚠️  Failed cooperative verification (but adversarial threshold met)")
+                    print(">>>>>>> [RLAC FINAL] ✓ TIER 1 ACHIEVED: Adversarial robustness confirmed")
+                    print(">>>>>>> [RLAC FINAL] ⚠️  Cooperative verification found proof gaps")
+                    tier_status = "TIER_1_ROBUST"
+
+                    # TIER 2 Refinement: Attempt to fix proof gaps
+                    if ENABLE_TIER2_REFINEMENT and TIER2_AVAILABLE and not cooperative_verified:
+                        print("\n" + "="*80)
+                        print(">>>>>>> [TIER 2] Attempting proof refinement to fill gaps...")
+                        print(f">>>>>>> [TIER 2] Max refinement rounds: {TIER2_MAX_ROUNDS}")
+                        print(f">>>>>>> [TIER 2] Refinement reasoning: {TIER2_REFINEMENT_REASONING}")
+                        print("="*80)
+
+                        try:
+                            # Create wrapper functions for tier2_refinement_loop
+                            def verify_wrapper(prob, sol, reasoning):
+                                return verify_solution_safe(prob, sol, reasoning_effort=reasoning)
+
+                            def generate_wrapper(prompt, reasoning):
+                                # Generate refined solution using existing infrastructure
+                                payload = build_request_payload(
+                                    system_prompt="You are an expert mathematical proof writer. Your task is to refine existing proofs to meet rigorous verification standards.",
+                                    question_prompt=prompt,
+                                    reasoning_effort=reasoning
+                                )
+                                response_text = send_api_request(get_api_key(), payload)
+                                return extract_text_from_response(response_text)
+
+                            # Run TIER 2 refinement
+                            refined_solution, tier_status, refinement_history = tier2_refinement_loop(
+                                problem_statement=problem_statement,
+                                rlac_solution=solution,
+                                locked_answer=locked_answer if answer_locked else extract_boxed_answer(solution),
+                                verify_solution_func=verify_wrapper,
+                                generate_solution_func=generate_wrapper,
+                                max_refinement_rounds=TIER2_MAX_ROUNDS,
+                                refinement_reasoning=TIER2_REFINEMENT_REASONING,
+                                verification_reasoning=TIER2_VERIFICATION_REASONING,
+                                verbose=True
+                            )
+
+                            # If TIER 2 achieved, use refined solution
+                            if tier_status == "TIER_2_VERIFIED":
+                                print(f"\n>>>>>>> [TIER 2 SUCCESS] ✓✓ Achieved TIER 2: Answer + Proof verified!")
+                                solution = refined_solution
+                            else:
+                                print(f"\n>>>>>>> [TIER 2 INCOMPLETE] Staying at TIER 1: Answer verified (proof has gaps)")
+
+                            # Save TIER 2 metadata
+                            if memory_file and refinement_history:
+                                tier2_file = memory_file.replace('.json', '_tier2_refinement.json')
+                                try:
+                                    with open(tier2_file, 'w') as f:
+                                        json.dump({
+                                            'tier_status': tier_status,
+                                            'refinement_rounds': len(refinement_history),
+                                            'refinement_history': refinement_history,
+                                            'final_solution': refined_solution[:1000]  # First 1000 chars
+                                        }, f, indent=2, ensure_ascii=False)
+                                    print(f">>>>>>> [TIER 2] Refinement metadata saved to {tier2_file}")
+                                except Exception as e:
+                                    print(f">>>>>>> [TIER 2] Error saving metadata: {e}")
+
+                        except Exception as e:
+                            print(f">>>>>>> [TIER 2 ERROR] Refinement failed: {e}")
+                            print(f">>>>>>> [TIER 2 ERROR] Staying at TIER 1 (answer correct)")
+                            tier_status = "TIER_1_ROBUST"
+
+                    elif not TIER2_AVAILABLE:
+                        print(">>>>>>> [TIER 2] Refinement module not available (staying at TIER 1)")
+                    elif not ENABLE_TIER2_REFINEMENT:
+                        print(">>>>>>> [TIER 2] Refinement disabled (ENABLE_TIER2_REFINEMENT=false)")
 
                 # P0 FIX: Return solution regardless of cooperative verification result
                 # If solution passed adversarial attacks, that's sufficient
                 # P0 FIX: Ensure locked answer is saved when success achieved
+                print(f"\n>>>>>>> [RLAC FINAL] Final tier status: {tier_status}")
                 print(f">>>>>>> [RLAC FINAL] Answer lock status: {'LOCKED' if answer_locked else 'UNLOCKED'}")
                 if answer_locked and locked_answer:
                     print(f">>>>>>> [RLAC FINAL] Locked answer saved: {locked_answer[:100]}...")
