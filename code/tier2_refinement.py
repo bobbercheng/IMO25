@@ -112,7 +112,8 @@ def tier2_refinement_loop(
         )
 
         # Step 7: CRITICAL - Verify answer didn't change
-        refined_answer = extract_boxed_answer(refined_solution)
+        # (Disabled for proof problems - see is_proof_problem())
+        refined_answer = extract_boxed_answer(refined_solution, problem_statement)
 
         if refined_answer and refined_answer != locked_answer:
             if verbose:
@@ -310,15 +311,59 @@ However, the proof has some **presentation issues** that need refinement. Your t
     return prompt
 
 
-def extract_boxed_answer(solution):
+def is_proof_problem(problem_statement):
+    """
+    Detect if the problem asks to prove something (not compute a value).
+
+    For "prove that" problems, there's no discrete answer to lock - the answer
+    IS the proof itself. Attempting to lock intermediate boxed results creates
+    instability during refinement.
+
+    Args:
+        problem_statement: The problem text
+
+    Returns:
+        True if this is a proof problem, False otherwise
+    """
+    if not problem_statement:
+        return False
+
+    problem_lower = problem_statement.lower()
+
+    # Common proof problem indicators
+    proof_indicators = [
+        'prove that',
+        'show that',
+        'demonstrate that',
+        'verify that',
+        'establish that',
+        'prove the',
+    ]
+
+    return any(indicator in problem_lower for indicator in proof_indicators)
+
+
+def extract_boxed_answer(solution, problem_statement=None):
     """
     Extract answer from \\boxed{...} for verification.
     Handles nested braces correctly (e.g., \\dfrac{a}{b}, \\Bigl(...\\Bigr)).
 
+    For "prove that" problems, returns None to disable answer locking.
+    This prevents false rejections when refinements reorder proof steps.
+
+    Args:
+        solution: The solution text containing boxed expressions
+        problem_statement: Original problem (optional, for proof detection)
+
     Returns:
-        Extracted answer string or None if not found
+        Extracted answer string or None if not found/disabled
     """
     if not solution:
+        return None
+
+    # Disable answer locking for proof problems
+    # (Their "answer" is the proof itself, not a boxed intermediate result)
+    if problem_statement and is_proof_problem(problem_statement):
         return None
 
     # Find \boxed{ or boxed{
