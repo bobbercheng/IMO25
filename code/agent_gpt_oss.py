@@ -42,7 +42,7 @@ from agent_oai import (
 
 # Import TIER 2 refinement module
 try:
-    from tier2_refinement import tier2_refinement_loop, extract_boxed_answer
+    from tier2_refinement import tier2_refinement_loop, extract_boxed_answer, select_tier2_strategy
     TIER2_AVAILABLE = True
 except ImportError:
     print("[WARNING] TIER 2 refinement module not available")
@@ -67,10 +67,11 @@ REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", SOLUTION_REASONING_EFFO
 
 # TIER 2 Refinement Configuration
 ENABLE_TIER2_REFINEMENT = os.getenv("ENABLE_TIER2_REFINEMENT", "true").lower() == "true"
-TIER2_MAX_ROUNDS = int(os.getenv("TIER2_MAX_ROUNDS", "8"))  # Increased from 5 to 8
+TIER2_MAX_ROUNDS = int(os.getenv("TIER2_MAX_ROUNDS", "5"))  # Expert consensus: 5 rounds with fixed verification
 TIER2_REFINEMENT_REASONING = os.getenv("TIER2_REFINEMENT_REASONING", "high")
-TIER2_VERIFICATION_REASONING = os.getenv("TIER2_VERIFICATION_REASONING", "medium")  # Changed from "high" to "medium"
-TIER2_USE_GRADUATED_VERIFICATION = os.getenv("TIER2_USE_GRADUATED_VERIFICATION", "true").lower() == "true"
+TIER2_VERIFICATION_REASONING = os.getenv("TIER2_VERIFICATION_REASONING", "medium")  # Fixed medium verification
+TIER2_USE_GRADUATED_VERIFICATION = os.getenv("TIER2_USE_GRADUATED_VERIFICATION", "false").lower() == "true"  # Disabled per expert analysis
+TIER2_AUTO_DETECT_STRATEGY = os.getenv("TIER2_AUTO_DETECT_STRATEGY", "true").lower() == "true"  # Auto-detect proof type
 
 # Print configuration on module load
 import sys
@@ -3685,8 +3686,11 @@ Start completely fresh with a different mathematical approach.
                     if ENABLE_TIER2_REFINEMENT and TIER2_AVAILABLE and not cooperative_verified:
                         print("\n" + "="*80)
                         print(">>>>>>> [TIER 2] Attempting proof refinement to fill gaps...")
-                        print(f">>>>>>> [TIER 2] Max refinement rounds: {TIER2_MAX_ROUNDS}")
+                        print(f">>>>>>> [TIER 2] Auto-detect strategy: {TIER2_AUTO_DETECT_STRATEGY}")
+                        print(f">>>>>>> [TIER 2] Max refinement rounds (default): {TIER2_MAX_ROUNDS}")
                         print(f">>>>>>> [TIER 2] Refinement reasoning: {TIER2_REFINEMENT_REASONING}")
+                        print(f">>>>>>> [TIER 2] Verification reasoning (default): {TIER2_VERIFICATION_REASONING}")
+                        print(f">>>>>>> [TIER 2] Graduated verification (default): {TIER2_USE_GRADUATED_VERIFICATION}")
                         print("="*80)
 
                         try:
@@ -3704,6 +3708,26 @@ Start completely fresh with a different mathematical approach.
                                 response_text = send_api_request(get_api_key(), payload)
                                 return extract_text_from_response(response_text)
 
+                            # Auto-detect optimal TIER 2 strategy based on proof type
+                            if TIER2_AUTO_DETECT_STRATEGY:
+                                strategy = select_tier2_strategy(solution, problem_statement)
+                                print(f"\n>>>>>>> [TIER 2 STRATEGY] Auto-detected: {strategy['strategy_name']}")
+                                print(f">>>>>>> [TIER 2 STRATEGY] Verification: {strategy['verification_reasoning']}")
+                                print(f">>>>>>> [TIER 2 STRATEGY] Graduated: {strategy['use_graduated_verification']}")
+                                print(f">>>>>>> [TIER 2 STRATEGY] Max rounds: {strategy['max_rounds']}")
+                                if strategy['require_symbolic_validation']:
+                                    print(f">>>>>>> [TIER 2 STRATEGY] ⚠️  Symbolic validation recommended (coordinate geometry)")
+
+                                # Use detected strategy
+                                tier2_max_rounds = strategy['max_rounds']
+                                tier2_verification = strategy['verification_reasoning']
+                                tier2_graduated = strategy['use_graduated_verification']
+                            else:
+                                # Use manual configuration
+                                tier2_max_rounds = TIER2_MAX_ROUNDS
+                                tier2_verification = TIER2_VERIFICATION_REASONING
+                                tier2_graduated = TIER2_USE_GRADUATED_VERIFICATION
+
                             # Run TIER 2 refinement
                             refined_solution, tier_status, refinement_history = tier2_refinement_loop(
                                 problem_statement=problem_statement,
@@ -3711,10 +3735,10 @@ Start completely fresh with a different mathematical approach.
                                 locked_answer=locked_answer if answer_locked else extract_boxed_answer(solution, problem_statement),
                                 verify_solution_func=verify_wrapper,
                                 generate_solution_func=generate_wrapper,
-                                max_refinement_rounds=TIER2_MAX_ROUNDS,
+                                max_refinement_rounds=tier2_max_rounds,
                                 refinement_reasoning=TIER2_REFINEMENT_REASONING,
-                                verification_reasoning=TIER2_VERIFICATION_REASONING,
-                                use_graduated_verification=TIER2_USE_GRADUATED_VERIFICATION,
+                                verification_reasoning=tier2_verification,
+                                use_graduated_verification=tier2_graduated,
                                 verbose=True
                             )
 

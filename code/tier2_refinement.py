@@ -14,6 +14,112 @@ import re
 import os
 import json
 
+# Symbolic validation support (optional, only if sympy available)
+try:
+    import sympy as sp
+    SYMPY_AVAILABLE = True
+except ImportError:
+    SYMPY_AVAILABLE = False
+
+
+def validate_equation_symbolically(equation_text, verbose=False):
+    """
+    Validate an algebraic equation using symbolic computation.
+
+    This is a basic implementation that checks if an equation simplifies to 0=0.
+    For coordinate geometry proofs, catching formula errors early prevents
+    error propagation through subsequent calculations.
+
+    Args:
+        equation_text: String like "x^2 + y^2 = r^2" or "LHS = RHS"
+        verbose: Print validation details
+
+    Returns:
+        dict with keys:
+            - 'valid': bool (True if equation is symbolically valid)
+            - 'simplified': str (simplified form)
+            - 'error': str (error message if validation failed)
+    """
+    if not SYMPY_AVAILABLE:
+        return {
+            'valid': None,
+            'simplified': None,
+            'error': 'SymPy not available - install with: pip install sympy'
+        }
+
+    try:
+        # Extract LHS and RHS from equation
+        if '=' in equation_text:
+            parts = equation_text.split('=')
+            if len(parts) == 2:
+                lhs_text = parts[0].strip()
+                rhs_text = parts[1].strip()
+
+                # Parse with SymPy
+                lhs = sp.sympify(lhs_text)
+                rhs = sp.sympify(rhs_text)
+
+                # Simplify difference
+                diff = sp.simplify(lhs - rhs)
+
+                if verbose:
+                    print(f"[SYMBOLIC] LHS: {lhs}")
+                    print(f"[SYMBOLIC] RHS: {rhs}")
+                    print(f"[SYMBOLIC] Simplified difference: {diff}")
+
+                # Check if difference is zero
+                is_valid = diff == 0
+
+                return {
+                    'valid': is_valid,
+                    'simplified': str(diff),
+                    'error': None if is_valid else f"Equation does not hold: {lhs} ≠ {rhs}"
+                }
+            else:
+                return {
+                    'valid': None,
+                    'simplified': None,
+                    'error': f"Could not parse equation (found {len(parts)} parts, expected 2)"
+                }
+        else:
+            return {
+                'valid': None,
+                'simplified': None,
+                'error': "No '=' found in equation"
+            }
+
+    except Exception as e:
+        return {
+            'valid': None,
+            'simplified': None,
+            'error': f"Symbolic validation error: {str(e)}"
+        }
+
+
+def extract_equations_from_proof(proof_text):
+    """
+    Extract mathematical equations from a proof for validation.
+
+    For coordinate geometry proofs, this helps identify equations that
+    should be symbolically validated.
+
+    Args:
+        proof_text: The proof text
+
+    Returns:
+        List of equation strings
+    """
+    equations = []
+
+    # Pattern: equation number followed by equation (e.g., "(3.2) q = ...")
+    equation_pattern = r'\([\d.]+\)\s*([^.]+\s*=\s*[^.]+)'
+    matches = re.findall(equation_pattern, proof_text)
+
+    for match in matches:
+        equations.append(match.strip())
+
+    return equations
+
 
 def tier2_refinement_loop(
     problem_statement,
@@ -356,6 +462,170 @@ def is_proof_problem(problem_statement):
     ]
 
     return any(indicator in problem_lower for indicator in proof_indicators)
+
+
+def uses_coordinate_geometry(solution):
+    """
+    Detect if a solution uses coordinate geometry approach.
+
+    Coordinate proofs are characterized by:
+    - Explicit coordinate assignments (x=..., y=...)
+    - Vector operations (dot products, cross products)
+    - Distance formulas, slope calculations
+    - Algebraic manipulations of coordinates
+
+    These proofs require STRICT algebraic verification - formula errors are fatal.
+
+    Args:
+        solution: The proof text
+
+    Returns:
+        True if solution uses coordinate geometry, False otherwise
+    """
+    if not solution:
+        return False
+
+    # Indicators of coordinate geometry
+    coordinate_indicators = [
+        # Coordinate assignments
+        r'[A-Z]\s*=\s*\(',  # A = (x, y)
+        r'\(x[_0-9]*\s*,\s*y[_0-9]*\)',  # (x_0, y_0)
+        r'\(0\s*,\s*0\)',  # Origin
+
+        # Vector operations
+        r'\\cdot',  # Dot product
+        r'\\times',  # Cross product
+        r'v_x|v_y|v_\{x\}|v_\{y\}',  # Vector components
+
+        # Distance/slope formulas
+        r'\\sqrt\{[^}]*x[^}]*\^2.*y[^}]*\^2',  # Distance formula
+        r'\\frac\{y[_0-9]*\s*-\s*y[_0-9]*\}\{x[_0-9]*\s*-\s*x[_0-9]*\}',  # Slope
+
+        # Coordinate-specific terms
+        'coordinate system',
+        'place.*origin',
+        'perpendicular bisector.*equation',
+        'slope.*perpendicular',
+    ]
+
+    matches = sum(1 for pattern in coordinate_indicators if re.search(pattern, solution))
+
+    # Consider it coordinate geometry if we find 3+ indicators
+    return matches >= 3
+
+
+def uses_synthetic_geometry(solution):
+    """
+    Detect if a solution uses synthetic (classical) geometry approach.
+
+    Synthetic proofs are characterized by:
+    - Angle chasing arguments
+    - Similar triangles, congruence
+    - Power of a point, radical axis
+    - Circle theorems (inscribed angle, etc.)
+    - Homothety, spiral similarity
+
+    These proofs can benefit from graduated verification - ideas matter more than calculations.
+
+    Args:
+        solution: The proof text
+
+    Returns:
+        True if solution uses synthetic geometry, False otherwise
+    """
+    if not solution:
+        return False
+
+    # Indicators of synthetic geometry
+    synthetic_indicators = [
+        # Angle chasing
+        r'angle.*equal',
+        r'\\angle\s+[A-Z]{3}',  # \angle ABC
+        'inscribed angle',
+        'central angle',
+
+        # Triangle properties
+        'similar triangle',
+        'congruent',
+        r'\\triangle\s+[A-Z]{3}\s*\\sim\s*\\triangle',  # △ABC ~ △DEF
+
+        # Circle theorems
+        'power of.*point',
+        'radical axis',
+        'concyclic',
+        'cyclic quadrilateral',
+
+        # Transformations
+        'homothety',
+        'spiral similarity',
+        'inversion',
+
+        # Classical results
+        'perpendicular bisector.*intersect',
+        'angle bisector theorem',
+        'ceva.*theorem',
+        'menelaus',
+    ]
+
+    matches = sum(1 for pattern in synthetic_indicators if re.search(pattern, solution.lower()))
+
+    # Consider it synthetic geometry if we find 3+ indicators
+    return matches >= 3
+
+
+def select_tier2_strategy(solution, problem_statement=None):
+    """
+    Select TIER 2 verification strategy based on proof type.
+
+    Different proof types require different verification approaches:
+    - Coordinate geometry: STRICT (zero tolerance for formula errors)
+    - Synthetic geometry: GRADUATED (ideas matter more than calculation details)
+    - Mixed/Unknown: MEDIUM (balanced approach)
+
+    Args:
+        solution: The proof text
+        problem_statement: Original problem (optional, for context)
+
+    Returns:
+        dict with keys:
+            - 'verification_reasoning': str (low/medium/high)
+            - 'use_graduated_verification': bool
+            - 'max_rounds': int
+            - 'require_symbolic_validation': bool
+    """
+    is_coordinate = uses_coordinate_geometry(solution)
+    is_synthetic = uses_synthetic_geometry(solution)
+
+    if is_coordinate:
+        # Coordinate geometry: strict verification from the start
+        # Formula errors propagate through entire proof
+        return {
+            'verification_reasoning': 'high',
+            'use_graduated_verification': False,
+            'max_rounds': 5,
+            'require_symbolic_validation': True,
+            'strategy_name': 'COORDINATE_STRICT'
+        }
+    elif is_synthetic:
+        # Synthetic geometry: graduated verification OK
+        # Logical flow matters more than calculation details
+        return {
+            'verification_reasoning': 'medium',
+            'use_graduated_verification': True,
+            'max_rounds': 8,
+            'require_symbolic_validation': False,
+            'strategy_name': 'SYNTHETIC_GRADUATED'
+        }
+    else:
+        # Mixed or unknown: conservative balanced approach
+        # Based on expert consensus: fixed medium verification
+        return {
+            'verification_reasoning': 'medium',
+            'use_graduated_verification': False,
+            'max_rounds': 5,
+            'require_symbolic_validation': False,
+            'strategy_name': 'BALANCED_FIXED'
+        }
 
 
 def extract_boxed_answer(solution, problem_statement=None):
