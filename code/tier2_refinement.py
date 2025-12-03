@@ -23,7 +23,8 @@ def tier2_refinement_loop(
     generate_solution_func,
     max_refinement_rounds=5,
     refinement_reasoning="high",
-    verification_reasoning="high",
+    verification_reasoning="medium",
+    use_graduated_verification=True,
     verbose=True
 ):
     """
@@ -37,7 +38,8 @@ def tier2_refinement_loop(
         generate_solution_func: Function(prompt, reasoning) -> solution
         max_refinement_rounds: Max iterations (default: 5)
         refinement_reasoning: Reasoning level for gap-filling (default: "high")
-        verification_reasoning: Reasoning level for verification (default: "high")
+        verification_reasoning: Reasoning level for verification (default: "medium")
+        use_graduated_verification: Use graduated verification (low→medium→high) (default: True)
         verbose: Print progress messages
 
     Returns:
@@ -48,23 +50,36 @@ def tier2_refinement_loop(
     if verbose:
         print("\n" + "="*80)
         print("[TIER 2 REFINEMENT] Starting proof refinement phase")
-        print(f"[TIER 2] Answer locked: {locked_answer[:100]}...")
+        print(f"[TIER 2] Answer locked: {locked_answer[:100] if locked_answer else 'None (proof problem)'}...")
         print(f"[TIER 2] Refinement rounds budget: {max_refinement_rounds}")
-        print(f"[TIER 2] Reasoning effort: {refinement_reasoning}")
+        print(f"[TIER 2] Refinement reasoning: {refinement_reasoning}")
+        print(f"[TIER 2] Verification reasoning: {verification_reasoning}")
+        print(f"[TIER 2] Graduated verification: {'enabled' if use_graduated_verification else 'disabled'}")
         print("="*80 + "\n")
 
     current_solution = rlac_solution
     refinement_history = []
 
     for round_num in range(max_refinement_rounds):
-        if verbose:
-            print(f"\n[TIER 2 ROUND {round_num+1}] Running cooperative verification...")
+        # Determine verification reasoning level for this round
+        if use_graduated_verification:
+            if round_num < 3:
+                current_verification = "low"
+            elif round_num < 6:
+                current_verification = "medium"
+            else:
+                current_verification = "high"
+        else:
+            current_verification = verification_reasoning
 
-        # Step 1: Run cooperative verification with HIGH reasoning
+        if verbose:
+            print(f"\n[TIER 2 ROUND {round_num+1}] Running cooperative verification (reasoning: {current_verification})...")
+
+        # Step 1: Run cooperative verification
         bug_report, verdict = verify_solution_func(
             problem_statement,
             current_solution,
-            verification_reasoning
+            current_verification
         )
 
         # Step 2: Check if verification passed

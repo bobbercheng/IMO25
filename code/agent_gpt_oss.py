@@ -67,9 +67,10 @@ REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", SOLUTION_REASONING_EFFO
 
 # TIER 2 Refinement Configuration
 ENABLE_TIER2_REFINEMENT = os.getenv("ENABLE_TIER2_REFINEMENT", "true").lower() == "true"
-TIER2_MAX_ROUNDS = int(os.getenv("TIER2_MAX_ROUNDS", "5"))
+TIER2_MAX_ROUNDS = int(os.getenv("TIER2_MAX_ROUNDS", "8"))  # Increased from 5 to 8
 TIER2_REFINEMENT_REASONING = os.getenv("TIER2_REFINEMENT_REASONING", "high")
-TIER2_VERIFICATION_REASONING = os.getenv("TIER2_VERIFICATION_REASONING", "high")
+TIER2_VERIFICATION_REASONING = os.getenv("TIER2_VERIFICATION_REASONING", "medium")  # Changed from "high" to "medium"
+TIER2_USE_GRADUATED_VERIFICATION = os.getenv("TIER2_USE_GRADUATED_VERIFICATION", "true").lower() == "true"
 
 # Print configuration on module load
 import sys
@@ -3707,12 +3708,13 @@ Start completely fresh with a different mathematical approach.
                             refined_solution, tier_status, refinement_history = tier2_refinement_loop(
                                 problem_statement=problem_statement,
                                 rlac_solution=solution,
-                                locked_answer=locked_answer if answer_locked else extract_boxed_answer(solution),
+                                locked_answer=locked_answer if answer_locked else extract_boxed_answer(solution, problem_statement),
                                 verify_solution_func=verify_wrapper,
                                 generate_solution_func=generate_wrapper,
                                 max_refinement_rounds=TIER2_MAX_ROUNDS,
                                 refinement_reasoning=TIER2_REFINEMENT_REASONING,
                                 verification_reasoning=TIER2_VERIFICATION_REASONING,
+                                use_graduated_verification=TIER2_USE_GRADUATED_VERIFICATION,
                                 verbose=True
                             )
 
