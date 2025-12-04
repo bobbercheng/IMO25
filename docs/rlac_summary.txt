@@ -1,0 +1,275 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    RLAC ENHANCEMENT RESEARCH SUMMARY                         ║
+║          Bridging the Gap: Good Solutions → Actually Verified Correct        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+PROBLEM IDENTIFIED (from IMO-02 analysis):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Iteration 1 Result:
+  Generator: "I have a complete, rigorous solution" ✓ APPEARS GOOD
+  Verifier:  "INVALID - Multiple critical errors" ✗ FAILS VERIFICATION
+
+Gap Analysis:
+  • Solution structure looks correct (outlines, lemmas, proofs)
+  • Mathematical language is appropriate
+  • Reasoning flow appears logical
+  • BUT: Theorem preconditions not actually satisfied
+  • BUT: Claims (CE = AE) false without justification
+  • BUT: Perpendicularity (AP ⊥ PM) asserted without proof
+  • BUT: Main proof incomplete (stops after lemma)
+
+ROOT CAUSE: Confidence Calibration Gap
+  Generator confidence: "This is rigorous" (99%)
+  Verification confidence: "This has critical errors" (99%)
+  Gap: No mechanism during generation to challenge weak assumptions
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CURRENT RLAC IMPLEMENTATION (in codebase):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Files present:
+  ✓ code/adversarial_critic.py      - Implements adversarial attacks
+  ✓ code/adversarial_prompts.py     - Attack prompt templates
+  ✓ code/agent_rlac.py              - RLAC orchestration
+
+Current Capabilities:
+  ✓ Attack generation with progressive difficulty (BASIC → MODERATE → ADVANCED)
+  ✓ Verdict classification (BROKEN / SUSPICIOUS / ROBUST)
+  ✓ Counterexample detection
+  ✓ Penalty scoring (-10 critical, -5 major, -2 minor)
+  ✓ Attack history tracking
+  ✓ Stuck pattern detection
+
+Gap in Current Implementation:
+  ✗ Attacks run AFTER full solution (post-hoc judgment)
+  ✗ Binary verdicts (no structured flaw locations)
+  ✗ Generic attack patterns (not domain-specific)
+  ✗ No confidence requirement or calibration tracking
+  ✗ Defense/concession responses not tracked
+  ✗ No multi-stage pipeline (outline → lemma → integration → robustness)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROPOSED ENHANCEMENTS (6 Key Improvements):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. CRITIC-ASSISTED SOLUTION GENERATION (CASG)
+   Current: Generate full solution → Verify at the end
+   Proposed: Outline → Critic attacks → Generator revises → Full writeup
+   
+   Benefit: Early detection of doomed approaches
+   Timing: During generation, not after
+   Cost: Early rounds cheap (outline only), not full proof
+
+2. STRUCTURED FLAW REPORTING WITH SEVERITY & LOCATION
+   Current: "Verdict: BROKEN"
+   Proposed: JSON with type/severity/location/claim/why_wrong/counterexample/fix
+   
+   Example fix for "CE = AE" error:
+   {
+     "type": "logical_error",
+     "severity": "critical",
+     "location": "Step 4: Chord Identification",
+     "specific_claim": "chord CE coincides with chord AE",
+     "why_wrong": "Points C, A, E are not collinear (C and A distinct on Ω, 
+                   E is second intersection of line AP with Ω)",
+     "counterexample": "In configuration with Ω centered at origin, radius 1,
+                        C and A are distinct points on Ω, E on different arc",
+     "suggested_fix": "Use power-of-a-point instead: AC·AD = AB² = AE·AF"
+   }
+   
+   Benefit: Generator can target specific fixes, not redo entire solution
+
+3. GEOMETRY-SPECIFIC ATTACK CURRICULUM
+   Current: Generic BASIC → MODERATE → ADVANCED
+   Proposed: Domain progression optimized for geometry
+   
+   Round 0-1: Definition Check
+     "Does every term used exist? Is point P on line L?"
+   Round 2-3: Theorem Preconditions
+     "Angle-bisector applies: verify vertex, angle, opposite side"
+   Round 4-6: Configuration Verification
+     "Can you construct this explicitly? Is it non-degenerate?"
+   Round 7-8: Logical Closure
+     "Are all cases covered? Circular reasoning?"
+   Round 9+: Rigorous Reconstruction
+     "Rewrite formally with every step justified"
+   
+   Benefit: Attacks match problem complexity, not generic difficulty
+
+4. COUNTEREXAMPLE GENERATION FOR GEOMETRIC CLAIMS
+   Current: Attack identifies issues, maybe with examples
+   Proposed: Systematic construction of configurations breaking claims
+   
+   For "∠CEA = ∠DFA":
+     Construct explicit circles Ω, Γ with centers M, N
+     Find points A, C, D, E, F explicitly
+     Compute actual angles: ∠CEA = X°, ∠DFA = Y°
+     If X ≠ Y: Counterexample found
+   
+   Benefit: Generator sees EXACTLY why claim fails, not abstract criticism
+
+5. DEFENSE & CONCESSION TRACKING
+   Current: Generator receives verdict, has to infer what to fix
+   Proposed: Track how generator responds to each attack
+   
+   Response Type A (Valid Defense):
+     Generator: "AP ⊥ PM because [PROOF]. Your attack misunderstood."
+     Analyzer: Critic attack was spurious, improve critic
+   
+   Response Type B (Concession):
+     Generator: "You're right, AP ⊥ PM is unjustified. Let me fix it."
+     Analyzer: Generator learned correct response to this attack type
+   
+   Response Type C (Deflection):
+     Generator: "That's minor, main argument still holds..."
+     Analyzer: Red flag - generator avoiding the issue
+   
+   Benefit: Identifies which attacks work and which don't, improves critic
+
+6. CONFIDENCE CALIBRATION THROUGH ADVERSARIAL FEEDBACK
+   Current: No confidence tracking; generator is overconfident
+   Proposed: Force confidence statements + penalties for miscalibration
+   
+   Before attack: Generator states "I claim [X] with confidence 0.95"
+   After attack: 
+     If claim holds → Confidence justified, reward
+     If claim breaks → Miscalibration penalty (larger than normal error penalty)
+   
+   Learning signal: Overconfident incorrect claims are worse than 
+                    careful partial claims
+   
+   Benefit: Solutions become better calibrated to actual difficulty
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MULTI-STAGE VERIFICATION PIPELINE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Instead of single binary verification at the end:
+
+Stage 1: Outline Verification (EARLY)
+  → Is strategic approach sound?
+  → Are lemmas correctly stated?
+  → Does flow make sense?
+  → Kill doomed approaches early
+
+Stage 2: Lemma Verification (MID)
+  → Each lemma attacked as standalone theorem
+  → Preconditions stated?
+  → Proof complete?
+  → Counterexample exists?
+
+Stage 3: Integration Verification (LATE)
+  → Do lemmas connect?
+  → Does final claim follow?
+  → Circular dependencies?
+
+Stage 4: Robustness Verification (FINAL)
+  → Remove one assumption—still true?
+  → Boundary cases handled?
+  → Can rewrite formally?
+
+Each stage → specific criticisms → feedback to generator
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+KEY INSIGHT: TIMING MATTERS MORE THAN QUALITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Current: Excellent critic, wrong time
+  Generate full solution (overcommitted to approach)
+  → Run verification (critical errors found)
+  → Too late to reshape generation process
+
+Proposed: Good critic, right time
+  Generate outline (low commitment)
+  → Run critic (attacks weak claims early)
+  → Generator has time to try alternative approach
+  → Iteratively improve while generation is still flexible
+
+Result: Solutions shaped by adversarial feedback during generation,
+        not judged by verification after completion.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXAMPLE SCENARIO: IMO-02 WITHOUT vs WITH RLAC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WITHOUT RLAC (Current):
+  1. Generate outline: "Use angle-bisector theorem"
+  2. Generate full solution (1000+ tokens, heavy investment)
+  3. Run verification
+  4. Verdict: "INVALID - Angle-bisector preconditions not satisfied"
+  5. Generator: "Hmm, I failed. Let me try again..." (repeats step 1)
+  6. No specific guidance on what's wrong or how to fix it
+
+WITH RLAC (Proposed):
+  1. Generate outline: "Use angle-bisector theorem"
+  2. Critic Round 0 attacks: "Precondition check: Does E lie on side CD?"
+  3. Generator reads: "Oh, E is the second intersection with Ω, not on CD!"
+  4. Generator revises: "I need power-of-a-point instead"
+  5. Generate outline: "Use power-of-a-point, establish cyclicity of A,P,M,N"
+  6. Critic Round 1 attacks: "You claim A,P,M,N concyclic. How is this proven?"
+  7. Generator responds: "By symmetric properties of circumcenter..."
+  8. Critic accepts or challenges further
+  9. Generator continues building based on feedback
+  10. Final solution is shaped by adversarial testing, much more robust
+
+KEY DIFFERENCE: Feedback shapes generation process in real time.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXPECTED OUTCOMES:
+━━━━━━━━━━━━━━━━
+
+Success Metrics:
+  1. Verification pass rate: 0% → 40-60% (high-reasoning acceptance)
+  2. False confidence: Drops significantly (calibration improves)
+  3. Concession rate: Generators fix flaws when attacked
+  4. Early detection: Critic catches issues before full writeup
+
+Confidence Calibration:
+  Current:
+    Generator confidence: "This is rigorous and complete" (99%)
+    Verification: "Critical errors found" (fail)
+    Error: 100%
+  
+  Target:
+    Generator confidence: "Looks good, uncertain about perpendicularity" (70%)
+    Verification: "Fix perpendicularity claim" (specific feedback)
+    Error: 5-10%
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RESEARCH CONCLUSION:
+━━━━━━━━━━━━━━━━━
+
+The IMO-02 test case reveals a fundamental gap: **fast generation (low reasoning) 
+produces solutions that SOUND good but are ACTUALLY invalid**.
+
+This gap is NOT fixed by:
+  ✗ Better verification (it catches errors too late)
+  ✗ Higher reasoning effort (too expensive during generation)
+  ✗ More training data (doesn't teach calibration)
+
+This gap IS fixed by:
+  ✓ Inserting adversarial critics DURING generation (not just after)
+  ✓ Providing SPECIFIC feedback (structured flaws with location, not binary verdict)
+  ✓ Using DOMAIN-SPECIFIC attacks (geometry patterns, theorem preconditions)
+  ✓ TRACKING generator responses (defense vs. concession learning)
+  ✓ CALIBRATING confidence (penalize overconfidence, reward justified claims)
+
+RLAC framework provides exactly this: An adversarial critic that acts as a 
+"PROOF SABOTEUR" rather than a "PROOF GRADER", enabling feedback to shape 
+generation, not just judge it.
+
+By shifting WHEN and HOW criticism is applied, we can move from:
+  Current: Overconfident invalid solutions
+  Target: Calibrated, verification-resistant solutions
+
+The proposed enhancements are research-ready and can be implemented 
+incrementally into the existing codebase.
+
