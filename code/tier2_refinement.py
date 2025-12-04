@@ -107,29 +107,150 @@ def extract_equations_from_proof(proof_text):
     """
     Extract mathematical equations from a proof for validation.
 
-    For coordinate geometry proofs, this helps identify equations that
-    should be symbolically validated.
+    Supports multiple formats:
+    - Inline numbered: (3.2) q = ...
+    - LaTeX display: \\[ ... \\]
+    - LaTeX with tags: \\[ ... \\tag{n} \\]
+    - Inline LaTeX: \\( ... \\)
 
     Args:
         proof_text: The proof text
 
     Returns:
-        List of equation strings
+        List of equation strings (cleaned, SymPy-compatible)
     """
     equations = []
 
-    # Pattern: equation number followed by equation (e.g., "(3.2) q = ...")
-    # Improved to stop at newline or end of sentence
-    equation_pattern = r'\([\d.]+\)\s*([^\n.]+\s*=\s*[^\n.]+?)(?:\n|\.|\s{2}|$)'
-    matches = re.findall(equation_pattern, proof_text, re.MULTILINE)
+    # Pattern 1: Inline numbered equations (e.g., "(3.2) q = ...")
+    inline_pattern = r'\([\d.]+\)\s*([^\n.]+\s*=\s*[^\n.]+?)(?:\n|\.|\s{2}|$)'
+    inline_matches = re.findall(inline_pattern, proof_text, re.MULTILINE)
 
-    for match in matches:
-        # Clean up extra whitespace
+    for match in inline_matches:
         cleaned = match.strip()
-        if cleaned:
-            equations.append(cleaned)
+        if cleaned and '=' in cleaned:
+            # Convert basic LaTeX to SymPy
+            cleaned = clean_latex_equation(cleaned)
+            if cleaned:
+                equations.append(cleaned)
+
+    # Pattern 2: LaTeX display equations \\[ ... \\]
+    # Use non-greedy match and DOTALL to handle multi-line equations
+    latex_pattern = r'\\\[(.*?)\\\]'
+    latex_matches = re.findall(latex_pattern, proof_text, re.DOTALL)
+
+    for match in latex_matches:
+        # Remove \tag{n} notation
+        cleaned = re.sub(r'\\tag\{[^}]*\}', '', match)
+
+        # Split multiple equations in one display block (separated by commas or \\qquad)
+        # Example: A=(...), B=(...) should be split
+        parts = re.split(r',\s*(?=[A-Z]\s*=)', cleaned)
+
+        for part in parts:
+            part = part.strip()
+            if '=' in part:
+                # Convert LaTeX to SymPy-compatible format
+                part = clean_latex_equation(part)
+                if part:  # Only add non-empty equations
+                    equations.append(part)
+
+    # Pattern 3: Inline LaTeX math \\( ... \\) - but only simple equations
+    # Example: "we have \\(PA=PD\\)" should extract "PA=PD"
+    inline_latex_pattern = r'\\\(([^)]*=[[^)]*)\\\)'
+    inline_latex_matches = re.findall(inline_latex_pattern, proof_text)
+
+    for match in inline_latex_matches:
+        # Only extract if it's a simple equation (no angle symbols, etc.)
+        if '=' in match:
+            cleaned = clean_latex_equation(match)
+            if cleaned and cleaned not in equations:  # Avoid duplicates
+                equations.append(cleaned)
 
     return equations
+
+
+def clean_latex_equation(equation_str):
+    """
+    Convert LaTeX equation to SymPy-compatible format.
+
+    Removes:
+    - \\frac, \\tfrac (replace with division)
+    - \\left, \\right (remove)
+    - \\Bigl, \\Bigr, etc. (remove)
+    - \\qquad, \\quad (remove)
+    - \\, and other spacing commands
+    - Geometry symbols (\\perp, \\parallel, etc.) - skip these equations
+
+    Args:
+        equation_str: LaTeX equation string
+
+    Returns:
+        Cleaned equation string, or empty string if not algebraic
+    """
+    # Skip non-algebraic equations (geometry symbols, angle notation)
+    if any(sym in equation_str for sym in ['\\perp', '\\parallel', '\\angle', '\\triangle']):
+        return ''
+
+    # Skip approximate equations (not suitable for exact symbolic validation)
+    if '\\approx' in equation_str or '≈' in equation_str:
+        return ''
+
+    # Remove LaTeX sizing commands
+    equation_str = re.sub(r'\\[Bb]ig[lmr]?', '', equation_str)
+    equation_str = re.sub(r'\\left|\\right', '', equation_str)
+
+    # Remove spacing commands
+    equation_str = re.sub(r'\\[,;:!]', '', equation_str)
+    equation_str = re.sub(r'\\qquad|\\quad', '', equation_str)
+    equation_str = re.sub(r'\\;', '', equation_str)
+
+    # Convert \frac{a}{b} to (a)/(b)
+    # Use iterative replacement for nested fractions
+    max_iterations = 5
+    for _ in range(max_iterations):
+        old = equation_str
+        # Pattern: \frac{...}{...} or \tfrac{...}{...}
+        equation_str = re.sub(
+            r'\\t?frac\{([^{}]*)\}\{([^{}]*)\}',
+            r'((\1)/(\2))',
+            equation_str
+        )
+        if equation_str == old:
+            break
+
+    # Convert \sqrt{x} to sqrt(x)
+    equation_str = re.sub(r'\\sqrt\{([^{}]*)\}', r'sqrt(\1)', equation_str)
+
+    # Remove degree symbols
+    equation_str = equation_str.replace('^{\\circ}', '')
+    equation_str = equation_str.replace('\\circ', '')
+
+    # Convert \operatorname{...} to plain text
+    equation_str = re.sub(r'\\operatorname\{([^}]*)\}', r'\1', equation_str)
+
+    # Remove any remaining backslashes (except in commands we want to keep)
+    equation_str = re.sub(r'\\[a-zA-Z]+', '', equation_str)
+
+    # Clean up extra braces that might be left over
+    # Replace {{...}} with {...}
+    for _ in range(3):
+        old = equation_str
+        equation_str = re.sub(r'\{\{([^{}]*)\}\}', r'{\1}', equation_str)
+        if equation_str == old:
+            break
+
+    # Remove trailing periods (LaTeX sentence endings)
+    equation_str = equation_str.rstrip('.')
+
+    # Clean up extra whitespace and newlines
+    equation_str = re.sub(r'\s+', ' ', equation_str)
+    equation_str = equation_str.strip()
+
+    # Skip if equation is empty after cleaning
+    if not equation_str or '=' not in equation_str:
+        return ''
+
+    return equation_str
 
 
 def validate_proof_algebra(proof_text, problem_statement=None, verbose=False):
@@ -369,7 +490,7 @@ def tier2_refinement_loop(
         validation_result = validate_proof_algebra(
             refined_solution,
             problem_statement,
-            verbose=False  # Set to True for detailed validation output
+            verbose=verbose  # Use same verbosity as TIER 2 refinement
         )
 
         # If critical symbolic errors found, add them to issues for next round
