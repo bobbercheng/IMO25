@@ -3912,6 +3912,25 @@ Start completely fresh with a different mathematical approach.
                 if answer_locked and locked_answer:
                     print(f">>>>>>> [RLAC FINAL] Locked answer saved: {locked_answer[:100]}...")
 
+                # FIX #5: Provide clear success message based on tier status
+                print(f"\n{'='*80}")
+                if tier_status == "TIER_2_VERIFIED":
+                    print(f">>>>>>> ✅ COMPLETE SUCCESS: Fully verified solution")
+                    print(f">>>>>>> Answer: {locked_answer if answer_locked else 'See solution'}")
+                    print(f">>>>>>> Verification: TIER 2 (adversarial + cooperative)")
+                    print(f">>>>>>> Status: Answer correct AND proof rigorous")
+                elif tier_status in ["TIER_1_ONLY", "TIER_1_ROBUST"]:
+                    print(f">>>>>>> ⚠️  PARTIAL SUCCESS: Answer verified, proof has gaps")
+                    print(f">>>>>>> Answer: {locked_answer if answer_locked else 'See solution'}")
+                    print(f">>>>>>> Verification: TIER 1 (adversarial only)")
+                    print(f">>>>>>> Status: Answer passed {consecutive_robust_threshold} ROBUST verdicts")
+                    print(f">>>>>>> Warning: Proof requires manual review")
+                    print(f">>>>>>> Recommendation: Verify proof independently or re-run with TIER 2 enabled")
+                else:
+                    print(f">>>>>>> ℹ️  Solution found with status: {tier_status}")
+                    print(f">>>>>>> Answer: {locked_answer if answer_locked else 'See solution'}")
+                print(f"{'='*80}\n")
+
                 # Save attack history
                 if memory_file:
                     history_file = memory_file.replace('.json', '_rlac_history.json')
@@ -3920,6 +3939,7 @@ Start completely fresh with a different mathematical approach.
                     # Save final solution with RLAC metadata
                     rlac_metadata = {
                         'solution': solution,
+                        'tier_status': tier_status,  # Add tier status to metadata
                         'rlac_rounds': round_num + 1,
                         'consecutive_robust': consecutive_robust,
                         'cumulative_cost': cumulative_cost,

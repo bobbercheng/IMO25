@@ -292,6 +292,21 @@ Follow the output format specified in your system prompt.
         # Extract counterexamples FIRST (needed for verdict validation)
         result['counterexamples'] = self._extract_counterexamples(attack_text)
 
+        # FIX #4: Verify counterexamples are arithmetically correct
+        # This prevents false positives like round 16 where claimed points don't satisfy line equations
+        verified_counterexamples, verification_errors = self._verify_counterexamples(
+            attack_text, result['counterexamples']
+        )
+
+        if verification_errors:
+            if self.verbose:
+                self._log(f"[COUNTEREXAMPLE VERIFICATION] Found {len(verification_errors)} invalid counterexamples:")
+                for error in verification_errors[:3]:  # Show first 3
+                    self._log(f"  - {error}")
+            # Downgrade verdict if counterexamples are invalid
+            result['counterexamples'] = verified_counterexamples  # Use only verified ones
+            result['verification_errors'] = verification_errors
+
         # NEW: Extract answer implications - what counterexamples prove about correct answer
         result['answer_implications'] = self._extract_answer_implications(attack_text, result['counterexamples'])
 
@@ -419,6 +434,84 @@ Follow the output format specified in your system prompt.
             return 'SUSPICIOUS'
 
         return 'UNKNOWN'
+
+    def _verify_counterexamples(self, attack_text: str, counterexamples: List[str]) -> Tuple[List[str], List[str]]:
+        """
+        Verify that geometric/algebraic counterexamples are arithmetically correct.
+
+        This prevents false positives like:
+        - Claimed point (1,2) on line y = -1/2*x + 3/2 (actually y=1 at x=1, not y=2)
+        - Claimed intersection that doesn't satisfy equation
+
+        Returns:
+            Tuple of (verified_counterexamples, errors)
+        """
+        if not counterexamples:
+            return [], []
+
+        verified = []
+        errors = []
+
+        # Extract all line equations and points from attack text
+        line_pattern = r'(?:Line|L\d+|y)\s*[=:]\s*([-\d./]+)\s*\*?\s*x\s*([+\-]\s*[-\d./]+)?'
+        point_pattern = r'\((\d+)\s*,\s*(\d+)\)'
+
+        lines = re.findall(line_pattern, attack_text)
+        points = re.findall(point_pattern, attack_text)
+
+        if not lines or not points:
+            # No geometric claims to verify, accept all counterexamples
+            return counterexamples, []
+
+        # For each counterexample, check if any claimed point-line pairs are valid
+        for i, ce in enumerate(counterexamples):
+            # Extract numbers from counterexample
+            ce_points = re.findall(point_pattern, ce)
+            ce_lines = re.findall(line_pattern, ce)
+
+            if not ce_points or not ce_lines:
+                # Non-geometric counterexample, accept it
+                verified.append(ce)
+                continue
+
+            # Verify each claimed point lies on some claimed line
+            ce_valid = True
+            invalid_claims = []
+
+            for px_str, py_str in ce_points:
+                px, py = int(px_str), int(py_str)
+                found_valid_line = False
+
+                # Check if point lies on any claimed line
+                for slope_str, intercept_str in ce_lines:
+                    try:
+                        # Parse slope and intercept
+                        slope = float(eval(slope_str.replace('*', ''))) if slope_str else 1
+                        intercept = float(eval(intercept_str.replace('+', '').strip())) if intercept_str else 0
+
+                        # Calculate expected y
+                        expected_y = slope * px + intercept
+
+                        # Check if point satisfies equation (with small tolerance for float error)
+                        if abs(expected_y - py) < 0.01:
+                            found_valid_line = True
+                            break
+                    except:
+                        # Parsing error, skip this line
+                        continue
+
+                if not found_valid_line:
+                    ce_valid = False
+                    invalid_claims.append(f"Point ({px},{py}) does not lie on any claimed line")
+
+            if ce_valid:
+                verified.append(ce)
+            else:
+                errors.append(f"Counterexample {i+1}: {'; '.join(invalid_claims)}")
+                if self.verbose:
+                    self._log(f"[VERIFICATION] Rejected counterexample {i+1}: {invalid_claims[0]}")
+
+        return verified, errors
 
     def _extract_counterexamples(self, attack_text: str) -> List[str]:
         """
