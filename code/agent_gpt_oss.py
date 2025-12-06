@@ -3797,13 +3797,42 @@ Start completely fresh with a different mathematical approach.
 
                             def generate_wrapper(prompt, reasoning):
                                 # Generate refined solution using existing infrastructure
+                                # FIX: Add truncation retry logic (same as emergency fresh start)
+
                                 payload = build_request_payload(
                                     system_prompt="You are an expert mathematical proof writer. Your task is to refine existing proofs to meet rigorous verification standards.",
                                     question_prompt=prompt,
                                     reasoning_effort=reasoning
                                 )
-                                response_text = send_api_request(get_api_key(), payload)
-                                return extract_text_from_response(response_text)
+
+                                # First attempt
+                                response_text = send_api_request(get_api_key(), payload, request_label="TIER 2 refinement")
+                                refined = extract_text_from_response(response_text)
+
+                                # Check for truncation/empty response
+                                if not refined or len(refined) < 100:
+                                    finish_reason = response_text.get('choices', [{}])[0].get('finish_reason', 'unknown') if isinstance(response_text, dict) else 'unknown'
+                                    print(f"\n{'='*80}")
+                                    print(f"[TIER 2 ERROR] Refinement generation failed!")
+                                    print(f"[TIER 2 ERROR] Finish reason: {finish_reason}")
+                                    print(f"[TIER 2 ERROR] Content length: {len(refined) if refined else 0} chars")
+                                    print(f"{'='*80}\n")
+
+                                    # Retry with degraded reasoning
+                                    if finish_reason == "length" and reasoning in ["high", "medium"]:
+                                        retry_reasoning = "medium" if reasoning == "high" else "low"
+                                        print(f"[TIER 2 RETRY] Truncation detected - retrying with {retry_reasoning.upper()} reasoning...")
+
+                                        payload['extra_body']['reasoning']['effort'] = retry_reasoning
+                                        response_text = send_api_request(get_api_key(), payload, request_label="TIER 2 refinement retry")
+                                        refined = extract_text_from_response(response_text)
+
+                                        if refined and len(refined) >= 100:
+                                            print(f"[TIER 2 RETRY] ✓ Success with {retry_reasoning} reasoning ({len(refined)} chars)")
+                                        else:
+                                            print(f"[TIER 2 RETRY] ✗ Failed - returning empty (verification will reject)")
+
+                                return refined
 
                             # Auto-detect optimal TIER 2 strategy based on proof type
                             if TIER2_AUTO_DETECT_STRATEGY:

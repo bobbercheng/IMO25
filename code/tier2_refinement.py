@@ -156,7 +156,8 @@ def extract_equations_from_proof(proof_text):
 
     # Pattern 3: Inline LaTeX math \\( ... \\) - but only simple equations
     # Example: "we have \\(PA=PD\\)" should extract "PA=PD"
-    inline_latex_pattern = r'\\\(([^)]*=[[^)]*)\\\)'
+    # FIX: Remove nested character class to avoid regex warning
+    inline_latex_pattern = r'\\\(([^)]*=[^)]*)\\\)'
     inline_latex_matches = re.findall(inline_latex_pattern, proof_text)
 
     for match in inline_latex_matches:
