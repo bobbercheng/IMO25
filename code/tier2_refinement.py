@@ -1061,9 +1061,9 @@ def semantically_equivalent_answers(ans1, ans2, verbose=False):
                 print(f"[SEMANTIC CHECK] SymPy confirms algebraic equivalence")
             return True
     except Exception as e:
-        # SymPy parsing failed, try pattern matching
+        # SymPy parsing failed (not missing dependency, but can't parse expression)
         if verbose:
-            print(f"[SEMANTIC CHECK] SymPy failed: {e}")
+            print(f"[SEMANTIC CHECK] SymPy parsing failed (falling back to pattern matching): {e}")
         pass
 
     # Special case: Set notation vs inequality for integer variables

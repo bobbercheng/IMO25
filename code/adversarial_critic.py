@@ -146,7 +146,8 @@ class AdversarialCritic:
 
         if should_verify:
             if self.verbose:
-                self._log(f"[ADVERSARIAL CRITIC] Running cooperative verification (round {round_num}, every {verify_every_n} rounds)...")
+                self._log(f"[IN-RLAC VERIFICATION] Round {round_num}/{max_rounds}")
+                self._log(f"[IN-RLAC VERIFICATION] Running cooperative verification (every {verify_every_n} rounds)...")
 
             try:
                 # Call verification function (verify_solution_safe)
@@ -163,12 +164,14 @@ class AdversarialCritic:
                 if not verification_passed:
                     # Verification found issues - use them for attack
                     if self.verbose:
-                        self._log("[ADVERSARIAL CRITIC] ✓ Verification found issues - using as attack feedback")
-                        self._log(f"[ADVERSARIAL CRITIC] Bug report length: {len(bug_report)} chars")
+                        self._log("[IN-RLAC VERIFICATION] ✓ Verification found issues - using as attack feedback")
+                        self._log(f"[IN-RLAC VERIFICATION] Bug report length: {len(bug_report)} chars")
 
                     # Determine severity and verdict
                     bug_report_lower = bug_report.lower()
-                    if "critical error" in bug_report_lower:
+                    # FIX: Use regex to match "critical error" OR "critical errors" (plural)
+                    import re
+                    if re.search(r'\bcritical\s+errors?\b', bug_report_lower):
                         verdict = "BROKEN"
                         severity = "CRITICAL"
                         penalty = 100
@@ -216,22 +219,22 @@ class AdversarialCritic:
 
                     # Log summary
                     if self.verbose:
-                        self._log(f"[ADVERSARIAL CRITIC] Verdict from verification: {verdict}")
-                        self._log(f"[ADVERSARIAL CRITIC] Severity: {severity}")
-                        self._log(f"[ADVERSARIAL CRITIC] Penalty: {penalty}")
+                        self._log(f"[IN-RLAC VERIFICATION] Verdict from verification: {verdict}")
+                        self._log(f"[IN-RLAC VERIFICATION] Severity: {severity}")
+                        self._log(f"[IN-RLAC VERIFICATION] Penalty: {penalty}")
 
                     return verification_attack_result
 
                 else:
                     # Verification passed - continue with normal prompt-based attack
                     if self.verbose:
-                        self._log("[ADVERSARIAL CRITIC] Verification passed - continuing with prompt-based attack")
+                        self._log("[IN-RLAC VERIFICATION] Verification passed - continuing with prompt-based attack")
 
             except Exception as e:
                 # Verification failed - log and continue with prompt-based attack
                 if self.verbose:
-                    self._log(f"[ADVERSARIAL CRITIC] Warning: Verification failed with error: {e}")
-                    self._log("[ADVERSARIAL CRITIC] Continuing with prompt-based attack")
+                    self._log(f"[IN-RLAC VERIFICATION] Warning: Verification failed with error: {e}")
+                    self._log("[IN-RLAC VERIFICATION] Continuing with prompt-based attack")
 
         # Get attack intensity based on round (curriculum learning)
         intensity_name, intensity_prompt = get_attack_intensity_prompt(round_num, max_rounds)
