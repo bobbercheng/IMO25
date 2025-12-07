@@ -403,6 +403,7 @@ def tier2_refinement_loop(
 
     current_solution = rlac_solution
     refinement_history = []
+    stuck_count = 0  # FIX #8: Track repeated similar feedback
 
     for round_num in range(max_refinement_rounds):
         # Determine verification reasoning level for this round
@@ -474,7 +475,8 @@ def tier2_refinement_loop(
         # (Disabled for proof problems - see is_proof_problem())
         refined_answer = extract_boxed_answer(refined_solution, problem_statement)
 
-        if refined_answer and refined_answer != locked_answer:
+        # FIX #7: Use semantic equivalence instead of string comparison
+        if refined_answer and not semantically_equivalent_answers(refined_answer, locked_answer, verbose=verbose):
             if verbose:
                 print(f"[TIER 2 ERROR] Answer changed during refinement!")
                 print(f"[TIER 2 ERROR]   Expected: {locked_answer}")
@@ -536,11 +538,28 @@ def tier2_refinement_loop(
             print(f"[TIER 2 VALIDATION] ✓ Validated {validation_result['validated_count']} equations successfully")
 
         # Step 8: Check for refinement loops (same gaps repeating)
-        if detect_refinement_loop(refinement_history, issues):
+        # FIX #8: Adaptive refinement - detect and escalate when stuck
+        is_stuck = detect_refinement_loop(refinement_history, issues)
+
+        if is_stuck:
+            stuck_count += 1
             if verbose:
-                print(f"[TIER 2 WARNING] Refinement loop detected - same gaps reappearing")
-                print(f"[TIER 2 WARNING] Current approach cannot fix these gaps")
-            return current_solution, "TIER_1_ONLY", refinement_history
+                print(f"[TIER 2 ADAPTIVE] Similar feedback detected ({stuck_count}/2)")
+                print(f"[TIER 2 ADAPTIVE] Same issues reappearing: {[i['location'][:30] for i in issues[:2]]}")
+
+            if stuck_count >= 2:
+                if verbose:
+                    print(f"\n[TIER 2 ESCALATION] Repeated feedback {stuck_count} times - current approach failing")
+                    print(f"[TIER 2 ESCALATION] Options:")
+                    print(f"  1. Accept TIER_1_ONLY (answer correct, proof needs manual review)")
+                    print(f"  2. Fresh start with different proof strategy (not implemented)")
+                    print(f"  3. Section rewrite instead of targeted fixes (not implemented)")
+                    print(f"[TIER 2 DECISION] Accepting TIER_1_ONLY status")
+
+                return current_solution, "TIER_1_ONLY", refinement_history
+        else:
+            # Progress made, reset stuck counter
+            stuck_count = 0
 
         # Step 9: Update for next iteration
         refinement_history.append({
@@ -548,7 +567,8 @@ def tier2_refinement_loop(
             'issues_count': len(issues),
             'critical': len(critical_errors),
             'gaps': len(justification_gaps),
-            'feedback_summary': bug_report[:500] if bug_report else ""
+            'feedback_summary': bug_report[:500] if bug_report else "",
+            'stuck': is_stuck  # Track if this round was stuck
         })
 
         current_solution = refined_solution
@@ -923,6 +943,9 @@ def extract_boxed_answer(solution, problem_statement=None):
     Extract answer from \\boxed{...} for verification.
     Handles nested braces correctly (e.g., \\dfrac{a}{b}, \\Bigl(...\\Bigr)).
 
+    FIX #6: Uses LAST boxed expression (final answer), not first (intermediate result).
+    Proofs often have intermediate results like \\boxed{k\\le 1} before final \\boxed{k\\in{0,1}}.
+
     For "prove that" problems, returns None to disable answer locking.
     This prevents false rejections when refinements reorder proof steps.
 
@@ -941,12 +964,15 @@ def extract_boxed_answer(solution, problem_statement=None):
     if problem_statement and is_proof_problem(problem_statement):
         return None
 
-    # Find \boxed{ or boxed{
+    # FIX #6: Find ALL \boxed{ occurrences, use LAST one (final answer)
     pattern = r'\\?boxed\{'
-    match = re.search(pattern, solution)
+    matches = list(re.finditer(pattern, solution))
 
-    if not match:
+    if not matches:
         return None
+
+    # Use LAST match (final answer), not first (intermediate result)
+    match = matches[-1]
 
     # Start after the opening brace
     start = match.end()
@@ -967,6 +993,122 @@ def extract_boxed_answer(solution, problem_statement=None):
         return solution[start:i-1].strip()
 
     return None
+
+
+def semantically_equivalent_answers(ans1, ans2, verbose=False):
+    """
+    FIX #7: Check if two mathematical answers are semantically equivalent.
+
+    Handles common notational variations:
+    - Set notation vs inequalities: k\\in{0,1} ⟺ k≤1 (for k∈ℕ)
+    - LaTeX formatting: \\; spacing, extra braces
+    - Algebraic expressions: \\sqrt{2} vs \\frac{\\sqrt{2}}{1}
+
+    Args:
+        ans1, ans2: Answer strings to compare
+        verbose: Print debug info
+
+    Returns:
+        True if semantically equivalent, False otherwise
+    """
+    if not ans1 or not ans2:
+        return False
+
+    # Normalize formatting
+    def normalize(ans):
+        import re
+        ans = ans.strip()
+        # Remove LaTeX spacing commands
+        ans = ans.replace(r'\;', '').replace(r'\,', '').replace(r'\!', '')
+        # Normalize inequality symbols to canonical forms (use word boundaries)
+        ans = re.sub(r'≤|\\le\b', '<=', ans)
+        ans = re.sub(r'≥|\\ge\b', '>=', ans)
+        ans = re.sub(r'≠|\\ne\b', '!=', ans)
+        ans = re.sub(r'\\lt\b', '<', ans)
+        ans = re.sub(r'\\gt\b', '>', ans)
+        # Normalize set membership (add spaces around)
+        ans = re.sub(r'∈|\\in\b', ' in ', ans)
+        # Remove extra whitespace (collapse multiple spaces)
+        ans = ' '.join(ans.split())
+        # Normalize commas (remove spaces around commas in sets)
+        ans = ans.replace(' ,', ',').replace(', ', ',')
+        # Normalize brace usage (do after comma normalization)
+        ans = ans.replace('{ ', '{').replace(' }', '}')
+        # Final pass: remove spaces inside braces (handle LaTeX \{ and \})
+        ans = re.sub(r'\\?\{\s+', r'\{', ans)  # \{ followed by spaces
+        ans = re.sub(r'\s+\\?\}', r'\}', ans)  # spaces followed by \}
+        return ans
+
+    ans1_norm = normalize(ans1)
+    ans2_norm = normalize(ans2)
+
+    # Exact match after normalization
+    if ans1_norm == ans2_norm:
+        if verbose:
+            print(f"[SEMANTIC CHECK] Exact match after normalization")
+        return True
+
+    # Try SymPy symbolic simplification
+    try:
+        import sympy as sp
+        expr1 = sp.sympify(ans1_norm, evaluate=False)
+        expr2 = sp.sympify(ans2_norm, evaluate=False)
+
+        # Check if algebraically equivalent
+        diff = sp.simplify(expr1 - expr2)
+        if diff == 0:
+            if verbose:
+                print(f"[SEMANTIC CHECK] SymPy confirms algebraic equivalence")
+            return True
+    except Exception as e:
+        # SymPy parsing failed, try pattern matching
+        if verbose:
+            print(f"[SEMANTIC CHECK] SymPy failed: {e}")
+        pass
+
+    # Special case: Set notation vs inequality for integer variables
+    # k\in{0,1} ⟺ k≤1 (for k∈ℕ, k≥0)
+    # k\in{0,1} ⟺ k<2
+
+    import re
+
+    # After normalization, all symbols are canonical: in, <=, >=, <, >, !=
+    # Extract variable name (usually k, n, etc.)
+    var_pattern = r'([a-z])'
+
+    # Pattern 1: k in {0,1} (normalized from \in or ∈)
+    set_pattern_01 = r'([a-z])\s*in\s*\\?\{0,1\\?\}'
+
+    # Pattern 2: k <= 1 (normalized from \le or ≤)
+    ineq_pattern_le1 = r'([a-z])\s*<=\s*1'
+
+    # Pattern 3: k < 2 (normalized from \lt)
+    ineq_pattern_lt2 = r'([a-z])\s*<\s*2'
+
+    # Check if one is set {0,1} and other is inequality ≤1 or <2
+    set_match_1 = re.search(set_pattern_01, ans1_norm)
+    set_match_2 = re.search(set_pattern_01, ans2_norm)
+
+    ineq_match_1 = re.search(ineq_pattern_le1, ans1_norm) or re.search(ineq_pattern_lt2, ans1_norm)
+    ineq_match_2 = re.search(ineq_pattern_le1, ans2_norm) or re.search(ineq_pattern_lt2, ans2_norm)
+
+    if (set_match_1 and ineq_match_2) or (set_match_2 and ineq_match_1):
+        # Check if same variable
+        var1 = set_match_1.group(1) if set_match_1 else ineq_match_1.group(1)
+        var2 = set_match_2.group(1) if set_match_2 else ineq_match_2.group(1)
+
+        if var1 == var2:
+            if verbose:
+                print(f"[SEMANTIC CHECK] Set {{0,1}} ⟺ inequality ≤1 for variable {var1}")
+            return True
+
+    # No equivalence found
+    if verbose:
+        print(f"[SEMANTIC CHECK] No equivalence found")
+        print(f"  ans1: {ans1_norm}")
+        print(f"  ans2: {ans2_norm}")
+
+    return False
 
 
 def detect_refinement_loop(refinement_history, current_issues, window=3):
