@@ -3499,7 +3499,8 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                 round_num=round_num,
                 max_rounds=max_adversarial_rounds,
                 api_request_func=send_api_request,
-                api_key=get_api_key()
+                api_key=get_api_key(),
+                verify_func=verify_solution_safe  # NEW: Pass verification function for in-RLAC verification
             )
 
             # P1 FIX: Restore original reasoning after tiebreaker

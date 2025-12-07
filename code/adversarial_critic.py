@@ -99,7 +99,7 @@ class AdversarialCritic:
         print(log_msg)
 
     def attack_solution(self, problem_statement, solution, round_num=0, max_rounds=10,
-                       api_request_func=None, api_key=None) -> Dict[str, Any]:
+                       api_request_func=None, api_key=None, verify_func=None) -> Dict[str, Any]:
         """
         Attack a solution with adversarial testing.
 
@@ -110,6 +110,7 @@ class AdversarialCritic:
             max_rounds: Maximum RLAC rounds
             api_request_func: Function to send API requests (from agent_gpt_oss)
             api_key: API key for requests
+            verify_func: Optional verification function (verify_solution_safe) for rigorous checking
 
         Returns:
             Dict containing:
@@ -122,11 +123,115 @@ class AdversarialCritic:
                 - full_attack: Complete attack text
                 - round_num: Round number for tracking
                 - timestamp: Attack timestamp
+                - verification_used: True if verification was used instead of prompt-based attack
         """
         if self.verbose:
             self._log(f"\n{'='*80}")
             self._log(f"[ADVERSARIAL CRITIC] Round {round_num + 1}/{max_rounds}")
             self._log(f"{'='*80}\n")
+
+        # NEW: Run cooperative verification if provided (every N rounds)
+        # Configuration via environment variables
+        import os
+        verify_every_n = int(os.getenv('RLAC_VERIFY_EVERY_N_ROUNDS', '2'))
+        verify_start_round = int(os.getenv('RLAC_VERIFY_START_ROUND', '0'))
+        disable_inline_verification = os.getenv('RLAC_DISABLE_INLINE_VERIFICATION', 'false').lower() == 'true'
+
+        should_verify = (
+            verify_func is not None and
+            not disable_inline_verification and
+            round_num >= verify_start_round and
+            round_num % verify_every_n == 0
+        )
+
+        if should_verify:
+            if self.verbose:
+                self._log(f"[ADVERSARIAL CRITIC] Running cooperative verification (round {round_num}, every {verify_every_n} rounds)...")
+
+            try:
+                # Call verification function (verify_solution_safe)
+                bug_report, good_verify = verify_func(
+                    problem_statement,
+                    solution,
+                    verbose=False,  # Don't duplicate logging
+                    reasoning_effort=self.reasoning_effort
+                )
+
+                # Check if verification found issues
+                verification_passed = "yes" in good_verify.lower()
+
+                if not verification_passed:
+                    # Verification found issues - use them for attack
+                    if self.verbose:
+                        self._log("[ADVERSARIAL CRITIC] ✓ Verification found issues - using as attack feedback")
+                        self._log(f"[ADVERSARIAL CRITIC] Bug report length: {len(bug_report)} chars")
+
+                    # Determine severity and verdict
+                    bug_report_lower = bug_report.lower()
+                    if "critical error" in bug_report_lower:
+                        verdict = "BROKEN"
+                        severity = "CRITICAL"
+                        penalty = 100
+                        critical_flaws = [bug_report[:2000]]  # Truncate to reasonable length
+                        major_issues = []
+                        minor_issues = []
+                    elif "justification gap" in bug_report_lower or "gap" in bug_report_lower:
+                        verdict = "SUSPICIOUS"
+                        severity = "MAJOR"
+                        penalty = 50
+                        critical_flaws = []
+                        major_issues = [bug_report[:2000]]
+                        minor_issues = []
+                    else:
+                        verdict = "SUSPICIOUS"
+                        severity = "MINOR"
+                        penalty = 25
+                        critical_flaws = []
+                        major_issues = []
+                        minor_issues = [bug_report[:2000]]
+
+                    # Create attack result from verification
+                    verification_attack_result = {
+                        'verdict': verdict,
+                        'counterexamples': [],  # Verification doesn't provide structured counterexamples
+                        'critical_flaws': critical_flaws,
+                        'major_issues': major_issues,
+                        'minor_issues': minor_issues,
+                        'total_penalty': penalty,
+                        'full_attack': f"[VERIFICATION-BASED ATTACK]\n\n{bug_report}",
+                        'round_num': round_num,
+                        'timestamp': datetime.now().isoformat(),
+                        'verification_used': True
+                    }
+
+                    # Update metrics
+                    self.total_attacks += 1
+                    if verdict == 'BROKEN':
+                        self.total_broken_solutions += 1
+                    elif verdict == 'ROBUST':
+                        self.total_robust_solutions += 1
+
+                    # Add to history
+                    self.attack_history.append(verification_attack_result)
+
+                    # Log summary
+                    if self.verbose:
+                        self._log(f"[ADVERSARIAL CRITIC] Verdict from verification: {verdict}")
+                        self._log(f"[ADVERSARIAL CRITIC] Severity: {severity}")
+                        self._log(f"[ADVERSARIAL CRITIC] Penalty: {penalty}")
+
+                    return verification_attack_result
+
+                else:
+                    # Verification passed - continue with normal prompt-based attack
+                    if self.verbose:
+                        self._log("[ADVERSARIAL CRITIC] Verification passed - continuing with prompt-based attack")
+
+            except Exception as e:
+                # Verification failed - log and continue with prompt-based attack
+                if self.verbose:
+                    self._log(f"[ADVERSARIAL CRITIC] Warning: Verification failed with error: {e}")
+                    self._log("[ADVERSARIAL CRITIC] Continuing with prompt-based attack")
 
         # Get attack intensity based on round (curriculum learning)
         intensity_name, intensity_prompt = get_attack_intensity_prompt(round_num, max_rounds)

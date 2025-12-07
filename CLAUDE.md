@@ -86,6 +86,19 @@ python code/agent_gpt_oss.py problems/imo01.txt \
 - `RLAC_MAX_REGEN` - Maximum regeneration attempts (default: 4)
 - `RLAC_SOL_REASONING` - Solution reasoning effort (default: low)
 - `RLAC_CRITIC_REASONING` - Critic reasoning effort (default: medium)
+- `RLAC_VERIFY_EVERY_N_ROUNDS` - Run verification every N rounds during RLAC (default: 2)
+- `RLAC_VERIFY_START_ROUND` - Start verification from round N (default: 0)
+- `RLAC_DISABLE_INLINE_VERIFICATION` - Disable in-RLAC verification (default: false)
+
+**In-RLAC Verification (2025-12-07):**
+- **FEATURE:** Cooperative verification now runs DURING RLAC rounds (not just after)
+- Catches critical errors early (e.g., wrong constructions in FIND problems)
+- Default: Verification runs every 2 rounds starting from round 0
+- If verification finds "Critical Error" → BROKEN verdict with verification feedback
+- If verification finds "Justification Gap" → SUSPICIOUS verdict (acceptable for PROVE)
+- If verification passes → continues with normal prompt-based attack
+- **Use case:** Problem 1 (FIND) - catches construction errors in round 0-2 instead of missing them
+- **Use case:** Problem 2 (PROVE) - allows justification gaps, focuses on method correctness
 
 **Recent Fixes (2025-11-25):**
 - **BUGFIX:** Counterexample truncation increased from 400 to 2000 chars (geometry problems need full specifications)
