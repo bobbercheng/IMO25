@@ -210,3 +210,4 @@ test_baseline_logs/
 test_enhancements_logs/
 test_logs_mcts_translation/
 test_*_logs/
+test_rlac_log/
