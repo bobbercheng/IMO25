@@ -1018,6 +1018,12 @@ def semantically_equivalent_answers(ans1, ans2, verbose=False):
     def normalize(ans):
         import re
         ans = ans.strip()
+
+        # FIX: Remove LaTeX brace escaping FIRST
+        # This converts \{ → { and \} → }
+        # Must happen before other operations to allow SymPy parsing
+        ans = ans.replace(r'\{', '{').replace(r'\}', '}')
+
         # Remove LaTeX spacing commands
         ans = ans.replace(r'\;', '').replace(r'\,', '').replace(r'\!', '')
         # Normalize inequality symbols to canonical forms (use word boundaries)
@@ -1034,9 +1040,9 @@ def semantically_equivalent_answers(ans1, ans2, verbose=False):
         ans = ans.replace(' ,', ',').replace(', ', ',')
         # Normalize brace usage (do after comma normalization)
         ans = ans.replace('{ ', '{').replace(' }', '}')
-        # Final pass: remove spaces inside braces (handle LaTeX \{ and \})
-        ans = re.sub(r'\\?\{\s+', r'\{', ans)  # \{ followed by spaces
-        ans = re.sub(r'\s+\\?\}', r'\}', ans)  # spaces followed by \}
+        # Final pass: remove spaces inside braces (braces no longer have backslashes)
+        ans = re.sub(r'\{\s+', '{', ans)
+        ans = re.sub(r'\s+\}', '}', ans)
         return ans
 
     ans1_norm = normalize(ans1)
