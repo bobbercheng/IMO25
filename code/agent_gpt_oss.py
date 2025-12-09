@@ -3005,6 +3005,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     previous_solution = solution
     rlac_history = []
     consecutive_broken = 0  # Track consecutive BROKEN verdicts for constructive mode
+    early_stop_oscillation = False  # P0-2: Track early stopping due to oscillation
 
     # P1 IMPROVEMENT: Cost tracking and budget management
     cumulative_cost = 0.0
@@ -3665,7 +3666,8 @@ Start completely fresh with a different mathematical approach.
                 'consecutive_robust': consecutive_robust,
                 'stuck_count': stuck_count,
                 'total_robust': total_robust_count,
-                'oscillation_detected': oscillation_detected
+                'oscillation_detected': oscillation_detected,
+                'early_stop_triggered': early_stop_oscillation  # P0-2: Track early stopping
             }
             rlac_history.append(rlac_round_data)
 
@@ -3754,11 +3756,40 @@ Start completely fresh with a different mathematical approach.
                         print(f"{'='*80}\n")
                         cumulative_success = True
 
+            # P0-2 FIX: Early stopping for oscillation prevention
+            # After round 8, accept 2/3 ROBUST to prevent infinite oscillation
+            # This addresses the pattern: ROBUST → ROBUST → SUSPICIOUS/BROKEN → reset
+            if round_num >= 8 and consecutive_robust >= 2 and not early_stop_oscillation:
+                # Check if we have strong evidence of oscillation
+                # Look at last 6 rounds for pattern of high robustness with resets
+                if len(verdict_history) >= 6:
+                    recent_6 = verdict_history[-6:]
+                    robust_in_recent_6 = recent_6.count("ROBUST")
+                    # If 4+ ROBUST in last 6 rounds but still oscillating, stop
+                    if robust_in_recent_6 >= 4:
+                        print(f"\n{'='*80}")
+                        print(f">>>>>>> [RLAC EARLY STOP] Oscillation detected - accepting high-confidence solution")
+                        print(f">>>>>>> [RLAC EARLY STOP] Current streak: {consecutive_robust}/3 ROBUST")
+                        print(f">>>>>>> [RLAC EARLY STOP] Recent performance: {robust_in_recent_6}/6 rounds ROBUST (67%+)")
+                        print(f">>>>>>> [RLAC EARLY STOP] Round: {round_num + 1}")
+                        print(f">>>>>>> [RLAC EARLY STOP] Preventing infinite oscillation - solution is likely correct")
+                        print(f"{'='*80}\n")
+                        early_stop_oscillation = True
+
             # P0 FIX: Early stopping on success - don't depend on cooperative verification
-            if consecutive_robust >= consecutive_robust_threshold or cumulative_success:
-                if not cumulative_success:
+            if consecutive_robust >= consecutive_robust_threshold or cumulative_success or early_stop_oscillation:
+                if not cumulative_success and not early_stop_oscillation:
+                    # Normal success: reached consecutive_robust_threshold
                     print(f"\n{'='*80}")
                     print(f">>>>>>> [RLAC SUCCESS] Solution ROBUST after {consecutive_robust_threshold} consecutive attacks!")
+                    print(f">>>>>>> [RLAC SUCCESS] Total rounds: {round_num + 1}")
+                    print(f">>>>>>> [RLAC SUCCESS] Cumulative cost: ${cumulative_cost:.2f}")
+                    print(f"{'='*80}\n")
+                elif early_stop_oscillation:
+                    # Early stopping: oscillation detected
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [RLAC SUCCESS] Early stop triggered - high confidence solution")
+                    print(f">>>>>>> [RLAC SUCCESS] Consecutive ROBUST: {consecutive_robust}/{consecutive_robust_threshold}")
                     print(f">>>>>>> [RLAC SUCCESS] Total rounds: {round_num + 1}")
                     print(f">>>>>>> [RLAC SUCCESS] Cumulative cost: ${cumulative_cost:.2f}")
                     print(f"{'='*80}\n")

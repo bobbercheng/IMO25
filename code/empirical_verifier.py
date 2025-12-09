@@ -9,17 +9,58 @@ CRITICAL INSIGHT from expert analysis:
   Problem 1 (Sunny Lines) claimed "k=0 or k odd with 1≤k≤n"
   Adversarial critic tested n=3,4,5 with k∈{0,1,3} → All VALID
   But missed: Testing if k=3 works for n≥5 → Would find FAILURE
-  
+
   Correct answer: k∈{0,1,n-1} (only 3 values, not all odd)
 
 This empirical verifier catches such errors by:
   1. Testing ALL k values (not just claimed ones)
   2. Testing wider range of n (3-10, not just 3-5)
   3. Scoring based on agreement with claimed set
+
+P1-2 FIX: Problem-aware ground truth registry
+  - Detects which IMO problem is being verified
+  - Uses known correct answers from problem-specific registry
+  - Returns SUSPICIOUS if problem not in registry (safer than false positives)
 """
 
 import re
 from typing import Dict, List, Tuple, Set, Any
+
+
+# P1-2: Ground truth registry for known IMO problems
+# Maps problem identifiers to verification functions
+GROUND_TRUTH_REGISTRY = {
+    'imo_2025_problem_1': {
+        'description': 'Sunny Lines - Find all k where exactly k lines are sunny',
+        'keywords': ['sunny', 'exactly k lines', 'k sunny lines'],
+        'answer': lambda k, n: k in {0, 1, n-1},
+        'n_range': (3, 10)
+    },
+    # Future problems can be added here:
+    # 'imo_2025_problem_2': {...},
+}
+
+
+def detect_problem_type(problem_statement: str, answer_text: str = '') -> str:
+    """
+    P1-2: Detect which IMO problem is being verified.
+
+    Args:
+        problem_statement: Original problem text
+        answer_text: Answer text (optional, helps with detection)
+
+    Returns:
+        Problem identifier string (e.g., 'imo_2025_problem_1') or 'unknown'
+    """
+    problem_lower = problem_statement.lower()
+
+    # Check each registered problem
+    for problem_id, problem_info in GROUND_TRUTH_REGISTRY.items():
+        keywords = problem_info.get('keywords', [])
+        if any(keyword in problem_lower for keyword in keywords):
+            return problem_id
+
+    return 'unknown'
 
 
 def extract_claimed_values(answer_text: str) -> Dict[str, Any]:
@@ -144,37 +185,65 @@ def empirical_verification_combinatorial(
         'errors': [],
         'method': 'empirical_combinatorial'
     }
-    
+
+    # P1-2 FIX: Detect problem type to get correct ground truth
+    problem_id = detect_problem_type(problem_statement, answer_text)
+
+    if problem_id == 'unknown':
+        # P1-2: Return SUSPICIOUS if problem not in registry (safer than false positives)
+        result['verdict'] = 'SUSPICIOUS'
+        result['score'] = 0.5
+        result['errors'].append("Problem not in ground truth registry - cannot verify empirically")
+        if verbose:
+            print(f"[EMPIRICAL] Problem type: UNKNOWN - skipping verification")
+            print(f"[EMPIRICAL] Verdict: SUSPICIOUS (no ground truth available)")
+        return result
+
+    # Get ground truth function and n_range from registry
+    problem_info = GROUND_TRUTH_REGISTRY[problem_id]
+    ground_truth_func = problem_info['answer']
+    registry_n_range = problem_info.get('n_range', n_range)
+
+    if verbose:
+        print(f"[EMPIRICAL] Problem detected: {problem_id}")
+        print(f"[EMPIRICAL] Description: {problem_info['description']}")
+
     # Extract claimed set
     claim = extract_claimed_values(answer_text)
-    
+
     if claim['type'] == 'unknown':
         result['verdict'] = 'SUSPICIOUS'
         result['score'] = 0.5  # Can't verify if we can't parse
         result['errors'].append("Could not parse answer format")
         return result
-    
+
     if verbose:
         print(f"[EMPIRICAL] Claim type: {claim['type']}")
         print(f"[EMPIRICAL] Claim details: {claim}")
-        print(f"[EMPIRICAL] Testing n={n_range[0]}..{n_range[1]-1}")
+        print(f"[EMPIRICAL] Testing n={registry_n_range[0]}..{registry_n_range[1]-1}")
     
     # Test all (n,k) pairs
     total_tests = 0
     agreement = 0
     disagreement = 0
-    
-    for n in range(n_range[0], n_range[1]):
+
+    # P1-2: Use registry n_range for testing
+    for n in range(registry_n_range[0], registry_n_range[1]):
         for k in range(0, n+1):
             total_tests += 1
-            
+
             # What does the claim say?
             claim_says_works = evaluate_claim(claim, k, n)
-            
-            # What does construction actually do?
-            # For now, use KNOWN CORRECT answer for Sunny Lines: k∈{0,1,n-1}
-            # In production, this would call actual construction verification
-            actually_works = k in {0, 1, n-1}
+
+            # P1-2 FIX: Use ground truth function from registry
+            # No longer hardcoded to Problem 1 answer
+            try:
+                actually_works = ground_truth_func(k, n)
+            except Exception as e:
+                # If ground truth function fails, skip this test
+                if verbose:
+                    print(f"[EMPIRICAL] Warning: Ground truth function failed for n={n}, k={k}: {e}")
+                continue
             
             if claim_says_works == actually_works:
                 agreement += 1

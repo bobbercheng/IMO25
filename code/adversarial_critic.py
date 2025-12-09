@@ -133,8 +133,11 @@ class AdversarialCritic:
         # NEW: Run cooperative verification if provided (every N rounds)
         # Configuration via environment variables
         import os
-        verify_every_n = int(os.getenv('RLAC_VERIFY_EVERY_N_ROUNDS', '2'))
-        verify_start_round = int(os.getenv('RLAC_VERIFY_START_ROUND', '0'))
+        # P0-3 FIX: Reduce verification frequency to reduce overhead
+        # Changed from every 2 rounds starting at 0 to every 4 rounds starting at 3
+        # This reduces verification calls from 6 to ~3 in typical 12-round scenarios
+        verify_every_n = int(os.getenv('RLAC_VERIFY_EVERY_N_ROUNDS', '4'))
+        verify_start_round = int(os.getenv('RLAC_VERIFY_START_ROUND', '3'))
         disable_inline_verification = os.getenv('RLAC_DISABLE_INLINE_VERIFICATION', 'false').lower() == 'true'
 
         should_verify = (
@@ -349,12 +352,18 @@ Follow the output format specified in your system prompt.
 
     def _get_progressive_reasoning_effort(self, round_num: int, max_rounds: int) -> str:
         """
-        Get progressive reasoning effort based on round number.
+        P1-1: Get progressive reasoning effort based on round number.
 
-        Implements curriculum learning for critic:
+        Implements adaptive curriculum learning for critic:
         - Early rounds (0-2): LOW reasoning for quick basic attacks
         - Middle rounds (3-6): MEDIUM reasoning for moderate attacks
-        - Late rounds (7+): HIGH reasoning for advanced rigorous attacks
+        - Late rounds (7+): Configurable via RLAC_ADAPTIVE_REASONING_LATE (default: medium)
+
+        Environment variables:
+        - RLAC_ADAPTIVE_REASONING_EARLY: Effort for rounds 0-2 (default: low)
+        - RLAC_ADAPTIVE_REASONING_MIDDLE: Effort for rounds 3-6 (default: medium)
+        - RLAC_ADAPTIVE_REASONING_LATE: Effort for rounds 7+ (default: medium)
+        - RLAC_DISABLE_ADAPTIVE_REASONING: Set to 'true' to disable (uses base reasoning)
 
         Args:
             round_num: Current round (0-indexed)
@@ -363,13 +372,27 @@ Follow the output format specified in your system prompt.
         Returns:
             Reasoning effort string: "low", "medium", or "high"
         """
+        import os
+
+        # P1-1: Check if adaptive reasoning is disabled
+        disable_adaptive = os.getenv('RLAC_DISABLE_ADAPTIVE_REASONING', 'false').lower() == 'true'
+        if disable_adaptive:
+            return self.reasoning_effort
+
+        # P1-1: Get configurable thresholds and efforts
+        early_effort = os.getenv('RLAC_ADAPTIVE_REASONING_EARLY', 'low').lower()
+        middle_effort = os.getenv('RLAC_ADAPTIVE_REASONING_MIDDLE', 'medium').lower()
+        late_effort = os.getenv('RLAC_ADAPTIVE_REASONING_LATE', 'medium').lower()
+
+        # P1-1: Progressive reasoning based on round number
         if round_num < 3:
-            return "low"
+            return early_effort
         elif round_num < 7:
-            return "medium"
-        # high reason effort takes too long, let's avoid it unless there is a strong reason.
-        # else:
-        #     return "high"
+            return middle_effort
+        else:
+            # P1-1 FIX: Return medium (or configured) for late rounds
+            # High reasoning takes too long and rarely provides additional value
+            return late_effort
 
     def _parse_attack_result(self, attack_text: str, round_num: int) -> Dict[str, Any]:
         """

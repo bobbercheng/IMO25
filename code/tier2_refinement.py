@@ -103,9 +103,90 @@ def validate_equation_symbolically(equation_text, verbose=False):
         }
 
 
+def should_validate_equation(equation, context_before, context_after, proof_text):
+    """
+    P0 FIX: Filter out equations that shouldn't be symbolically validated.
+
+    This prevents false positives from:
+    - Set definitions: T_k = \{(u,v) | u+v <= k+1\}
+    - Constraints: "subject to x+y > 0"
+    - Negations: "NOT parallel to x+y=0"
+    - Variable definitions: "Let p = t+1"
+
+    Args:
+        equation: The equation string
+        context_before: Text before the equation (for context)
+        context_after: Text after the equation
+        proof_text: Full proof text (for global patterns)
+
+    Returns:
+        bool: True if equation should be validated, False otherwise
+    """
+    equation_lower = equation.lower()
+    context_before_lower = context_before.lower()
+    context_after_lower = context_after.lower()
+
+    # P0-1: Skip set definitions (contains set notation with conditions)
+    # Example: T_k = \{(u,v) \mid u+v \le k+1\}
+    if r'\{' in equation and r'\mid' in equation:
+        return False
+
+    if '{' in equation and '|' in equation:  # Alternative set notation
+        return False
+
+    # P0-1: Skip inequalities (these are constraints, not equations to validate)
+    # Example: u+v <= k+1 from set constraints
+    inequality_symbols = [r'\le', r'\ge', r'\lt', r'\gt', '<=', '>=', '<', '>']
+    if any(op in equation for op in inequality_symbols):
+        return False
+
+    # P0-2: Skip negated equations (describing what NOT to have)
+    # Example: "NOT parallel to x+y=0" or "different from x=0"
+    negation_keywords = [
+        'not', 'NOT', 'different from', 'avoid', 'forbidden',
+        'excluded', 'cannot', 'neither', 'nor', 'except', 'excluding'
+    ]
+    if any(kw in context_before_lower for kw in negation_keywords):
+        return False
+
+    # P0-3: Skip variable definitions (defining new symbols)
+    # Example: "Let p = t+1" or "Set q = t" or "Define k := 2t+1"
+    definition_keywords = [
+        'let ', 'set ', 'define ', 'put ', 'denote ', 'write ',
+        'choose ', 'take ', 'fix ', ':='
+    ]
+    if any(kw in context_before_lower for kw in definition_keywords):
+        return False
+
+    # P0-4: Skip conditional equations (context-dependent identities)
+    # Example: "If n is even, then k = n/2"
+    conditional_keywords = ['if ', 'when ', 'suppose ', 'assume ', 'given ']
+    if any(kw in context_before_lower for kw in conditional_keywords):
+        return False
+
+    # P0-5: Skip equations inside set builder notation
+    # Example: \{x \mid x = 2k\} should not extract "x = 2k"
+    # Check if equation appears within \{...\} or {...}
+    # Look for opening brace before equation and closing brace after
+    if r'\{' in context_before or '{' in context_before:
+        # Check if there's a closing brace in context_after
+        if r'\}' in context_after or '}' in context_after:
+            return False
+
+    # P0-6: Skip equations with "for all" or "exists" (universal/existential quantifiers)
+    # Example: "for all x, we have x^2 >= 0"
+    quantifier_keywords = ['for all', 'for every', 'for any', 'there exists']
+    if any(kw in context_before_lower for kw in quantifier_keywords):
+        return False
+
+    return True
+
+
 def extract_equations_from_proof(proof_text):
     """
     Extract mathematical equations from a proof for validation.
+
+    P0 FIX: Now includes semantic filtering to avoid false positives.
 
     Supports multiple formats:
     - Inline numbered: (3.2) q = ...
@@ -123,46 +204,74 @@ def extract_equations_from_proof(proof_text):
 
     # Pattern 1: Inline numbered equations (e.g., "(3.2) q = ...")
     inline_pattern = r'\([\d.]+\)\s*([^\n.]+\s*=\s*[^\n.]+?)(?:\n|\.|\s{2}|$)'
-    inline_matches = re.findall(inline_pattern, proof_text, re.MULTILINE)
 
-    for match in inline_matches:
+    for match_obj in re.finditer(inline_pattern, proof_text, re.MULTILINE):
+        match = match_obj.group(1)
+        start_pos = match_obj.start()
+        end_pos = match_obj.end()
+
+        # Get context for filtering
+        context_before = proof_text[max(0, start_pos-150):start_pos]
+        context_after = proof_text[end_pos:min(len(proof_text), end_pos+150)]
+
         cleaned = match.strip()
         if cleaned and '=' in cleaned:
+            # Check if should validate
+            if not should_validate_equation(cleaned, context_before, context_after, proof_text):
+                continue
+
             # Convert basic LaTeX to SymPy
             cleaned = clean_latex_equation(cleaned)
             if cleaned:
                 equations.append(cleaned)
 
     # Pattern 2: LaTeX display equations \\[ ... \\]
-    # Use non-greedy match and DOTALL to handle multi-line equations
     latex_pattern = r'\\\[(.*?)\\\]'
-    latex_matches = re.findall(latex_pattern, proof_text, re.DOTALL)
 
-    for match in latex_matches:
+    for match_obj in re.finditer(latex_pattern, proof_text, re.DOTALL):
+        match = match_obj.group(1)
+        start_pos = match_obj.start()
+        end_pos = match_obj.end()
+
+        # Get context for filtering
+        context_before = proof_text[max(0, start_pos-150):start_pos]
+        context_after = proof_text[end_pos:min(len(proof_text), end_pos+150)]
+
         # Remove \tag{n} notation
         cleaned = re.sub(r'\\tag\{[^}]*\}', '', match)
 
-        # Split multiple equations in one display block (separated by commas or \\qquad)
-        # Example: A=(...), B=(...) should be split
+        # Split multiple equations in one display block
         parts = re.split(r',\s*(?=[A-Z]\s*=)', cleaned)
 
         for part in parts:
             part = part.strip()
             if '=' in part:
+                # Check if should validate
+                if not should_validate_equation(part, context_before, context_after, proof_text):
+                    continue
+
                 # Convert LaTeX to SymPy-compatible format
                 part = clean_latex_equation(part)
                 if part:  # Only add non-empty equations
                     equations.append(part)
 
-    # Pattern 3: Inline LaTeX math \\( ... \\) - but only simple equations
-    # Example: "we have \\(PA=PD\\)" should extract "PA=PD"
-    # FIX: Remove nested character class to avoid regex warning
+    # Pattern 3: Inline LaTeX math \\( ... \\)
     inline_latex_pattern = r'\\\(([^)]*=[^)]*)\\\)'
-    inline_latex_matches = re.findall(inline_latex_pattern, proof_text)
 
-    for match in inline_latex_matches:
-        # Only extract if it's a simple equation (no angle symbols, etc.)
+    for match_obj in re.finditer(inline_latex_pattern, proof_text):
+        match = match_obj.group(1)
+        start_pos = match_obj.start()
+        end_pos = match_obj.end()
+
+        # Get context for filtering
+        context_before = proof_text[max(0, start_pos-150):start_pos]
+        context_after = proof_text[end_pos:min(len(proof_text), end_pos+150)]
+
         if '=' in match:
+            # Check if should validate
+            if not should_validate_equation(match, context_before, context_after, proof_text):
+                continue
+
             cleaned = clean_latex_equation(match)
             if cleaned and cleaned not in equations:  # Avoid duplicates
                 equations.append(cleaned)
