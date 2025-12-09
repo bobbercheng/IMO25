@@ -28,6 +28,7 @@ import json
 import re
 import requests
 import argparse
+import time
 from benchmark_loader import BenchmarkLoader
 
 # Import shared prompts from agent_oai
@@ -331,6 +332,85 @@ def send_api_request(api_key, payload, stream=True, request_label="API Request")
             print(f"Status code: {e.response.status_code}")
             print(f"Raw API Response: {e.response.text}")
         raise e
+
+def send_api_request_with_retry(api_key, payload, stream=True, request_label="API Request",
+                                max_retries=4, initial_delay=2.0):
+    """
+    Wrapper for send_api_request() with automatic retry logic for transient errors.
+
+    BUGFIX (2025-12-09): Add auto-retry for 500 errors and network issues.
+
+    Retries with exponential backoff on:
+    - HTTP 500, 502, 503, 504 (server errors)
+    - Network timeouts and connection errors
+
+    Does NOT retry on:
+    - HTTP 400, 401, 403, 404 (client errors - permanent)
+    - Invalid parameter errors
+
+    Args:
+        api_key: API key for authentication
+        payload: Request payload dict
+        stream: Whether to use streaming (default: True)
+        request_label: Descriptive label for logging
+        max_retries: Maximum number of retries (default: 4, total 5 attempts)
+        initial_delay: Initial delay in seconds (default: 2.0)
+
+    Returns:
+        API response dict
+
+    Raises:
+        requests.exceptions.RequestException: After all retries exhausted
+    """
+    delay = initial_delay
+
+    for attempt in range(max_retries + 1):
+        try:
+            return send_api_request(api_key, payload, stream=stream, request_label=request_label)
+
+        except requests.exceptions.RequestException as e:
+            # Check if this is a retryable error
+            is_retryable = False
+            status_code = None
+
+            if hasattr(e, 'response') and e.response is not None:
+                status_code = e.response.status_code
+
+                # Retryable: server errors (5xx)
+                if status_code in [500, 502, 503, 504]:
+                    is_retryable = True
+
+                # Not retryable: client errors (4xx)
+                elif 400 <= status_code < 500:
+                    is_retryable = False
+
+            # Retryable: network errors (timeout, connection refused, etc.)
+            elif isinstance(e, (requests.exceptions.Timeout,
+                              requests.exceptions.ConnectionError)):
+                is_retryable = True
+
+            # Decide whether to retry
+            if is_retryable and attempt < max_retries:
+                print(f"\n{'='*80}")
+                print(f"[RETRY] Attempt {attempt + 1}/{max_retries + 1} failed")
+                print(f"[RETRY] Error: {e}")
+                if status_code:
+                    print(f"[RETRY] Status code: {status_code}")
+                print(f"[RETRY] Retrying in {delay:.1f} seconds...")
+                print(f"{'='*80}\n")
+
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+                continue
+            else:
+                # Not retryable OR max retries reached
+                if attempt >= max_retries:
+                    print(f"\n{'='*80}")
+                    print(f"[RETRY] Max retries ({max_retries}) exhausted")
+                    print(f"[RETRY] Final error: {e}")
+                    print(f"{'='*80}\n")
+                # Re-raise the original exception
+                raise e
 
 def _handle_streaming_response(response):
     """
@@ -977,7 +1057,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         reasoning_effort=verification_effort  # Use high reasoning for rigorous verification
     )
 
-    res = send_api_request(get_api_key(), p2, request_label="Verification prompt")
+    res = send_api_request_with_retry(get_api_key(), p2, request_label="Verification prompt")
     out = extract_text_from_response(res)
 
     if(verbose):
@@ -987,7 +1067,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     check_correctness = """Response in "yes" or "no". Is the following statement saying the solution is complete, correct, and does not contain critical error or a major justification gap?""" \
             + "\n\n" + out
     prompt = build_request_payload(system_prompt="", question_prompt=check_correctness)
-    r = send_api_request(get_api_key(), prompt, request_label="Verification correctness check")
+    r = send_api_request_with_retry(get_api_key(), prompt, request_label="Verification correctness check")
     o = extract_text_from_response(r)
 
     if(verbose):
@@ -1110,7 +1190,7 @@ The expert feedback is too sophisticated for the student to understand. Translat
         print(f">>>>>>> [TRANSLATION] Payload size: {len(json.dumps(payload))} characters")
 
     try:
-        response = send_api_request(get_api_key(), payload, stream=True, request_label="Translation layer prompt")
+        response = send_api_request_with_retry(get_api_key(), payload, stream=True, request_label="Translation layer prompt")
         simplified_feedback = extract_text_from_response(response)
 
         # Analyze simplified feedback
@@ -1216,7 +1296,7 @@ Now create a proof outline for this problem:
         reasoning_effort=reasoning_effort
     )
 
-    response = send_api_request(get_api_key(), payload, request_label="Proof sketch generation")
+    response = send_api_request_with_retry(get_api_key(), payload, request_label="Proof sketch generation")
     proof_sketch = extract_text_from_response(response)
 
     if verbose:
@@ -1282,7 +1362,7 @@ If No:
         reasoning_effort=reasoning_effort
     )
 
-    response = send_api_request(get_api_key(), payload, request_label="Proof structure verification")
+    response = send_api_request_with_retry(get_api_key(), payload, request_label="Proof structure verification")
     verification_result = extract_text_from_response(response)
 
     # Check if structurally sound
@@ -1348,7 +1428,7 @@ Begin writing the complete proof now:
         reasoning_effort=reasoning_effort
     )
 
-    response = send_api_request(get_api_key(), payload, request_label="Proof details expansion")
+    response = send_api_request_with_retry(get_api_key(), payload, request_label="Proof details expansion")
     complete_proof = extract_solution(extract_text_from_response(response))
 
     if verbose:
@@ -1410,7 +1490,7 @@ Please revise the proof outline to fix these structural issues while keeping the
             reasoning_effort=sol_reasoning
         )
 
-        response = send_api_request(get_api_key(), payload, request_label="Proof structure fix prompt")
+        response = send_api_request_with_retry(get_api_key(), payload, request_label="Proof structure fix prompt")
         proof_sketch = extract_text_from_response(response)
 
         # Re-verify
@@ -1687,7 +1767,7 @@ Response in exactly "yes" or "no". No other words.
     """
 
     p1 = build_request_payload(system_prompt="", question_prompt=check_complete_prompt)
-    r = send_api_request(get_api_key(), p1, request_label="Check solution completeness prompt")
+    r = send_api_request_with_retry(get_api_key(), p1, request_label="Check solution completeness prompt")
     o = extract_text_from_response(r)
 
     print(o)
@@ -1702,7 +1782,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
             reasoning_effort=reasoning_effort
         )
 
-    response1 = send_api_request(get_api_key(), p1, request_label="Initial solution prompt")
+    response1 = send_api_request_with_retry(get_api_key(), p1, request_label="Initial solution prompt")
     output1 = extract_text_from_response(response1)
 
     print(f">>>>>>> First solution:")
@@ -1732,7 +1812,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
 
     print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
 
-    response2 = send_api_request(get_api_key(), p1, request_label="Self-improvement prompt")
+    response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Self-improvement prompt")
     solution = extract_solution(extract_text_from_response(response2))
     print(f">>>>>>> Corrected solution:")
     print(json.dumps(solution, indent=4))
@@ -3279,7 +3359,7 @@ Example: "SIMILARITY: 0.85 | REASON: Both claim k≤n-1, just different notation
                 reasoning_effort="low"  # Fast comparison, no need for deep reasoning
             )
 
-            response = send_api_request(get_api_key(), payload, request_label="LLM semantic comparison")
+            response = send_api_request_with_retry(get_api_key(), payload, request_label="LLM semantic comparison")
             response_text = extract_text_from_response(response)
 
             # Parse similarity score from response
@@ -3406,7 +3486,7 @@ Be concrete. If you find a counterexample, state it explicitly with numbers.
                 reasoning_effort="medium"  # Medium for validation - balance speed/accuracy
             )
 
-            response = send_api_request(get_api_key(), payload, request_label="RLAC critic validation")
+            response = send_api_request_with_retry(get_api_key(), payload, request_label="RLAC critic validation")
             validation_text = extract_text_from_response(response)
 
             print(f">>>>>>> [RLAC CRITIC-VALIDATION] Validation response received ({len(validation_text)} chars)")
@@ -3838,7 +3918,7 @@ Start completely fresh with a different mathematical approach.
                                 )
 
                                 # First attempt
-                                response_text = send_api_request(get_api_key(), payload, request_label="TIER 2 refinement")
+                                response_text = send_api_request_with_retry(get_api_key(), payload, request_label="TIER 2 refinement")
                                 refined = extract_text_from_response(response_text)
 
                                 # Check for truncation/empty response
@@ -3856,7 +3936,7 @@ Start completely fresh with a different mathematical approach.
                                         print(f"[TIER 2 RETRY] Truncation detected - retrying with {retry_reasoning.upper()} reasoning...")
 
                                         payload['extra_body']['reasoning']['effort'] = retry_reasoning
-                                        response_text = send_api_request(get_api_key(), payload, request_label="TIER 2 refinement retry")
+                                        response_text = send_api_request_with_retry(get_api_key(), payload, request_label="TIER 2 refinement retry")
                                         refined = extract_text_from_response(response_text)
 
                                         if refined and len(refined) >= 100:
@@ -4309,7 +4389,7 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                 )
 
                 # Generate revised solution
-                response = send_api_request(get_api_key(), payload, request_label="RLAC defense prompt")
+                response = send_api_request_with_retry(get_api_key(), payload, request_label="RLAC defense prompt")
                 revised_solution = extract_solution(extract_text_from_response(response))
 
                 # Check if solution actually changed - USE SEMANTIC COMPARISON
@@ -4367,7 +4447,7 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                         )
 
                         print(f">>>>>>> [RLAC Proposal B] Regenerating with P5.1 mandatory verification...")
-                        response = send_api_request(get_api_key(), payload, request_label="RLAC P5.1 escalation")
+                        response = send_api_request_with_retry(get_api_key(), payload, request_label="RLAC P5.1 escalation")
                         revised_solution = extract_solution(extract_text_from_response(response))
                         p51_verification_triggered = True  # Mark as triggered
 
@@ -4425,7 +4505,7 @@ Provide a corrected solution that passes validation for all small cases.
                                 )
 
                                 print(f">>>>>>> [RLAC Option 3] Sending validation failure feedback...")
-                                retry_response = send_api_request(get_api_key(), retry_payload, request_label="RLAC validation retry")
+                                retry_response = send_api_request_with_retry(get_api_key(), retry_payload, request_label="RLAC validation retry")
                                 revised_solution = extract_solution(extract_text_from_response(retry_response))
                                 print(f">>>>>>> [RLAC Option 3] Retry response received")
                                 # Update p51_answer after retry
@@ -4477,7 +4557,7 @@ Provide a corrected solution that passes validation for all small cases.
                             reasoning_effort="medium"  # Use medium for diversification
                         )
 
-                        diversify_response = send_api_request(get_api_key(), diversify_payload, request_label="RLAC approach diversification")
+                        diversify_response = send_api_request_with_retry(get_api_key(), diversify_payload, request_label="RLAC approach diversification")
                         diversified_solution = extract_solution(extract_text_from_response(diversify_response))
 
                         # Use semantic comparison to check if diversification worked
@@ -4698,7 +4778,7 @@ Provide a corrected solution that passes validation for all small cases.
                                     )
 
                                     print(f">>>>>>> [RLAC Proposal D] Generating fresh solution with high reasoning...")
-                                    response = send_api_request(get_api_key(), payload, request_label="RLAC convergence emergency")
+                                    response = send_api_request_with_retry(get_api_key(), payload, request_label="RLAC convergence emergency")
                                     response_text = extract_text_from_response(response)
                                     fresh_solution = extract_solution(response_text)
 
@@ -4721,7 +4801,7 @@ Provide a corrected solution that passes validation for all small cases.
                                                 other_prompts=other_prompts + [fresh_prompt],
                                                 reasoning_effort="medium"  # More stable than high
                                             )
-                                            response = send_api_request(get_api_key(), payload_retry, request_label="RLAC emergency retry")
+                                            response = send_api_request_with_retry(get_api_key(), payload_retry, request_label="RLAC emergency retry")
                                             fresh_solution = extract_solution(extract_text_from_response(response))
 
                                         # Option 2: If still failing, skip emergency fresh start
@@ -4787,7 +4867,7 @@ Provide a corrected solution that passes validation for all small cases.
                                 reasoning_effort="medium"
                             )
 
-                            fresh_response = send_api_request(get_api_key(), fresh_payload, request_label="RLAC P8 fresh start")
+                            fresh_response = send_api_request_with_retry(get_api_key(), fresh_payload, request_label="RLAC P8 fresh start")
                             fresh_response_text = extract_text_from_response(fresh_response)
                             fresh_solution = extract_solution(fresh_response_text)
 
@@ -4810,7 +4890,7 @@ Provide a corrected solution that passes validation for all small cases.
                                         other_prompts=other_prompts + [fresh_prompt],
                                         reasoning_effort="low"  # Even more stable
                                     )
-                                    fresh_response = send_api_request(get_api_key(), fresh_payload_retry, request_label="RLAC P8 retry")
+                                    fresh_response = send_api_request_with_retry(get_api_key(), fresh_payload_retry, request_label="RLAC P8 retry")
                                     fresh_solution = extract_solution(extract_text_from_response(fresh_response))
 
                                 # If still failing, skip P8 fresh start
@@ -5260,7 +5340,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         }
                     )
 
-                response2 = send_api_request(get_api_key(), p1, request_label="Correction prompt")
+                response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Correction prompt")
                 solution = extract_solution(extract_text_from_response(response2))
 
                 print(">>>>>>> Corrected solution:")
