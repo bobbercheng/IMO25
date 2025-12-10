@@ -179,6 +179,55 @@ def should_validate_equation(equation, context_before, context_after, proof_text
     if any(kw in context_before_lower for kw in quantifier_keywords):
         return False
 
+    # P0-7: Skip equations in section headers/case labels
+    # Example: "*k=0*. Construction: ..." or "(1) k=0:" or "- k=0:"
+    # These are case analysis markers, not universal identities
+    section_header_patterns = [
+        r'\*+\s*[a-z_]+\s*=',  # *k=0* or **k=0**
+        r'^\s*\([0-9]+\)\s*[a-z_]+\s*=',  # (1) k=0
+        r'^\s*-\s*[a-z_]+\s*=',  # - k=0:
+        r'^\s*•\s*[a-z_]+\s*=',  # • k=0:
+        r'Case\s+[a-z_]+\s*=',  # Case k=0
+        r'^\s*[0-9]+\.\s*[a-z_]+\s*=',  # 1. k=0
+    ]
+
+    for pattern in section_header_patterns:
+        if re.search(pattern, context_before, re.IGNORECASE):
+            return False
+
+    # P0-8: Skip case specifications (specific values, not universal)
+    # Example: "for n=3" or "when k=2" (specific case, not "for all n")
+    # Distinguish from universal quantifiers like "for all n"
+    case_spec_patterns = [
+        r'\bfor\s+[a-z_]+\s*=\s*\d+\b',  # for n=3
+        r'\bwhen\s+[a-z_]+\s*=\s*\d+\b',  # when k=2
+        r'\bat\s+[a-z_]+\s*=\s*\d+\b',  # at m=5
+        r'\bwith\s+[a-z_]+\s*=\s*\d+\b',  # with n=4
+    ]
+
+    for pattern in case_spec_patterns:
+        if re.search(pattern, context_before, re.IGNORECASE):
+            return False
+
+    # P0-9: Skip equations that name geometric/mathematical objects
+    # Example: "the line y=x" or "lines x=1, x=2, x+y=4"
+    # These are object identifiers, not algebraic claims to validate
+    object_naming_patterns = [
+        r'\bthe\s+line\s+',  # the line y=x
+        r'\blines?\s+[a-z_0-9,\s=+\-*()]+,',  # lines x=1, x=2, ... (comma-separated list)
+        r'\btake\s+',  # take the line x=0
+        r'\buse\s+',  # use lines x=1
+        r'\bchoose\s+',  # choose x=0
+        r'\breplace.*by\s+',  # replace...by y=x
+        r'\bin\s+column\s+[a-z_]+\s*=',  # in column x=v+1
+        r'\bin\s+row\s+[a-z_]+\s*=',  # in row y=2
+        r'\bon\s+',  # on the line x=0
+    ]
+
+    for pattern in object_naming_patterns:
+        if re.search(pattern, context_before, re.IGNORECASE):
+            return False
+
     return True
 
 

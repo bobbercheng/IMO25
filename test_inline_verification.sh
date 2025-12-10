@@ -28,8 +28,11 @@ echo "Memory: $MEMORY_FILE"
 echo ""
 
 # Configuration for verification
-export RLAC_VERIFY_EVERY_N_ROUNDS=2
-export RLAC_VERIFY_START_ROUND=0
+# P0-3 FIX: Reduced frequency to reduce overhead
+# OLD: verify every 2 rounds starting at 0 → 6 verifications for 12 rounds
+# NEW: verify every 4 rounds starting at 3 → ~3 verifications for 12 rounds
+export RLAC_VERIFY_EVERY_N_ROUNDS=4
+export RLAC_VERIFY_START_ROUND=3
 export RLAC_DISABLE_INLINE_VERIFICATION=false
 
 echo "Verification Configuration:"

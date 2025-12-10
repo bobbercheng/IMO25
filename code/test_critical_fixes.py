@@ -100,6 +100,66 @@ class TestP0_1_SemanticFiltering(unittest.TestCase):
         )
         self.assertTrue(result, "Derivations should be allowed")
 
+    def test_skip_section_headers_asterisk(self):
+        """Test that section headers with asterisks are filtered out (P0-7)"""
+        equation = "k=0"
+        context_before = "*k=0*. Construction:"
+        context_after = ""
+        proof_text = ""
+
+        result = self.module.should_validate_equation(
+            equation, context_before, context_after, proof_text
+        )
+        self.assertFalse(result, "Section headers (*k=0*) should be filtered out")
+
+    def test_skip_section_headers_numbered(self):
+        """Test that numbered section headers are filtered out (P0-7)"""
+        equation = "k=1"
+        context_before = "(1) k=1:"
+        context_after = ""
+        proof_text = ""
+
+        result = self.module.should_validate_equation(
+            equation, context_before, context_after, proof_text
+        )
+        self.assertFalse(result, "Numbered headers ((1) k=1) should be filtered out")
+
+    def test_skip_case_specifications(self):
+        """Test that case specifications are filtered out (P0-8)"""
+        equation = "n=3"
+        context_before = "For n=3 the values are"
+        context_after = ""
+        proof_text = ""
+
+        result = self.module.should_validate_equation(
+            equation, context_before, context_after, proof_text
+        )
+        self.assertFalse(result, "Case specifications (for n=3) should be filtered out")
+
+    def test_skip_object_naming_line(self):
+        """Test that object naming is filtered out (P0-9)"""
+        equation = "y=x"
+        context_before = "Replace by the line y=x which"
+        context_after = ""
+        proof_text = ""
+
+        result = self.module.should_validate_equation(
+            equation, context_before, context_after, proof_text
+        )
+        self.assertFalse(result, "Object naming (the line y=x) should be filtered out")
+
+    def test_skip_object_naming_column(self):
+        """Test that column/row specifications are filtered out (P0-9)"""
+        equation = "x=v+1"
+        context_before = "In column x=v+1 the points"
+        context_after = ""
+        proof_text = ""
+
+        result = self.module.should_validate_equation(
+            equation, context_before, context_after, proof_text
+        )
+        self.assertFalse(result, "Column specifications (in column x=...) should be filtered out")
+
 
 class TestP0_3_EnvironmentConfigs(unittest.TestCase):
     """Test P0-3: Environment configs for verification frequency"""
