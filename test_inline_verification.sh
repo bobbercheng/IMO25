@@ -28,12 +28,16 @@ echo "Memory: $MEMORY_FILE"
 echo ""
 
 # Configuration for verification
-# P0-3 FIX: Reduced frequency to reduce overhead
-# OLD: verify every 2 rounds starting at 0 → 6 verifications for 12 rounds
-# NEW: verify every 4 rounds starting at 3 → ~3 verifications for 12 rounds
-export RLAC_VERIFY_EVERY_N_ROUNDS=4
-export RLAC_VERIFY_START_ROUND=3
+# QUICK WIN #2: Restore verification frequency for better early error detection
+# Analysis showed timeout run had only 3 verifications (vs 5 in successful run)
+# For FIND problems, frequent verification is critical to catch construction errors early
+export RLAC_VERIFY_EVERY_N_ROUNDS=2
+export RLAC_VERIFY_START_ROUND=0
 export RLAC_DISABLE_INLINE_VERIFICATION=false
+
+# QUICK WIN #1: Accept SUSPICIOUS convergence after threshold
+export RLAC_ACCEPT_SUSPICIOUS_THRESHOLD=4
+export RLAC_SUSPICIOUS_LOOKBACK=6
 
 echo "Verification Configuration:"
 echo "  - RLAC_VERIFY_EVERY_N_ROUNDS=$RLAC_VERIFY_EVERY_N_ROUNDS"

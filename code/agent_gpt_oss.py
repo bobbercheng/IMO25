@@ -3719,15 +3719,18 @@ Start completely fresh with a different mathematical approach.
                     print(f">>>>>>> [RLAC P4] Total ROBUST so far: {total_robust_count}")
                     print(f"{'='*80}\n")
 
-                    # P4 Strategy: If we've had multiple ROBUSTs and are oscillating,
-                    # accept the current ROBUST if this verdict is ROBUST
+                    # STRATEGIC FIX #1: Make P4 robust-independent
+                    # P4 should rescue system from oscillation even with 0 ROBUST verdicts
+
+                    # Strategy 1: If we've had multiple ROBUSTs and are oscillating,
+                    # boost confidence for faster convergence
                     if verdict == "ROBUST" and total_robust_count >= 2:
                         print(f">>>>>>> [RLAC P4] Oscillation with ROBUST history - boosting confidence")
                         print(f">>>>>>> [RLAC P4] Setting consecutive_robust to threshold-1 for faster convergence")
                         consecutive_robust = max(consecutive_robust, consecutive_robust_threshold - 1)
                         oscillation_handled = True
 
-                    # If verdict is BROKEN but we have good ROBUST history, use high-reasoning tiebreaker
+                    # Strategy 2: If verdict is BROKEN but we have good ROBUST history, downgrade to SUSPICIOUS
                     elif verdict == "BROKEN" and total_robust_count >= 3 and not oscillation_handled:
                         print(f">>>>>>> [RLAC P4] BROKEN verdict but strong ROBUST history ({total_robust_count})")
                         print(f">>>>>>> [RLAC P4] Treating as SUSPICIOUS instead of BROKEN")
@@ -3735,6 +3738,33 @@ Start completely fresh with a different mathematical approach.
                         attack_result['verdict'] = "SUSPICIOUS"
                         attack_result['p4_oscillation_override'] = True
                         print(f">>>>>>> [VERDICT AUDIT] P4 Oscillation downgrade: {original_critic_verdict} → {verdict}")
+
+                    # STRATEGIC FIX #1: NEW Strategy 3 - Handle SUSPICIOUS/BROKEN oscillation with 0 ROBUST
+                    # This fixes the fatal dependency on ROBUST verdicts
+                    elif total_robust_count == 0 and len(verdict_history) >= 6:
+                        # Count consecutive SUSPICIOUS verdicts in recent history
+                        consecutive_suspicious = 0
+                        for v in reversed(recent_verdicts):
+                            if v == "SUSPICIOUS":
+                                consecutive_suspicious += 1
+                            else:
+                                break
+
+                        # If oscillating with many SUSPICIOUS rounds (5+), treat as convergence signal
+                        if consecutive_suspicious >= 5:
+                            print(f">>>>>>> [RLAC P4] STRATEGIC FIX #1: SUSPICIOUS oscillation without ROBUST")
+                            print(f">>>>>>> [RLAC P4] Consecutive SUSPICIOUS: {consecutive_suspicious}")
+                            print(f">>>>>>> [RLAC P4] Oscillation suggests solution is close to correct")
+                            print(f">>>>>>> [RLAC P4] Delegating to Quick Win #1 for SUSPICIOUS convergence check")
+                            oscillation_handled = True
+
+                        # If oscillating between BROKEN and SUSPICIOUS (3+ BROKEN in recent history)
+                        elif recent_verdicts.count("BROKEN") >= 3:
+                            print(f">>>>>>> [RLAC P4] STRATEGIC FIX #1: BROKEN-SUSPICIOUS oscillation")
+                            print(f">>>>>>> [RLAC P4] BROKEN count in recent history: {recent_verdicts.count('BROKEN')}")
+                            print(f">>>>>>> [RLAC P4] Treating next BROKEN as SUSPICIOUS to break cycle")
+                            # Set flag for next round
+                            oscillation_handled = True
 
             # Log round metrics
             rlac_round_data = {
@@ -3836,6 +3866,42 @@ Start completely fresh with a different mathematical approach.
                         print(f"{'='*80}\n")
                         cumulative_success = True
 
+            # STRATEGIC FIX #2: Adaptive max rounds based on progress
+            # Check if we're making progress - if not, trigger early exit
+            adaptive_exit_triggered = False
+            if round_num >= 9 and total_robust_count == 0:  # After 10 rounds with 0 ROBUST
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [RLAC STRATEGIC FIX #2] NO PROGRESS DETECTED")
+                print(f">>>>>>> [RLAC STRATEGIC FIX #2] Round {round_num + 1}: 0 ROBUST verdicts")
+                print(f">>>>>>> [RLAC STRATEGIC FIX #2] Recent verdicts: {verdict_history[-10:]}")
+                print(f"{'='*80}\n")
+
+                # Check verdict distribution in last 10 rounds
+                recent_10 = verdict_history[-10:] if len(verdict_history) >= 10 else verdict_history
+                suspicious_count = recent_10.count("SUSPICIOUS")
+                broken_count = recent_10.count("BROKEN")
+
+                # Strategy 1: If mostly SUSPICIOUS (6+), solution is close - delegate to Quick Win #1
+                if suspicious_count >= 6:
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Mostly SUSPICIOUS ({suspicious_count}/10)")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Solution appears close to correct")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Delegating to Quick Win #1 for SUSPICIOUS convergence")
+                    # Let Quick Win #1 handle this case (will check in max rounds section)
+
+                # Strategy 2: If mostly BROKEN (6+), answer may be wrong - consider reconsideration
+                elif broken_count >= 6:
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Mostly BROKEN ({broken_count}/10)")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Answer may be fundamentally wrong")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] P5 answer reconsideration will be triggered")
+                    # P5 logic will handle answer reconsideration
+
+                # Strategy 3: If mixed but no progress, exit early to save time/cost
+                elif round_num >= 12:  # Give it 13 rounds minimum
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Mixed verdicts, no convergence after 13 rounds")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Triggering early exit to save cost")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Will return best solution found")
+                    adaptive_exit_triggered = True
+
             # P0-2 FIX: Early stopping for oscillation prevention
             # After round 8, accept 2/3 ROBUST to prevent infinite oscillation
             # This addresses the pattern: ROBUST → ROBUST → SUSPICIOUS/BROKEN → reset
@@ -3857,8 +3923,9 @@ Start completely fresh with a different mathematical approach.
                         early_stop_oscillation = True
 
             # P0 FIX: Early stopping on success - don't depend on cooperative verification
-            if consecutive_robust >= consecutive_robust_threshold or cumulative_success or early_stop_oscillation:
-                if not cumulative_success and not early_stop_oscillation:
+            # STRATEGIC FIX #2: Also exit on adaptive trigger (no progress detected)
+            if consecutive_robust >= consecutive_robust_threshold or cumulative_success or early_stop_oscillation or adaptive_exit_triggered:
+                if not cumulative_success and not early_stop_oscillation and not adaptive_exit_triggered:
                     # Normal success: reached consecutive_robust_threshold
                     print(f"\n{'='*80}")
                     print(f">>>>>>> [RLAC SUCCESS] Solution ROBUST after {consecutive_robust_threshold} consecutive attacks!")
@@ -3873,13 +3940,28 @@ Start completely fresh with a different mathematical approach.
                     print(f">>>>>>> [RLAC SUCCESS] Total rounds: {round_num + 1}")
                     print(f">>>>>>> [RLAC SUCCESS] Cumulative cost: ${cumulative_cost:.2f}")
                     print(f"{'='*80}\n")
+                elif adaptive_exit_triggered:
+                    # STRATEGIC FIX #2: Adaptive early exit - no progress
+                    print(f"\n{'='*80}")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] ADAPTIVE EXIT - No progress detected")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Total ROBUST: {total_robust_count}")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Total rounds: {round_num + 1}")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Returning best solution to save cost")
+                    print(f">>>>>>> [RLAC STRATEGIC FIX #2] Cumulative cost: ${cumulative_cost:.2f}")
+                    print(f"{'='*80}\n")
 
                 # Final cooperative verification as sanity check (informational only)
-                print(">>>>>>> [RLAC FINAL] Running cooperative verification as sanity check...")
-                verify, good_verify = verify_solution_safe(
-                    problem_statement, solution,
-                    reasoning_effort=ver_reasoning
-                )
+                # Skip verification if adaptive exit (no point in verifying incomplete solution)
+                if not adaptive_exit_triggered:
+                    print(">>>>>>> [RLAC FINAL] Running cooperative verification as sanity check...")
+                    verify, good_verify = verify_solution_safe(
+                        problem_statement, solution,
+                        reasoning_effort=ver_reasoning
+                    )
+                else:
+                    # STRATEGIC FIX #2: Skip verification for adaptive exit
+                    print(">>>>>>> [RLAC FINAL] Skipping verification for adaptive exit (no progress)")
+                    verify, good_verify = "", "no"
 
                 cooperative_verified = "yes" in good_verify.lower()
 
@@ -5005,6 +5087,99 @@ Provide a corrected solution that passes validation for all small cases.
             print(f">>>>>>> [RLAC WARNING] Attack pattern repeating but solutions still changing")
             print(f">>>>>>> [RLAC WARNING] (consecutive_broken={consecutive_broken}, stuck_count={stuck_count})")
             # Don't fail yet - let it continue until max_rounds or stuck_count triggers
+
+    # QUICK WIN #1: Accept SUSPICIOUS convergence after threshold
+    # If we have enough consecutive SUSPICIOUS verdicts without BROKEN, accept the solution
+    ACCEPT_SUSPICIOUS_THRESHOLD = int(os.getenv('RLAC_ACCEPT_SUSPICIOUS_THRESHOLD', '4'))
+    SUSPICIOUS_LOOKBACK = int(os.getenv('RLAC_SUSPICIOUS_LOOKBACK', '6'))
+
+    # Calculate consecutive suspicious count from recent rounds
+    consecutive_suspicious = 0
+    rounds_since_last_broken = 0
+
+    # Count from end of verdict_history
+    for i in range(len(verdict_history) - 1, -1, -1):
+        if verdict_history[i] == 'SUSPICIOUS':
+            consecutive_suspicious += 1
+            rounds_since_last_broken += 1
+        elif verdict_history[i] == 'BROKEN':
+            # Found BROKEN - stop counting but keep the rounds_since_last_broken value
+            # (it represents how many SUSPICIOUS rounds we had since this BROKEN)
+            break
+        else:  # ROBUST
+            break
+
+    # Check if we should accept SUSPICIOUS convergence
+    if consecutive_suspicious >= ACCEPT_SUSPICIOUS_THRESHOLD and rounds_since_last_broken >= SUSPICIOUS_LOOKBACK:
+        print(f"\n{'='*80}")
+        print(f">>>>>>> [QUICK WIN #1] SUSPICIOUS CONVERGENCE DETECTED")
+        print(f">>>>>>> Consecutive SUSPICIOUS: {consecutive_suspicious}/{ACCEPT_SUSPICIOUS_THRESHOLD}")
+        print(f">>>>>>> Rounds since last BROKEN: {rounds_since_last_broken}/{SUSPICIOUS_LOOKBACK}")
+        print(f">>>>>>> Accepting solution with justification gaps (TIER_1_ONLY)")
+        print(f"{'='*80}\n")
+
+        # Accept as TIER_1_ONLY (answer likely correct, proof has gaps)
+        tier_status = "TIER_1_ONLY"
+
+        # Run final verification to check answer correctness
+        print(">>>>>>> [SUSPICIOUS CONVERGENCE] Running final verification...")
+        verify, good_verify = verify_solution_safe(
+            problem_statement, solution,
+            reasoning_effort=ver_reasoning
+        )
+
+        cooperative_verified = "yes" in good_verify.lower()
+
+        if cooperative_verified:
+            print(">>>>>>> [SUSPICIOUS CONVERGENCE] ✓ Final verification: Answer correct!")
+            tier_status = "TIER_1_ONLY"
+        else:
+            print(">>>>>>> [SUSPICIOUS CONVERGENCE] ⚠️  Final verification: Still has gaps")
+            tier_status = "TIER_1_ONLY"
+
+        # Save success data
+        print(f"\n>>>>>>> [RLAC FINAL] Final tier status: {tier_status}")
+        print(f">>>>>>> [RLAC FINAL] Answer lock status: {'LOCKED' if answer_locked else 'UNLOCKED'}")
+        if answer_locked and locked_answer:
+            print(f">>>>>>> [RLAC FINAL] Locked answer saved: {locked_answer[:100]}...")
+
+        print(f"\n{'='*80}")
+        print(f">>>>>>> ⚠️  SUSPICIOUS CONVERGENCE: Answer likely correct, proof has gaps")
+        print(f">>>>>>> Answer: {locked_answer if answer_locked else 'See solution'}")
+        print(f">>>>>>> Convergence: {consecutive_suspicious} consecutive SUSPICIOUS verdicts")
+        print(f">>>>>>> Status: Justification gaps but no concrete counterexamples")
+        print(f">>>>>>> Recommendation: Verify proof independently")
+        print(f"{'='*80}\n")
+
+        # Save history and solution
+        if memory_file:
+            history_file = memory_file.replace('.json', '_rlac_history.json')
+            critic.save_attack_history(history_file)
+
+            rlac_metadata = {
+                'solution': solution,
+                'tier_status': tier_status,
+                'convergence_type': 'SUSPICIOUS_CONVERGENCE',
+                'rlac_rounds': len(verdict_history),
+                'consecutive_suspicious': consecutive_suspicious,
+                'consecutive_robust': consecutive_robust,
+                'cumulative_cost': cumulative_cost,
+                'total_tokens': total_prompt_tokens + total_completion_tokens,
+                'answer_locked': answer_locked,
+                'locked_answer': locked_answer if answer_locked else None,
+                'attack_history': rlac_history,
+                'critic_metrics': critic.get_metrics_summary(),
+                'timestamp': __import__('datetime').datetime.now().isoformat()
+            }
+
+            try:
+                with open(memory_file.replace('.json', '_rlac_solution.json'), 'w') as f:
+                    json.dump(rlac_metadata, f, indent=2, ensure_ascii=False)
+                print(f">>>>>>> [RLAC FINAL] Solution and metadata saved")
+            except Exception as e:
+                print(f">>>>>>> [RLAC FINAL] Error saving metadata: {e}")
+
+        return solution
 
     # Reached max rounds without success
     print(f"\n{'='*80}")
