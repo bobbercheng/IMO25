@@ -2851,6 +2851,20 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     print(f">>>>>>> [RLAC CONFIG] Defense-first mode: {defense_first}")
     print(f">>>>>>> [RLAC CONFIG] Max regeneration attempts: {max_regeneration_attempts}")
     print(f">>>>>>> [RLAC CONFIG] Constructive mode: {use_constructive_mode}")
+
+    # P0-1 FIX: Add verification config logging for debugging
+    import os as _os
+    verify_every_n = int(_os.getenv('RLAC_VERIFY_EVERY_N_ROUNDS', '4'))
+    verify_start_round = int(_os.getenv('RLAC_VERIFY_START_ROUND', '3'))
+    disable_inline_verification = _os.getenv('RLAC_DISABLE_INLINE_VERIFICATION', 'false').lower() == 'true'
+    print(f">>>>>>> [RLAC CONFIG] Verification frequency: every {verify_every_n} rounds (start: round {verify_start_round})")
+    print(f">>>>>>> [RLAC CONFIG] Inline verification: {not disable_inline_verification}")
+
+    # P0-1 FIX: Log Quick Win #1 config
+    accept_sus_threshold = int(_os.getenv('RLAC_ACCEPT_SUSPICIOUS_THRESHOLD', '3'))  # P0-3: Changed default from 4 to 3
+    sus_lookback = int(_os.getenv('RLAC_SUSPICIOUS_LOOKBACK', '4'))  # P0-4: Changed default from 6 to 4
+    print(f">>>>>>> [RLAC CONFIG] SUSPICIOUS convergence: {accept_sus_threshold} consecutive with {sus_lookback} rounds since BROKEN")
+
     print("="*80 + "\n")
 
     # Import adversarial critic
@@ -3739,9 +3753,10 @@ Start completely fresh with a different mathematical approach.
                         attack_result['p4_oscillation_override'] = True
                         print(f">>>>>>> [VERDICT AUDIT] P4 Oscillation downgrade: {original_critic_verdict} → {verdict}")
 
-                    # STRATEGIC FIX #1: NEW Strategy 3 - Handle SUSPICIOUS/BROKEN oscillation with 0 ROBUST
-                    # This fixes the fatal dependency on ROBUST verdicts
-                    elif total_robust_count == 0 and len(verdict_history) >= 6:
+                    # STRATEGIC FIX #1: NEW Strategy 3 - Handle SUSPICIOUS/BROKEN oscillation
+                    # P0-2 FIX: Changed from total_robust_count == 0 to < threshold
+                    # Original condition only helped worst-case (0 ROBUST), not medium-difficulty (1-2 ROBUST)
+                    elif consecutive_robust < consecutive_robust_threshold and total_robust_count < 3 and len(verdict_history) >= 6:
                         # Count consecutive SUSPICIOUS verdicts in recent history
                         consecutive_suspicious = 0
                         for v in reversed(recent_verdicts):
@@ -3868,11 +3883,14 @@ Start completely fresh with a different mathematical approach.
 
             # STRATEGIC FIX #2: Adaptive max rounds based on progress
             # Check if we're making progress - if not, trigger early exit
+            # P0-2 FIX: Changed from total_robust_count == 0 to consecutive_robust < threshold
+            # Original condition only helped worst-case, not medium-difficulty cases
             adaptive_exit_triggered = False
-            if round_num >= 9 and total_robust_count == 0:  # After 10 rounds with 0 ROBUST
+            if round_num >= 9 and consecutive_robust < consecutive_robust_threshold:  # After 10 rounds without convergence
                 print(f"\n{'='*80}")
                 print(f">>>>>>> [RLAC STRATEGIC FIX #2] NO PROGRESS DETECTED")
-                print(f">>>>>>> [RLAC STRATEGIC FIX #2] Round {round_num + 1}: 0 ROBUST verdicts")
+                print(f">>>>>>> [RLAC STRATEGIC FIX #2] Round {round_num + 1}: consecutive_robust={consecutive_robust}/{consecutive_robust_threshold}")
+                print(f">>>>>>> [RLAC STRATEGIC FIX #2] Total ROBUST: {total_robust_count}")
                 print(f">>>>>>> [RLAC STRATEGIC FIX #2] Recent verdicts: {verdict_history[-10:]}")
                 print(f"{'='*80}\n")
 
@@ -5090,8 +5108,10 @@ Provide a corrected solution that passes validation for all small cases.
 
     # QUICK WIN #1: Accept SUSPICIOUS convergence after threshold
     # If we have enough consecutive SUSPICIOUS verdicts without BROKEN, accept the solution
-    ACCEPT_SUSPICIOUS_THRESHOLD = int(os.getenv('RLAC_ACCEPT_SUSPICIOUS_THRESHOLD', '4'))
-    SUSPICIOUS_LOOKBACK = int(os.getenv('RLAC_SUSPICIOUS_LOOKBACK', '6'))
+    # P0-3 FIX: Lower threshold from 4 to 3 (test run achieved 3 consecutive 3 times but never 4)
+    ACCEPT_SUSPICIOUS_THRESHOLD = int(os.getenv('RLAC_ACCEPT_SUSPICIOUS_THRESHOLD', '3'))
+    # P0-4 FIX: Lower lookback from 6 to 4 (more forgiving, BROKEN came every 3-4 rounds in test)
+    SUSPICIOUS_LOOKBACK = int(os.getenv('RLAC_SUSPICIOUS_LOOKBACK', '4'))
 
     # Calculate consecutive suspicious count from recent rounds
     consecutive_suspicious = 0

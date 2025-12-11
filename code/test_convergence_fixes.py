@@ -47,8 +47,10 @@ class TestQuickWin1_SuspiciousConvergence(unittest.TestCase):
                 break
 
         # Check convergence criteria
-        ACCEPT_SUSPICIOUS_THRESHOLD = 4
-        SUSPICIOUS_LOOKBACK = 6
+        # P0-3: Changed from 4 to 3 (test showed 3 consecutive achieved 3 times)
+        # P0-4: Changed from 6 to 4 (BROKEN came every 3-4 rounds)
+        ACCEPT_SUSPICIOUS_THRESHOLD = 3
+        SUSPICIOUS_LOOKBACK = 4
 
         should_accept = (
             consecutive_suspicious >= ACCEPT_SUSPICIOUS_THRESHOLD and
