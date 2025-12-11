@@ -36,8 +36,11 @@ export RLAC_VERIFY_START_ROUND=0
 export RLAC_DISABLE_INLINE_VERIFICATION=false
 
 # QUICK WIN #1: Accept SUSPICIOUS convergence after threshold
-export RLAC_ACCEPT_SUSPICIOUS_THRESHOLD=4
-export RLAC_SUSPICIOUS_LOOKBACK=6
+# Using P0 fix code defaults (commit 2e88f6b):
+#   - RLAC_ACCEPT_SUSPICIOUS_THRESHOLD=3 (lowered from 4 in P0-3 fix)
+#   - RLAC_SUSPICIOUS_LOOKBACK=4 (lowered from 6 in P0-4 fix)
+# These defaults enable Quick Win #1 to trigger at round 3 instead of round 15
+# To override defaults, export these environment variables before running this script
 
 echo "Verification Configuration:"
 echo "  - RLAC_VERIFY_EVERY_N_ROUNDS=$RLAC_VERIFY_EVERY_N_ROUNDS"
