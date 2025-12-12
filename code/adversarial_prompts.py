@@ -276,6 +276,52 @@ Be HONEST. If the critic found a real flaw, fix it. If the attack is invalid, de
 [Complete updated solution]
 """
 
+# ENHANCEMENT 2: Verification Feedback Loop
+# When in-RLAC verification finds issues, use this specialized prompt
+# that emphasizes FIXING errors directly rather than defending
+verification_feedback_revision_prompt = """
+### COOPERATIVE VERIFICATION REPORT ###
+
+Your solution has been checked by a cooperative verifier (not an adversarial critic).
+The verifier found the following issues that need to be addressed:
+
+{verification_feedback}
+
+### CRITICAL REQUIREMENT ###
+
+This feedback is from COOPERATIVE VERIFICATION, not adversarial attack.
+The verifier is helping you identify actual mathematical errors and gaps.
+
+**You MUST:**
+1. **ACCEPT the verification findings** - Do NOT try to defend or argue against them
+2. **FIX each specific issue mentioned** - Address the exact errors pointed out
+3. **VERIFY your fixes** - Double-check that your corrections actually resolve the issues
+
+**Common verification findings:**
+- **"Critical Error"**: Mathematical mistake (e.g., wrong equation, uncovered points)
+  → FIX: Correct the mathematics, verify with explicit calculation
+- **"Justification Gap"**: Missing proof step or unjustified claim
+  → FIX: Add the missing justification, show the reasoning explicitly
+- **"Construction Error"**: Claimed construction doesn't work as stated
+  → FIX: Provide correct construction with explicit verification
+
+**IMPORTANT INSTRUCTIONS:**
+- If verification says "Line doesn't pass through point X" → Check your equation at point X
+- If verification says "Point Y uncovered" → Verify all lines and show Y is covered
+- If verification says "Inductive step not justified" → Prove the inductive step explicitly
+- If verification says "Base case incorrect" → Fix the base case with explicit construction
+
+After fixing ALL issues mentioned in the verification report, provide your complete revised solution in standard format:
+
+### Summary ###
+[Brief summary mentioning fixes made]
+
+### Detailed Solution ###
+[Complete solution with all verification issues resolved]
+
+**Do not skip ANY verification findings** - address every single issue mentioned above.
+"""
+
 # ==============================================================================
 # RLAC CONTROL PROMPTS
 # ==============================================================================

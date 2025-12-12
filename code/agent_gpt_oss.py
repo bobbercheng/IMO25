@@ -2878,7 +2878,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             answer_reconsideration_prompt,  # P5 FIX: Answer reconsideration for B-B-B-B failures
             answer_reconsideration_with_verification_prompt,  # P5.1 FIX: Enhanced with mandatory verification
             defense_first_revision_prompt,   # P5 FIX: Enhanced revision prompt with answer checkpoint
-            proof_reconsideration_prompt    # PROOF FIX: Prevent "theorem is false" error for prove-X problems
+            proof_reconsideration_prompt,    # PROOF FIX: Prevent "theorem is false" error for prove-X problems
+            verification_feedback_revision_prompt  # ENHANCEMENT 2: Verification feedback loop
         )
     except ImportError as e:
         print(f">>>>>>> [RLAC ERROR] Could not import adversarial modules: {e}")
@@ -4469,6 +4470,15 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     defense_prompt = constructive_defense_prompt.format(
                         constructive_feedback=attack_result.get('full_attack', str(counterexamples))
                     )
+                # ENHANCEMENT 2: Verification Feedback Loop
+                # If attack came from in-RLAC verification, use specialized prompt
+                # that emphasizes FIXING errors directly (not defending)
+                elif attack_result.get('verification_used', False):
+                    print(f">>>>>>> [ENHANCEMENT 2] Using VERIFICATION FEEDBACK prompt")
+                    print(f">>>>>>> [ENHANCEMENT 2] Verification found issues - generator must FIX (not defend)")
+                    defense_prompt = verification_feedback_revision_prompt.format(
+                        verification_feedback=attack_result.get('full_attack', '')
+                    )
                 else:
                     defense_prompt = critic.get_defense_prompt(attack_result, defense_first=defense_first)
 
@@ -5110,9 +5120,15 @@ Provide a corrected solution that passes validation for all small cases.
         # MOVED from after loop (line 5109) to inside loop for early exit capability
         # SAFEGUARD: Only exit early if total_robust_count < 2 (prevents regression on Problem 2)
         #
-        # Load thresholds (same as original Quick Win #1 code)
+        # Load thresholds (configurable via environment variables)
+        # TUNING NOTE: Increasing ACCEPT_SUSPICIOUS_THRESHOLD from 3→5 gives more rounds
+        # for proof refinement before early exit, reducing answer variability risk
         ACCEPT_SUSPICIOUS_THRESHOLD = int(os.getenv('RLAC_ACCEPT_SUSPICIOUS_THRESHOLD', '3'))
         SUSPICIOUS_LOOKBACK = int(os.getenv('RLAC_SUSPICIOUS_LOOKBACK', '4'))
+
+        # ENHANCEMENT 1: Answer stability check window (how many recent answers to compare)
+        # This prevents accepting oscillating answers (e.g., Run 2 issue: k∈{0,1,...,n} vs k∈{0,1,3})
+        ANSWER_STABILITY_WINDOW = int(os.getenv('RLAC_ANSWER_STABILITY_WINDOW', '3'))
 
         # Calculate consecutive suspicious count from recent rounds
         consecutive_suspicious = 0
@@ -5136,17 +5152,65 @@ Provide a corrected solution that passes validation for all small cases.
             rounds_since_last_broken >= SUSPICIOUS_LOOKBACK and
             total_robust_count < 2):
 
-            print(f"\n{'='*80}")
-            print(f">>>>>>> [QUICK WIN #1] SUSPICIOUS CONVERGENCE - EARLY EXIT")
-            print(f">>>>>>> Round {round_num + 1}/{max_adversarial_rounds}")
-            print(f">>>>>>> Consecutive SUSPICIOUS: {consecutive_suspicious}/{ACCEPT_SUSPICIOUS_THRESHOLD}")
-            print(f">>>>>>> Rounds since last BROKEN: {rounds_since_last_broken}/{SUSPICIOUS_LOOKBACK}")
-            print(f">>>>>>> Total ROBUST count: {total_robust_count} < 2 (no ROBUST potential)")
-            print(f">>>>>>> Accepting solution with justification gaps (TIER_1_ONLY)")
-            print(f"{'='*80}\n")
+            # ENHANCEMENT 1: Answer Stability Check
+            # Before accepting early exit, verify answer has been stable for last N rounds
+            # This prevents accepting oscillating or changing answers (Run 2 issue)
+            answer_is_stable = False
 
-            # Exit loop - will handle final verification and saving after loop
-            break
+            if len(answer_history) >= ANSWER_STABILITY_WINDOW:
+                # Extract last N answers from answer_history
+                recent_answers = [h['answer_text'] for h in answer_history[-ANSWER_STABILITY_WINDOW:]]
+
+                # Check if all recent answers are semantically equal
+                all_equal = True
+                baseline_answer = recent_answers[0]
+
+                for ans in recent_answers[1:]:
+                    if not answers_are_semantically_equal(baseline_answer, ans, verbose=False):
+                        all_equal = False
+                        break
+
+                answer_is_stable = all_equal
+
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [ENHANCEMENT 1] ANSWER STABILITY CHECK")
+                print(f">>>>>>> Checking last {ANSWER_STABILITY_WINDOW} answers:")
+                for i, ans in enumerate(recent_answers):
+                    round_idx = len(answer_history) - ANSWER_STABILITY_WINDOW + i
+                    print(f">>>>>>>   Round {answer_history[round_idx]['round']}: {ans[:80]}...")
+                print(f">>>>>>> Stability: {'✓ STABLE' if answer_is_stable else '✗ UNSTABLE (changing)'}")
+                print(f"{'='*80}\n")
+            else:
+                # Not enough history yet - default to unstable
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [ENHANCEMENT 1] ANSWER STABILITY CHECK")
+                print(f">>>>>>> Not enough answer history ({len(answer_history)}/{ANSWER_STABILITY_WINDOW})")
+                print(f">>>>>>> Stability: ✗ UNSTABLE (insufficient data)")
+                print(f"{'='*80}\n")
+                answer_is_stable = False
+
+            if answer_is_stable:
+                # Answer is stable → safe to accept early exit
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [QUICK WIN #1] SUSPICIOUS CONVERGENCE + STABLE ANSWER → EARLY EXIT")
+                print(f">>>>>>> Round {round_num + 1}/{max_adversarial_rounds}")
+                print(f">>>>>>> Consecutive SUSPICIOUS: {consecutive_suspicious}/{ACCEPT_SUSPICIOUS_THRESHOLD}")
+                print(f">>>>>>> Rounds since last BROKEN: {rounds_since_last_broken}/{SUSPICIOUS_LOOKBACK}")
+                print(f">>>>>>> Total ROBUST count: {total_robust_count} < 2 (no ROBUST potential)")
+                print(f">>>>>>> Answer stability: ✓ STABLE ({ANSWER_STABILITY_WINDOW} rounds)")
+                print(f">>>>>>> Accepting solution with justification gaps (TIER_1_ONLY)")
+                print(f"{'='*80}\n")
+
+                # Exit loop - will handle final verification and saving after loop
+                break
+            else:
+                # Answer is unstable → continue for more rounds to stabilize
+                print(f"\n{'='*80}")
+                print(f">>>>>>> [QUICK WIN #1] SUSPICIOUS CONVERGENCE detected BUT answer UNSTABLE")
+                print(f">>>>>>> Answer changing in recent rounds - continuing to allow stabilization")
+                print(f">>>>>>> Will re-check stability in next round")
+                print(f"{'='*80}\n")
+                # Don't break - continue to next round
 
     # QUICK WIN #1 (FALLBACK): Accept SUSPICIOUS convergence after max_rounds reached
     # This is a fallback path when max_rounds is exhausted without ROBUST or early SUSPICIOUS exit
