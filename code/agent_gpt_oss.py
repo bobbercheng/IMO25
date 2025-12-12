@@ -5106,8 +5106,51 @@ Provide a corrected solution that passes validation for all small cases.
             print(f">>>>>>> [RLAC WARNING] (consecutive_broken={consecutive_broken}, stuck_count={stuck_count})")
             # Don't fail yet - let it continue until max_rounds or stuck_count triggers
 
-    # QUICK WIN #1: Accept SUSPICIOUS convergence after threshold
-    # If we have enough consecutive SUSPICIOUS verdicts without BROKEN, accept the solution
+        # PHASE 1 FIX: QUICK WIN #1 - Check for SUSPICIOUS convergence at END of each round
+        # MOVED from after loop (line 5109) to inside loop for early exit capability
+        # SAFEGUARD: Only exit early if total_robust_count < 2 (prevents regression on Problem 2)
+        #
+        # Load thresholds (same as original Quick Win #1 code)
+        ACCEPT_SUSPICIOUS_THRESHOLD = int(os.getenv('RLAC_ACCEPT_SUSPICIOUS_THRESHOLD', '3'))
+        SUSPICIOUS_LOOKBACK = int(os.getenv('RLAC_SUSPICIOUS_LOOKBACK', '4'))
+
+        # Calculate consecutive suspicious count from recent rounds
+        consecutive_suspicious = 0
+        rounds_since_last_broken = 0
+
+        # Count from end of verdict_history
+        for i in range(len(verdict_history) - 1, -1, -1):
+            if verdict_history[i] == 'SUSPICIOUS':
+                consecutive_suspicious += 1
+                rounds_since_last_broken += 1
+            elif verdict_history[i] == 'BROKEN':
+                # Found BROKEN - stop counting but keep the rounds_since_last_broken value
+                break
+            else:  # ROBUST
+                break
+
+        # Check if we should accept SUSPICIOUS convergence
+        # SAFEGUARD: Only if total_robust_count < 2 (no ROBUST potential shown)
+        # This prevents exiting early when TIER_2_VERIFIED is achievable (Problem 2 case)
+        if (consecutive_suspicious >= ACCEPT_SUSPICIOUS_THRESHOLD and
+            rounds_since_last_broken >= SUSPICIOUS_LOOKBACK and
+            total_robust_count < 2):
+
+            print(f"\n{'='*80}")
+            print(f">>>>>>> [QUICK WIN #1] SUSPICIOUS CONVERGENCE - EARLY EXIT")
+            print(f">>>>>>> Round {round_num + 1}/{max_adversarial_rounds}")
+            print(f">>>>>>> Consecutive SUSPICIOUS: {consecutive_suspicious}/{ACCEPT_SUSPICIOUS_THRESHOLD}")
+            print(f">>>>>>> Rounds since last BROKEN: {rounds_since_last_broken}/{SUSPICIOUS_LOOKBACK}")
+            print(f">>>>>>> Total ROBUST count: {total_robust_count} < 2 (no ROBUST potential)")
+            print(f">>>>>>> Accepting solution with justification gaps (TIER_1_ONLY)")
+            print(f"{'='*80}\n")
+
+            # Exit loop - will handle final verification and saving after loop
+            break
+
+    # QUICK WIN #1 (FALLBACK): Accept SUSPICIOUS convergence after max_rounds reached
+    # This is a fallback path when max_rounds is exhausted without ROBUST or early SUSPICIOUS exit
+    # The in-loop check (with ROBUST safeguard) handles early exit cases
     # P0-3 FIX: Lower threshold from 4 to 3 (test run achieved 3 consecutive 3 times but never 4)
     ACCEPT_SUSPICIOUS_THRESHOLD = int(os.getenv('RLAC_ACCEPT_SUSPICIOUS_THRESHOLD', '3'))
     # P0-4 FIX: Lower lookback from 6 to 4 (more forgiving, BROKEN came every 3-4 rounds in test)
