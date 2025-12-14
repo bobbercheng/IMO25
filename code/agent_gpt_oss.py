@@ -1016,6 +1016,49 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
     # Should never reach here, but just in case
     return "VERIFICATION FAILED: Unexpected error", "No - verification system failure"
 
+
+# ============================================================================
+# COUNTEREXAMPLE VALIDATION (Added 2025-12-14)
+# ============================================================================
+
+def validate_solution_with_counterexamples(solution, problem_statement, verbose=True):
+    """
+    Validate solution by testing claimed answer against concrete instances.
+
+    This catches cases where verification accepts algebraically consistent but
+    mathematically invalid solutions (e.g., BFS claiming k ∈ {0,...,n}).
+
+    Args:
+        solution: The solution text to validate
+        problem_statement: The original problem
+        verbose: Print detailed validation steps
+
+    Returns:
+        {
+            "verdict": "VALID" | "INVALID" | "CANNOT_EXTRACT",
+            "reason": str,
+            "failed_cases": List[Tuple[int, int, str]]
+        }
+    """
+    # Import validation logic from test file
+    from test_verification_fix import CounterexampleValidator
+
+    validator = CounterexampleValidator(test_cases=[3, 4, 5, 10])
+    result = validator.validate_solution(solution)
+
+    if verbose:
+        if result["verdict"] == "INVALID":
+            print(f"[COUNTEREXAMPLE] Found invalid construction:")
+            for n, k, reason in result["failed_cases"]:
+                print(f"  - n={n}, k={k}: {reason}")
+        elif result["verdict"] == "VALID":
+            print(f"[COUNTEREXAMPLE] All test cases passed")
+        else:
+            print(f"[COUNTEREXAMPLE] Could not extract answer from solution")
+
+    return result
+
+
 def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
     """
     Verifies a solution using the verification system.
@@ -1083,6 +1126,33 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     if(verbose):
         print(">>>>>>>Bug report:")
         print(json.dumps(bug_report, indent=4))
+
+    # COUNTEREXAMPLE VALIDATION (2025-12-14): Catch contradictory answers
+    # If verification says "yes", run counterexample check to ensure mathematical validity
+    if "yes" in o.lower():
+        if verbose:
+            print("\n" + "="*80)
+            print(">>>>>>> [COUNTEREXAMPLE VALIDATION] Checking mathematical validity")
+            print("="*80)
+
+        counterexample_result = validate_solution_with_counterexamples(
+            solution, problem_statement, verbose=verbose
+        )
+
+        if counterexample_result["verdict"] == "INVALID":
+            # Override verification result
+            if verbose:
+                print(f">>>>>>> [COUNTEREXAMPLE VALIDATION] ❌ FAILED: {counterexample_result['reason']}")
+                print(f">>>>>>> Overriding verification from 'yes' to 'no'")
+
+            # Update bug report and verdict
+            bug_report = f"**COUNTEREXAMPLE VALIDATION FAILED**\n\n{counterexample_result['reason']}\n\n" + \
+                        f"Failed cases: {counterexample_result['failed_cases']}\n\n" + \
+                        "This solution is algebraically consistent but mathematically invalid."
+            o = "no"
+        else:
+            if verbose:
+                print(f">>>>>>> [COUNTEREXAMPLE VALIDATION] ✅ PASSED: {counterexample_result['reason']}")
 
     return bug_report, o
 
