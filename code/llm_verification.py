@@ -103,6 +103,10 @@ class LLMInterface:
             return f"ERROR: LLM call failed: {str(e)}"
 
 
+# Configuration for reasoning levels (can be overridden by environment variables)
+CODE_GENERATION_REASONING = os.getenv("LLM_VERIFY_CODE_REASONING", "medium")
+LLM_REVIEW_REASONING = os.getenv("LLM_VERIFY_REVIEW_REASONING", "high")
+
 # ============================================================================
 # Stage 1: Claim Extraction (LLM Low Reasoning)
 # ============================================================================
@@ -382,7 +386,7 @@ Requirements:
 
 Output Python code only (no markdown):"""
 
-        response = self.llm.call(user_prompt, system_prompt=system_prompt, reasoning="medium")
+        response = self.llm.call(user_prompt, system_prompt=system_prompt, reasoning=CODE_GENERATION_REASONING)
 
         # Extract code from response
         code_match = re.search(r'```python\s*(.*?)\s*```', response, re.DOTALL)
@@ -704,7 +708,7 @@ Output JSON:
 
 Output JSON only:"""
 
-        response = self.llm.call(user_prompt, system_prompt=system_prompt, reasoning="high")
+        response = self.llm.call(user_prompt, system_prompt=system_prompt, reasoning=LLM_REVIEW_REASONING)
 
         # Parse JSON response
         try:
@@ -789,7 +793,7 @@ sunny lines in a configuration of n lines."""
         print(f"[Stage 1] Construction: {claims['construction'][:100]}...")
 
         # Stage 2: Generate verification code
-        print("[Stage 2] Generating verification code with LLM (medium reasoning)...")
+        print(f"[Stage 2] Generating verification code with LLM ({CODE_GENERATION_REASONING} reasoning)...")
         try:
             code = self.code_generator.generate_verification_code(claims, problem_statement)
             print(f"[Stage 2] Generated {len(code)} chars of Python code")
@@ -825,7 +829,7 @@ sunny lines in a configuration of n lines."""
                 }
 
         # Stage 4: LLM fallback review
-        print("[Stage 4] Running LLM fallback review (high reasoning)...")
+        print(f"[Stage 4] Running LLM fallback review ({LLM_REVIEW_REASONING} reasoning)...")
         review = self.reviewer.review_solution(solution, claims, problem_statement)
         print(f"[Stage 4] Verdict: {review['verdict']} (confidence: {review['confidence']:.2f})")
 
