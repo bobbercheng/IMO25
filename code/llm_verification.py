@@ -113,13 +113,14 @@ class ClaimExtractor:
     def __init__(self, llm: LLMInterface):
         self.llm = llm
 
-    def extract_claims(self, solution: str, problem_type: str = "FIND") -> Dict:
+    def extract_claims(self, solution: str, problem_type: str = "FIND", verbose: bool = False) -> Dict:
         """
         Extract claimed answer and construction method.
 
         Args:
             solution: Natural language solution text
             problem_type: "FIND" or "PROVE"
+            verbose: Print detailed extraction process
 
         Returns:
             {
@@ -129,6 +130,21 @@ class ClaimExtractor:
                 "claim_type": str     # "explicit_set" | "range" | "formula"
             }
         """
+        if verbose:
+            print(f"[Stage 1 DEBUG] Solution length: {len(solution)} chars")
+            print(f"[Stage 1 DEBUG] First 200 chars: {solution[:200]}...")
+
+        # Try regex-based extraction first (fast and reliable for simple formats)
+        regex_result = self._extract_with_regex(solution, verbose=verbose)
+        if regex_result["answer"] is not None:
+            if verbose:
+                print(f"[Stage 1 DEBUG] Regex extraction succeeded: {regex_result['answer']}")
+            return regex_result
+
+        # Fallback to LLM extraction
+        if verbose:
+            print(f"[Stage 1 DEBUG] Regex extraction failed, trying LLM...")
+
         system_prompt = """You are a mathematical claim extraction expert. Extract the answer and construction method from solutions.
 Output valid JSON only."""
 
@@ -138,7 +154,7 @@ Solution:
 {solution}
 
 Output JSON with these fields:
-- answer: The claimed set of values (e.g., {{"0", "1", "3"}} or "ALL_VALUES" for {{0,1,...,n}})
+- answer: The claimed set of values (e.g., ["0", "1", "3"] or "ALL_VALUES" for {{0,1,...,n}})
 - construction: Brief description of how to build the configuration
 - parameters: Key variables and their constraints (e.g., {{"n": "≥3", "k": "number of sunny lines"}})
 - claim_type: One of ["explicit_set", "range", "formula"]
@@ -155,17 +171,32 @@ Output JSON only:"""
 
         response = self.llm.call(user_prompt, system_prompt=system_prompt, reasoning="low")
 
+        if verbose:
+            print(f"[Stage 1 DEBUG] LLM response length: {len(response)} chars")
+            print(f"[Stage 1 DEBUG] LLM response preview: {response[:300]}...")
+
         # Parse JSON response
         try:
             # Extract JSON from response (handle markdown code blocks)
             json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(1)
+                if verbose:
+                    print(f"[Stage 1 DEBUG] Extracted JSON from code block")
             else:
                 # Try to find raw JSON
                 json_str = response.strip()
+                if verbose:
+                    print(f"[Stage 1 DEBUG] Using raw response as JSON")
+
+            if verbose:
+                print(f"[Stage 1 DEBUG] JSON string to parse: {json_str[:200]}...")
 
             claims = json.loads(json_str)
+
+            if verbose:
+                print(f"[Stage 1 DEBUG] JSON parsing succeeded")
+                print(f"[Stage 1 DEBUG] Parsed answer field: {claims.get('answer')}")
 
             # Convert answer to standard format
             if isinstance(claims.get("answer"), list):
@@ -174,10 +205,33 @@ Output JSON only:"""
                 else:
                     # Convert to set of integers
                     claims["answer"] = set(int(x) for x in claims["answer"])
+            elif isinstance(claims.get("answer"), str) and claims["answer"] != "ALL_VALUES":
+                # Handle string answers like "0,1,3"
+                try:
+                    claims["answer"] = set(int(x.strip()) for x in claims["answer"].split(","))
+                except:
+                    pass
+
+            if verbose:
+                print(f"[Stage 1 DEBUG] Final answer: {claims['answer']}")
 
             return claims
         except Exception as e:
-            # Fallback: return parse error
+            if verbose:
+                print(f"[Stage 1 DEBUG] JSON parsing failed: {str(e)}")
+                print(f"[Stage 1 DEBUG] Trying final regex fallback...")
+
+            # Final fallback: try regex again with full text
+            final_regex = self._extract_with_regex(solution + "\n" + response, verbose=verbose)
+            if final_regex["answer"] is not None:
+                if verbose:
+                    print(f"[Stage 1 DEBUG] Final regex fallback succeeded: {final_regex['answer']}")
+                return final_regex
+
+            # Complete failure
+            if verbose:
+                print(f"[Stage 1 DEBUG] All extraction methods failed")
+
             return {
                 "answer": None,
                 "construction": "PARSE_ERROR",
@@ -186,6 +240,93 @@ Output JSON only:"""
                 "error": str(e),
                 "raw_response": response
             }
+
+    def _extract_with_regex(self, text: str, verbose: bool = False) -> Dict:
+        """
+        Extract answer using regex patterns (fast and reliable for simple formats).
+
+        Args:
+            text: Text to extract from
+            verbose: Print debug info
+
+        Returns:
+            Extraction result with answer field
+        """
+        # Pattern 1: k ∈ {0, 1, 3} or k ∈ {0,1,3}
+        pattern1 = r'k\s*∈\s*\{([0-9,\s]+)\}'
+        match = re.search(pattern1, text)
+        if match:
+            values_str = match.group(1)
+            try:
+                answer_set = set(int(x.strip()) for x in values_str.split(',') if x.strip())
+                if verbose:
+                    print(f"[REGEX] Pattern 1 matched: k ∈ {{{values_str}}} → {answer_set}")
+                return {
+                    "answer": answer_set,
+                    "construction": "Extracted from solution text",
+                    "parameters": {"n": "≥3", "k": "sunny lines"},
+                    "claim_type": "explicit_set"
+                }
+            except:
+                pass
+
+        # Pattern 2: {0, 1, 3} or {0,1,3} (standalone set)
+        pattern2 = r'(?:answer is|values are)?\s*\{([0-9,\s]+)\}'
+        match = re.search(pattern2, text, re.IGNORECASE)
+        if match:
+            values_str = match.group(1)
+            try:
+                answer_set = set(int(x.strip()) for x in values_str.split(',') if x.strip())
+                if verbose:
+                    print(f"[REGEX] Pattern 2 matched: {{{values_str}}} → {answer_set}")
+                return {
+                    "answer": answer_set,
+                    "construction": "Extracted from solution text",
+                    "parameters": {"n": "≥3", "k": "sunny lines"},
+                    "claim_type": "explicit_set"
+                }
+            except:
+                pass
+
+        # Pattern 3: k ∈ {0,1,...,n} or k ∈ {0,1,2,...,n}
+        pattern3 = r'k\s*∈\s*\{0,\s*1.*?n\}'
+        if re.search(pattern3, text):
+            if verbose:
+                print(f"[REGEX] Pattern 3 matched: ALL_VALUES")
+            return {
+                "answer": "ALL_VALUES",
+                "construction": "All values from 0 to n",
+                "parameters": {"n": "≥3", "k": "sunny lines"},
+                "claim_type": "range"
+            }
+
+        # Pattern 4: \\boxed{{0, 1, 3}} (LaTeX boxed)
+        pattern4 = r'\\boxed\{\{?([0-9,\s]+)\}?\}'
+        match = re.search(pattern4, text)
+        if match:
+            values_str = match.group(1)
+            try:
+                answer_set = set(int(x.strip()) for x in values_str.split(',') if x.strip())
+                if verbose:
+                    print(f"[REGEX] Pattern 4 matched: \\boxed{{{values_str}}} → {answer_set}")
+                return {
+                    "answer": answer_set,
+                    "construction": "Extracted from boxed answer",
+                    "parameters": {"n": "≥3", "k": "sunny lines"},
+                    "claim_type": "explicit_set"
+                }
+            except:
+                pass
+
+        if verbose:
+            print(f"[REGEX] No patterns matched")
+
+        return {
+            "answer": None,
+            "construction": "",
+            "parameters": {},
+            "claim_type": "unknown"
+        }
 
 
 # ============================================================================
@@ -608,13 +749,14 @@ class VerificationPipeline:
         self.executor = SafeExecutor(timeout=30)
         self.reviewer = LLMReviewer(self.llm)
 
-    def verify(self, solution: str, problem_statement: str = None) -> Dict:
+    def verify(self, solution: str, problem_statement: str = None, verbose: bool = True) -> Dict:
         """
         Run full verification pipeline.
 
         Args:
             solution: Solution text to verify
             problem_statement: Problem text (optional, for better context)
+            verbose: Print detailed debugging output
 
         Returns:
             {
@@ -632,7 +774,7 @@ sunny lines in a configuration of n lines."""
 
         # Stage 1: Extract claims
         print("[Stage 1] Extracting claims with LLM (low reasoning)...")
-        claims = self.claim_extractor.extract_claims(solution, problem_type="FIND")
+        claims = self.claim_extractor.extract_claims(solution, problem_type="FIND", verbose=verbose)
 
         if claims.get("answer") is None:
             return {
