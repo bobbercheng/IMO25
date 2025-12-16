@@ -54,20 +54,22 @@ class LLMInterface:
         self.model = model or os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
 
     def call(self, prompt: str, system_prompt: str = None, reasoning: str = "low",
-             temperature: float = 0.0) -> str:
+             temperature: float = 0.0, max_retries: int = 3) -> str:
         """
-        Call LLM with specified reasoning effort.
+        Call LLM with specified reasoning effort and retry logic.
 
         Args:
             prompt: User prompt
             system_prompt: System prompt (optional)
             reasoning: Reasoning effort ("low", "medium", "high")
             temperature: Sampling temperature
+            max_retries: Maximum retry attempts (default: 3)
 
         Returns:
-            LLM response text
+            LLM response text or error message starting with "ERROR:"
         """
         import requests
+        import time
 
         messages = []
         if system_prompt:
@@ -89,18 +91,53 @@ class LLMInterface:
             # Standard API: reasoning at top level
             payload["reasoning"] = {"effort": reasoning}
 
-        # Make request
+        # Set timeout based on reasoning level (like agent_gpt_oss.py)
+        timeout_map = {"low": 120, "medium": 300, "high": 600}
+        timeout = timeout_map.get(reasoning, 120)
+
+        # Make request with retry logic
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        try:
-            response = requests.post(self.api_url, json=payload, headers=headers, timeout=120)
-            response.raise_for_status()
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
-        except Exception as e:
-            return f"ERROR: LLM call failed: {str(e)}"
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    # Exponential backoff: 2s, 4s, 8s
+                    backoff_time = 2 ** attempt
+                    print(f"[LLM RETRY] Attempt {attempt + 1}/{max_retries} after {backoff_time}s delay...")
+                    time.sleep(backoff_time)
+
+                response = requests.post(self.api_url, json=payload, headers=headers, timeout=timeout)
+                response.raise_for_status()
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+
+                if attempt > 0:
+                    print(f"[LLM RETRY] Success on attempt {attempt + 1}")
+
+                return content
+
+            except requests.exceptions.Timeout as e:
+                last_error = f"Timeout after {timeout}s"
+                print(f"[LLM ERROR] Timeout on attempt {attempt + 1}/{max_retries} (timeout={timeout}s, reasoning={reasoning})")
+                continue
+
+            except requests.exceptions.ConnectionError as e:
+                last_error = f"Connection error: {str(e)}"
+                print(f"[LLM ERROR] Connection error on attempt {attempt + 1}/{max_retries}")
+                continue
+
+            except Exception as e:
+                last_error = str(e)
+                print(f"[LLM ERROR] Error on attempt {attempt + 1}/{max_retries}: {str(e)[:200]}")
+                continue
+
+        # All retries failed
+        error_msg = f"ERROR: LLM call failed after {max_retries} attempts: {last_error}"
+        print(f"[LLM ERROR] {error_msg}")
+        return error_msg
 
 
 # Configuration for reasoning levels (can be overridden by environment variables)
@@ -388,13 +425,74 @@ Output Python code only (no markdown):"""
 
         response = self.llm.call(user_prompt, system_prompt=system_prompt, reasoning=CODE_GENERATION_REASONING)
 
+        # Check if response is an error message from LLM retry logic
+        if response.startswith("ERROR:"):
+            print(f"[Stage 2] Code generation failed: {response}")
+            return None
+
         # Extract code from response
         code_match = re.search(r'```python\s*(.*?)\s*```', response, re.DOTALL)
         if code_match:
-            return code_match.group(1)
+            code = code_match.group(1)
         else:
-            # Return raw response if no code block found
-            return response
+            # Use raw response if no code block found
+            code = response
+
+        # Validate generated code
+        validation_result = self._validate_code(code)
+        if not validation_result["valid"]:
+            print(f"[Stage 2] Code validation failed: {validation_result['reason']}")
+            return None
+
+        return code
+
+    def _validate_code(self, code: str) -> Dict:
+        """
+        Validate generated Python code.
+
+        Args:
+            code: Python code string
+
+        Returns:
+            {"valid": bool, "reason": str}
+        """
+        import ast
+
+        # Check 1: Code length (should be substantial, not just an error message)
+        if len(code) < 500:
+            return {
+                "valid": False,
+                "reason": f"Generated code too short ({len(code)} chars), likely incomplete or error message"
+            }
+
+        # Check 2: Syntax validation
+        try:
+            ast.parse(code)
+        except SyntaxError as e:
+            return {
+                "valid": False,
+                "reason": f"Syntax error in generated code: {e}"
+            }
+
+        # Check 3: Required functions present
+        required_functions = ["generate_configuration", "validate_configuration", "test_claim"]
+        for func_name in required_functions:
+            if f"def {func_name}" not in code:
+                return {
+                    "valid": False,
+                    "reason": f"Missing required function: {func_name}"
+                }
+
+        # Check 4: No obvious error indicators in code
+        error_indicators = ["ERROR:", "failed:", "HTTPConnectionPool", "Read timed out"]
+        for indicator in error_indicators:
+            if indicator in code:
+                return {
+                    "valid": False,
+                    "reason": f"Code contains error indicator: {indicator}"
+                }
+
+        return {"valid": True, "reason": "Code validation passed"}
 
 
 class TemplateLibrary:
@@ -710,6 +808,15 @@ Output JSON only:"""
 
         response = self.llm.call(user_prompt, system_prompt=system_prompt, reasoning=LLM_REVIEW_REASONING)
 
+        # Check if LLM call failed
+        if response.startswith("ERROR:"):
+            return {
+                "verdict": "UNCERTAIN",
+                "confidence": 0.3,
+                "reasoning": f"LLM review failed: {response}",
+                "raw_response": response
+            }
+
         # Parse JSON response
         try:
             json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
@@ -796,9 +903,12 @@ sunny lines in a configuration of n lines."""
         print(f"[Stage 2] Generating verification code with LLM ({CODE_GENERATION_REASONING} reasoning)...")
         try:
             code = self.code_generator.generate_verification_code(claims, problem_statement)
-            print(f"[Stage 2] Generated {len(code)} chars of Python code")
+            if code is not None:
+                print(f"[Stage 2] Generated {len(code)} chars of Python code")
+            else:
+                print("[Stage 2] Code generation failed validation, skipping to Stage 4")
         except Exception as e:
-            print(f"[Stage 2] Code generation failed: {str(e)}")
+            print(f"[Stage 2] Code generation exception: {str(e)}")
             # Fall through to Stage 4
             code = None
 
