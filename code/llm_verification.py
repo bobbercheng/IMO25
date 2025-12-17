@@ -484,6 +484,18 @@ Output Python code only (no markdown):"""
             print(f"[Stage 2] Code generation failed: {response}")
             return None
 
+        # Check for error indicators in RAW response (before code extraction)
+        # These appear in LLM error messages, not in generated code
+        response_error_indicators = ["HTTPConnectionPool", "Read timed out", "ConnectionError"]
+        for indicator in response_error_indicators:
+            if indicator in response:
+                # Check if error is outside code blocks (i.e., in error message)
+                code_block_start = response.find("```python")
+                error_position = response.find(indicator)
+                if code_block_start == -1 or error_position < code_block_start:
+                    print(f"[Stage 2] LLM response contains error indicator: {indicator}")
+                    return None
+
         # Extract code from response
         code_match = re.search(r'```python\s*(.*?)\s*```', response, re.DOTALL)
         if code_match:
@@ -537,14 +549,11 @@ Output Python code only (no markdown):"""
                     "reason": f"Missing required function: {func_name}"
                 }
 
-        # Check 4: No obvious error indicators in code
-        error_indicators = ["ERROR:", "failed:", "HTTPConnectionPool", "Read timed out"]
-        for indicator in error_indicators:
-            if indicator in code:
-                return {
-                    "valid": False,
-                    "reason": f"Code contains error indicator: {indicator}"
-                }
+        # Check 4: REMOVED - Error indicators now checked in raw response (above)
+        # Checking error indicators in code causes false positives because:
+        # - String literals like 'Construction failed: {e}' are valid program content
+        # - LLM errors are caught in raw response check before code extraction
+        # - Template contains legitimate error messages for runtime failures
 
         return {"valid": True, "reason": "Code validation passed"}
 
