@@ -1,7 +1,7 @@
 # LLM Verification Reliability Improvements
 
-**Date**: 2025-12-16
-**Commit**: f983a67
+**Date**: 2025-12-16 (Updated: 2025-12-17)
+**Commits**: f983a67, cb7eef5, d1df10c, 757f079
 **Priority**: Reliability > Speed (per user requirement)
 
 ---
@@ -26,29 +26,40 @@ ERROR: LLM call failed: HTTPConnectionPool... Read timed out
 
 **Impact**: Same solution sometimes passes, sometimes fails.
 
-### Issue 3: Insufficient Timeouts
-- MEDIUM reasoning needs >120s but timeout was fixed at 120s
-- 120s timeout caused false failures for legitimate code generation
+### Issue 3: Insufficient Timeouts (ROOT CAUSE)
+- Code generation produces 3000+ tokens (confirmed via user's API logs)
+- LOW timeout was 120s but generation takes 200-300s
+- Client times out before server finishes responding
+- Server response arrives after client has disconnected
+
+**Evidence**: User provided API response showing 3018 completion tokens successfully generated
 
 ---
 
 ## Solutions Implemented
 
-### 1. **Timeout Based on Reasoning Level**
+### 1. **Timeout Based on Reasoning Level (5x Increased)**
 
 Different reasoning levels now have appropriate timeouts:
 
 ```python
+# UPDATED 2025-12-17 (5x increase to handle 3000+ token generation)
 timeout_map = {
-    "low": 120,      # 2 minutes
-    "medium": 300,   # 5 minutes
-    "high": 600      # 10 minutes
+    "low": 600,      # 10 minutes (was 120s, 5x increase)
+    "medium": 900,   # 15 minutes (was 300s, 3x increase)
+    "high": 1200     # 20 minutes (was 600s, 2x increase)
 }
 ```
 
-**Location**: `code/llm_verification.py:95-96`
+**Location**: `code/llm_verification.py:98-102`
 
-**Benefit**: MEDIUM reasoning won't timeout prematurely.
+**Rationale**:
+- Code generation produces ~3000 tokens
+- At 10-15 tokens/sec, requires 200-300 seconds
+- 2x safety margin → 600s (10 minutes) for LOW reasoning
+- See TIMEOUT_FIX_ANALYSIS.md for detailed calculations
+
+**Benefit**: Client waits long enough for server to complete 3000+ token generation.
 
 ---
 
@@ -147,6 +158,45 @@ if response.startswith("ERROR:"):
 **Location**: `code/llm_verification.py:895-904, 812-818`
 
 **Benefit**: System returns UNCERTAIN instead of crashing.
+
+---
+
+### 5. **Enhanced Diagnostic Logging (Added 2025-12-17)**
+
+Detailed logging for LLM calls to diagnose timeout and performance issues:
+
+```python
+# Before each LLM call
+[LLM CALL] Starting low reasoning call
+[LLM CALL] Input: 5486 chars, Timeout: 600s (10min)
+[LLM CALL] API: http://localhost:30000/v1/chat/completions
+[LLM CALL] Model: openai/gpt-oss-120b
+
+# During request
+[LLM REQUEST] Attempt 1/3 started at 2025-12-17 02:42:47
+
+# On success
+[LLM RESPONSE] Received after 234.5s
+[LLM SUCCESS] Response: 12543 chars, 3018 tokens
+[LLM SUCCESS] Tokens: prompt=1429, completion=3018, total=4447
+[LLM SUCCESS] Total time: 234.5s, Speed: 12.9 tokens/sec
+
+# On timeout
+[LLM ERROR] Timeout on attempt 1/3
+[LLM ERROR]   Configured timeout: 600s (10min)
+[LLM ERROR]   Actual wait time: 600.3s (10.0min)
+[LLM ERROR]   Reasoning level: low
+[LLM ERROR]   This may indicate the LLM needs more time
+```
+
+**Location**: `code/llm_verification.py:105-188`
+
+**Benefits**:
+- Monitor token generation speed (should be >10 tokens/sec)
+- Diagnose if timeout is appropriate (actual time vs configured timeout)
+- Track response sizes to predict future timeouts
+- Identify server performance issues (slow inference, connection errors)
+- Debug timing issues with millisecond precision
 
 ---
 
