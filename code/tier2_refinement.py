@@ -104,7 +104,7 @@ def validate_equation_symbolically(equation_text, verbose=False):
 
 
 def should_validate_equation(equation, context_before, context_after, proof_text):
-    """
+    r"""
     P0 FIX: Filter out equations that shouldn't be symbolically validated.
 
     This prevents false positives from:
