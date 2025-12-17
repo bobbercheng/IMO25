@@ -70,6 +70,7 @@ class LLMInterface:
         """
         import requests
         import time
+        from datetime import datetime
 
         messages = []
         if system_prompt:
@@ -91,9 +92,22 @@ class LLMInterface:
             # Standard API: reasoning at top level
             payload["reasoning"] = {"effort": reasoning}
 
-        # Set timeout based on reasoning level (like agent_gpt_oss.py)
-        timeout_map = {"low": 120, "medium": 300, "high": 600}
-        timeout = timeout_map.get(reasoning, 120)
+        # Set timeout based on reasoning level
+        # IMPORTANT: Code generation can produce 3000+ tokens which takes time
+        # Timeouts increased 5x from original to handle large responses
+        timeout_map = {
+            "low": 600,      # 10 minutes (was 120s = 2min, insufficient for 3000 tokens)
+            "medium": 900,   # 15 minutes (was 300s = 5min)
+            "high": 1200     # 20 minutes (was 600s = 10min)
+        }
+        timeout = timeout_map.get(reasoning, 600)
+
+        # Calculate input size for diagnostics
+        total_prompt_chars = sum(len(msg.get("content", "")) for msg in messages)
+        print(f"[LLM CALL] Starting {reasoning} reasoning call")
+        print(f"[LLM CALL] Input: {total_prompt_chars} chars, Timeout: {timeout}s ({timeout//60}min)")
+        print(f"[LLM CALL] API: {self.api_url}")
+        print(f"[LLM CALL] Model: {self.model}")
 
         # Make request with retry logic
         headers = {"Content-Type": "application/json"}
@@ -109,29 +123,69 @@ class LLMInterface:
                     print(f"[LLM RETRY] Attempt {attempt + 1}/{max_retries} after {backoff_time}s delay...")
                     time.sleep(backoff_time)
 
+                # Record start time
+                start_time = time.time()
+                start_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"[LLM REQUEST] Attempt {attempt + 1}/{max_retries} started at {start_timestamp}")
+
                 response = requests.post(self.api_url, json=payload, headers=headers, timeout=timeout)
+
+                # Record response time
+                elapsed = time.time() - start_time
+                print(f"[LLM RESPONSE] Received after {elapsed:.1f}s")
+
                 response.raise_for_status()
                 result = response.json()
+
+                # Extract content and log response size
                 content = result["choices"][0]["message"]["content"]
+                response_chars = len(content)
+
+                # Log token usage if available
+                usage = result.get("usage", {})
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                total_tokens = usage.get("total_tokens", 0)
+
+                print(f"[LLM SUCCESS] Response: {response_chars} chars, {completion_tokens} tokens")
+                print(f"[LLM SUCCESS] Tokens: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+                print(f"[LLM SUCCESS] Total time: {elapsed:.1f}s, Speed: {completion_tokens/(elapsed or 1):.1f} tokens/sec")
 
                 if attempt > 0:
-                    print(f"[LLM RETRY] Success on attempt {attempt + 1}")
+                    print(f"[LLM RETRY] Success on attempt {attempt + 1} after {elapsed:.1f}s")
 
                 return content
 
             except requests.exceptions.Timeout as e:
-                last_error = f"Timeout after {timeout}s"
-                print(f"[LLM ERROR] Timeout on attempt {attempt + 1}/{max_retries} (timeout={timeout}s, reasoning={reasoning})")
+                elapsed = time.time() - start_time
+                last_error = f"Timeout after {timeout}s (actual wait: {elapsed:.1f}s)"
+                print(f"[LLM ERROR] Timeout on attempt {attempt + 1}/{max_retries}")
+                print(f"[LLM ERROR]   Configured timeout: {timeout}s ({timeout//60}min)")
+                print(f"[LLM ERROR]   Actual wait time: {elapsed:.1f}s ({elapsed/60:.1f}min)")
+                print(f"[LLM ERROR]   Reasoning level: {reasoning}")
+                print(f"[LLM ERROR]   This may indicate the LLM needs more time to generate the response")
                 continue
 
             except requests.exceptions.ConnectionError as e:
+                elapsed = time.time() - start_time
                 last_error = f"Connection error: {str(e)}"
-                print(f"[LLM ERROR] Connection error on attempt {attempt + 1}/{max_retries}")
+                print(f"[LLM ERROR] Connection error on attempt {attempt + 1}/{max_retries} after {elapsed:.1f}s")
+                print(f"[LLM ERROR]   {str(e)[:200]}")
+                continue
+
+            except requests.exceptions.HTTPError as e:
+                elapsed = time.time() - start_time
+                last_error = f"HTTP error {response.status_code}: {str(e)}"
+                print(f"[LLM ERROR] HTTP error on attempt {attempt + 1}/{max_retries} after {elapsed:.1f}s")
+                print(f"[LLM ERROR]   Status: {response.status_code}")
+                print(f"[LLM ERROR]   Response: {response.text[:500]}")
                 continue
 
             except Exception as e:
+                elapsed = time.time() - start_time
                 last_error = str(e)
-                print(f"[LLM ERROR] Error on attempt {attempt + 1}/{max_retries}: {str(e)[:200]}")
+                print(f"[LLM ERROR] Error on attempt {attempt + 1}/{max_retries} after {elapsed:.1f}s")
+                print(f"[LLM ERROR]   {str(e)[:200]}")
                 continue
 
         # All retries failed
