@@ -29,6 +29,7 @@ import re
 import requests
 import argparse
 import time
+import hashlib
 from benchmark_loader import BenchmarkLoader
 
 # Import shared prompts from agent_oai
@@ -1858,6 +1859,76 @@ def update_error_patterns(memory_file, error_type, count_increment=1):
     except Exception as e:
         print(f"Error updating error patterns: {e}")
         return False
+
+
+def hash_solution(solution: str) -> str:
+    """
+    Generate a hash of the solution content for deduplication.
+    Normalizes whitespace to catch semantically identical solutions.
+
+    Args:
+        solution: The solution text to hash
+
+    Returns:
+        MD5 hash of normalized solution content
+    """
+    # Normalize: lowercase, collapse whitespace, strip
+    normalized = re.sub(r'\s+', ' ', solution.lower().strip())
+    return hashlib.md5(normalized.encode()).hexdigest()
+
+
+def is_duplicate_solution(solution: str, solution_history: set) -> bool:
+    """
+    Check if solution is a duplicate of previously seen solutions.
+
+    Args:
+        solution: The solution text to check
+        solution_history: Set of hashes of previously seen solutions
+
+    Returns:
+        True if solution is a duplicate, False otherwise
+    """
+    solution_hash = hash_solution(solution)
+    return solution_hash in solution_history
+
+
+def add_to_solution_history(solution: str, solution_history: set, verification_result: str = None,
+                            solution_hash_to_feedback: dict = None) -> str:
+    """
+    Add solution to history and optionally cache its verification result.
+
+    Args:
+        solution: The solution text
+        solution_history: Set of solution hashes
+        verification_result: Optional verification feedback to cache
+        solution_hash_to_feedback: Optional dict to store feedback
+
+    Returns:
+        The solution hash
+    """
+    solution_hash = hash_solution(solution)
+    solution_history.add(solution_hash)
+
+    if verification_result and solution_hash_to_feedback is not None:
+        solution_hash_to_feedback[solution_hash] = verification_result
+
+    return solution_hash
+
+
+def get_cached_verification(solution: str, solution_hash_to_feedback: dict) -> str:
+    """
+    Retrieve cached verification result for a solution.
+
+    Args:
+        solution: The solution text
+        solution_hash_to_feedback: Dict mapping solution hashes to verification feedback
+
+    Returns:
+        Cached verification feedback, or None if not found
+    """
+    solution_hash = hash_solution(solution)
+    return solution_hash_to_feedback.get(solution_hash)
+
 
 def load_memory(memory_file):
     """
@@ -5732,6 +5803,16 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     score_history = []
     previous_solution = solution
 
+    # PHASE 1 QUICK WIN: Solution deduplication for early stopping
+    solution_history = set()  # Set of solution hashes
+    solution_hash_to_feedback = {}  # Cache verification results
+    stuck_pattern_counter = 0  # Count consecutive duplicates
+    MAX_STUCK_ITERATIONS = 10  # Stop after N consecutive duplicates
+
+    # Add initial solution to history
+    initial_hash = add_to_solution_history(solution, solution_history, verify, solution_hash_to_feedback)
+    print(f">>>>>>> [DEDUP] Initial solution hash: {initial_hash[:8]}... (tracked)")
+
     # Calculate initial score
     initial_score = calculate_solution_score(verify, good_verify)
     score_history.append(initial_score)
@@ -5815,8 +5896,99 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     if answer_validation['narrowed']:
                         print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Answer narrowing detected - extra scrutiny required")
 
+                # PHASE 1 QUICK WIN: Check for duplicate solution
+                if is_duplicate_solution(solution, solution_history):
+                    stuck_pattern_counter += 1
+                    solution_hash = hash_solution(solution)
+                    cached_verify = get_cached_verification(solution, solution_hash_to_feedback)
+
+                    print(f"\n{'!'*80}")
+                    print(f">>>>>>> [DEDUP] Duplicate solution detected (hash: {solution_hash[:8]}...)")
+                    print(f">>>>>>> [DEDUP] Stuck pattern count: {stuck_pattern_counter}/{MAX_STUCK_ITERATIONS}")
+                    print(f">>>>>>> [DEDUP] Unique solutions tried so far: {len(solution_history)}")
+
+                    if cached_verify:
+                        print(f">>>>>>> [DEDUP] Reusing cached verification (skipping LLM call)")
+                        verify = cached_verify
+                        good_verify = cached_verify
+
+                    # PHASE 1 QUICK WIN: Early stopping after N duplicates
+                    if stuck_pattern_counter >= MAX_STUCK_ITERATIONS:
+                        print(f"{'!'*80}")
+                        print(f">>>>>>> [EARLY STOP] Stuck pattern detected after {MAX_STUCK_ITERATIONS} consecutive duplicates")
+                        print(f">>>>>>> [EARLY STOP] Total iterations: {i+1}")
+                        print(f">>>>>>> [EARLY STOP] Unique solutions tried: {len(solution_history)}")
+                        total_cost_estimate = (i + 1) * 0.05  # $0.05 per verification
+                        saved_cost_estimate = (1129 - (i + 1)) * 0.05  # What we would have wasted
+                        print(f">>>>>>> [EARLY STOP] Estimated cost so far: ${total_cost_estimate:.2f}")
+                        print(f">>>>>>> [EARLY STOP] Estimated cost saved by stopping: ${saved_cost_estimate:.2f}")
+                        print(f"{'!'*80}\n")
+                        break
+
+                    # PHASE 1 QUICK WIN: Adaptive temperature when stuck
+                    if stuck_pattern_counter >= 3:
+                        print(f">>>>>>> [ADAPTIVE TEMP] Stuck pattern detected (3+ duplicates)")
+                        print(f">>>>>>> [ADAPTIVE TEMP] Increasing temperature to enable exploration")
+                        print(f">>>>>>> [ADAPTIVE TEMP] This will generate structurally different solutions")
+
+                        # Modify temperature in the next request by adding diversity prompt
+                        diversity_instruction = """
+IMPORTANT: The previous approach has been tried multiple times without success.
+You must generate a FUNDAMENTALLY DIFFERENT solution:
+- Try a different proof technique (e.g., switch from induction to contradiction, or from direct proof to construction)
+- Choose different variables or problem decomposition
+- Explore an alternative angle of attack
+- Consider a completely different mathematical framework
+
+Generate a solution that is STRUCTURALLY DIFFERENT from your previous attempts.
+Do not simply rephrase or polish the previous approach - create something new.
+"""
+                        # Add diversity instruction to the next correction prompt
+                        other_prompts_with_diversity = other_prompts + [diversity_instruction]
+
+                        # Rebuild the request with diversity
+                        p1 = build_request_payload(
+                            system_prompt=step1_prompt,
+                            question_prompt=problem_statement,
+                            other_prompts=other_prompts_with_diversity,
+                            reasoning_effort=sol_reasoning
+                        )
+                        p1["messages"].append({"role": "assistant", "content": solution})
+                        p1["messages"].append({"role": "user", "content": correction_prompt + "\n\n" + verify})
+
+                        # Use higher temperature for exploration (override default 0.1)
+                        if "temperature" not in p1:
+                            p1["temperature"] = 0.7
+                        else:
+                            p1["temperature"] = max(p1["temperature"], 0.7)
+
+                        print(f">>>>>>> [ADAPTIVE TEMP] Temperature set to {p1['temperature']} for next generation")
+
+                        # Regenerate with exploration
+                        response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Diverse exploration")
+                        solution = extract_solution(extract_text_from_response(response2))
+                        print(">>>>>>> [ADAPTIVE TEMP] Generated exploratory solution")
+
+                    print(f"{'!'*80}\n")
+
+                    # Skip to next iteration if we have cached verification
+                    if cached_verify:
+                        continue
+                else:
+                    # New unique solution - reset stuck counter
+                    stuck_pattern_counter = 0
+                    solution_hash = hash_solution(solution)
+                    print(f">>>>>>> [DEDUP] New unique solution (hash: {solution_hash[:8]}...)")
+                    print(f">>>>>>> [DEDUP] Total unique solutions: {len(solution_history) + 1}")
+
             print(f">>>>>>> Verify the solution.")
             verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+
+            # PHASE 1 QUICK WIN: Add solution to history and cache verification result
+            if not is_duplicate_solution(solution, solution_history):
+                solution_hash = add_to_solution_history(solution, solution_history, verify, solution_hash_to_feedback)
+                print(f">>>>>>> [DEDUP] Solution added to history (hash: {solution_hash[:8]}...)")
+                print(f">>>>>>> [DEDUP] Verification result cached for future duplicates")
 
             # Calculate and track score for this iteration
             current_score = calculate_solution_score(verify, good_verify)
