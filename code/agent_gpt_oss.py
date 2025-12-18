@@ -1246,6 +1246,27 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
                 print(f">>>>>>> [COUNTEREXAMPLE VALIDATION] ✅ PASSED (confidence: {confidence:.1%}, stage: {stage})")
                 print(f">>>>>>> [COUNTEREXAMPLE VALIDATION] {counterexample_result['reason'][:200]}...")
 
+    # PRESCRIPTIVE FEEDBACK ENHANCEMENT (2025-12-18):
+    # Integrate automated checkers and template-based fix suggestions
+    try:
+        from prescriptive_feedback import enhance_verification_with_prescriptive_feedback
+
+        bug_report, metadata = enhance_verification_with_prescriptive_feedback(
+            problem_statement, solution, bug_report, "yes" in o.lower(), verbose
+        )
+
+        if verbose and metadata.get('templates_matched'):
+            print(f"\n>>>>>>> [PRESCRIPTIVE FEEDBACK] Matched {len(metadata['templates_matched'])} template(s)")
+            for match in metadata['templates_matched']:
+                print(f">>>>>>>   - {match['template']} (confidence: {match['confidence']:.0%})")
+
+    except ImportError:
+        if verbose:
+            print(">>>>>>> [PRESCRIPTIVE FEEDBACK] Module not available, skipping enhancement")
+    except Exception as e:
+        if verbose:
+            print(f">>>>>>> [PRESCRIPTIVE FEEDBACK] Enhancement failed: {e}")
+
     return bug_report, o
 
 def translate_verification_feedback(bug_report, problem_statement, solution,
