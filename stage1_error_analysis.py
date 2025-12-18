@@ -29,6 +29,7 @@ from agent_gpt_oss import API_URL, MODEL_NAME, get_api_key
 def extract_errors_from_log(log_file: str) -> Dict[str, List[str]]:
     """
     Extract all verification errors from a log file.
+    Extracts from ALL iterations, not just the final one.
 
     Returns:
         Dict with error types as keys and list of error instances as values
@@ -45,10 +46,20 @@ def extract_errors_from_log(log_file: str) -> Dict[str, List[str]]:
     with open(log_file, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Extract verification blocks (they contain the errors)
-    # Pattern: "verify": "..." in JSON blocks or verification output in logs
+    # Extract verification blocks from log entries
+    # Pattern: >>>>>>> Verification results: followed by the verification text
+    verify_pattern = r'>>>>>>> Verification results:\s*"(.+?)"(?=\n\[|\n>>>>>>> |$)'
+    verify_blocks = re.findall(verify_pattern, content, re.DOTALL)
 
-    # Method 1: Extract from JSON memory files if they exist
+    print(f"[EXTRACT] Found {len(verify_blocks)} verification blocks in log")
+
+    for i, block in enumerate(verify_blocks, 1):
+        # Unescape the JSON string (it's stored as escaped JSON in the log)
+        # Replace common escape sequences
+        unescaped = block.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+        errors = parse_verification_text(unescaped, errors)
+
+    # Also extract from JSON memory file if it exists (for final verification)
     json_file = log_file.replace('.log', '.json')
     if os.path.exists(json_file):
         with open(json_file, 'r', encoding='utf-8') as f:
@@ -57,22 +68,14 @@ def extract_errors_from_log(log_file: str) -> Dict[str, List[str]]:
             if verify_text:
                 errors = parse_verification_text(verify_text, errors)
 
-    # Method 2: Extract from log entries
-    # Look for verification output blocks
-    verify_pattern = r'>>>>>>> Verify the solution\..*?(?=>>>>>>|\Z)'
-    verify_blocks = re.findall(verify_pattern, content, re.DOTALL)
-
-    for block in verify_blocks:
-        errors = parse_verification_text(block, errors)
-
     # Deduplicate errors (same error text might appear multiple times)
     for key in errors:
         errors[key] = list(set(errors[key]))
 
-    print(f"[EXTRACT] Found {len(errors['critical_errors'])} Critical Errors")
-    print(f"[EXTRACT] Found {len(errors['justification_gaps'])} Justification Gaps")
-    print(f"[EXTRACT] Found {len(errors['construction_failures'])} Construction Failures")
-    print(f"[EXTRACT] Found {len(errors['other_errors'])} Other Errors")
+    print(f"[EXTRACT] Found {len(errors['critical_errors'])} unique Critical Errors")
+    print(f"[EXTRACT] Found {len(errors['justification_gaps'])} unique Justification Gaps")
+    print(f"[EXTRACT] Found {len(errors['construction_failures'])} unique Construction Failures")
+    print(f"[EXTRACT] Found {len(errors['other_errors'])} unique Other Errors")
 
     return errors
 
