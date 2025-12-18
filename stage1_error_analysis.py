@@ -256,9 +256,24 @@ Focus on creating categories that:
         # Extract JSON from markdown code blocks if present
         json_match = re.search(r'```(?:json)?\s*(\{.+\})\s*```', response, re.DOTALL)
         if json_match:
-            taxonomy = json.loads(json_match.group(1))
+            json_str = json_match.group(1)
         else:
-            taxonomy = json.loads(response)
+            json_str = response
+
+        # Fix invalid escape sequences from LLM responses
+        # Valid JSON escapes: \" \\ \/ \b \f \n \r \t \uXXXX
+        # Remove backslash from invalid escapes like \d, \s, \w, etc.
+        def fix_escapes(match):
+            escape_char = match.group(1)
+            # Keep valid escapes
+            if escape_char in ['"', '\\', '/', 'b', 'f', 'n', 'r', 't'] or escape_char == 'u':
+                return match.group(0)  # Keep as-is
+            else:
+                return escape_char  # Remove backslash
+
+        json_str = re.sub(r'\\(.)', fix_escapes, json_str)
+
+        taxonomy = json.loads(json_str)
 
         print(f"[CATEGORIZE] Created {len(taxonomy['categories'])} error categories")
         for cat in taxonomy['categories']:
@@ -269,6 +284,10 @@ Focus on creating categories that:
     except json.JSONDecodeError as e:
         print(f"[CATEGORIZE ERROR] Failed to parse JSON: {e}")
         print(f"[CATEGORIZE ERROR] Response was: {response[:500]}...")
+        # Try saving raw response for debugging
+        with open('categorize_error_response.txt', 'w') as f:
+            f.write(response)
+        print(f"[CATEGORIZE ERROR] Full response saved to categorize_error_response.txt")
         return {"categories": [], "error_mapping": {}}
 
 
@@ -409,9 +428,20 @@ OUTPUT FORMAT:
         try:
             json_match = re.search(r'```(?:json)?\s*(\{.+\})\s*```', response, re.DOTALL)
             if json_match:
-                evaluation = json.loads(json_match.group(1))
+                json_str = json_match.group(1)
             else:
-                evaluation = json.loads(response)
+                json_str = response
+
+            # Fix invalid escape sequences (same as categorization)
+            def fix_escapes(match):
+                escape_char = match.group(1)
+                if escape_char in ['"', '\\', '/', 'b', 'f', 'n', 'r', 't'] or escape_char == 'u':
+                    return match.group(0)
+                else:
+                    return escape_char
+
+            json_str = re.sub(r'\\(.)', fix_escapes, json_str)
+            evaluation = json.loads(json_str)
 
             test_results["results"].append({
                 "category": category_name,
