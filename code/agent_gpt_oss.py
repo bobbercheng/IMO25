@@ -1248,24 +1248,32 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 
     # PRESCRIPTIVE FEEDBACK ENHANCEMENT (2025-12-18):
     # Integrate automated checkers and template-based fix suggestions
-    try:
-        from prescriptive_feedback import enhance_verification_with_prescriptive_feedback
+    # Can be disabled for A/B testing via DISABLE_PRESCRIPTIVE_FEEDBACK=1
+    import os
+    disable_prescriptive = os.environ.get('DISABLE_PRESCRIPTIVE_FEEDBACK', '0') == '1'
 
-        bug_report, metadata = enhance_verification_with_prescriptive_feedback(
-            problem_statement, solution, bug_report, "yes" in o.lower(), verbose
-        )
+    if not disable_prescriptive:
+        try:
+            from prescriptive_feedback import enhance_verification_with_prescriptive_feedback
 
-        if verbose and metadata.get('templates_matched'):
-            print(f"\n>>>>>>> [PRESCRIPTIVE FEEDBACK] Matched {len(metadata['templates_matched'])} template(s)")
-            for match in metadata['templates_matched']:
-                print(f">>>>>>>   - {match['template']} (confidence: {match['confidence']:.0%})")
+            bug_report, metadata = enhance_verification_with_prescriptive_feedback(
+                problem_statement, solution, bug_report, "yes" in o.lower(), verbose
+            )
 
-    except ImportError:
+            if verbose and metadata.get('templates_matched'):
+                print(f"\n>>>>>>> [PRESCRIPTIVE FEEDBACK] Matched {len(metadata['templates_matched'])} template(s)")
+                for match in metadata['templates_matched']:
+                    print(f">>>>>>>   - {match['template']} (confidence: {match['confidence']:.0%})")
+
+        except ImportError:
+            if verbose:
+                print(">>>>>>> [PRESCRIPTIVE FEEDBACK] Module not available, skipping enhancement")
+        except Exception as e:
+            if verbose:
+                print(f">>>>>>> [PRESCRIPTIVE FEEDBACK] Enhancement failed: {e}")
+    else:
         if verbose:
-            print(">>>>>>> [PRESCRIPTIVE FEEDBACK] Module not available, skipping enhancement")
-    except Exception as e:
-        if verbose:
-            print(f">>>>>>> [PRESCRIPTIVE FEEDBACK] Enhancement failed: {e}")
+            print(">>>>>>> [PRESCRIPTIVE FEEDBACK] Disabled for A/B testing (DISABLE_PRESCRIPTIVE_FEEDBACK=1)")
 
     return bug_report, o
 
