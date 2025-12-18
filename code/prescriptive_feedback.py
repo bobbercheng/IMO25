@@ -488,13 +488,12 @@ class VerificationEnhancer:
         # Step 2: If verification failed, match errors to templates
         if not verification_passed and bug_report:
             # Extract individual errors from bug report
-            # Pattern matches both "**Critical Error**" and "Critical Error" (with/without markdown bold)
+            # Relaxed patterns to match various error formats
             error_patterns = [
-                r'\*?\*?Critical Error\*?\*?[:\-–—]\s*(.+?)(?=\n[\*#]|###|\Z)',
-                r'\*?\*?Justification Gap\*?\*?[:\-–—]\s*(.+?)(?=\n[\*#]|###|\Z)',
-                r'(?:^|\n)\s*\*\s+\*\*Location:\*\*\s*(.+?)(?=\n\s*\*|###|\Z)',  # Extract from bullet points
-                r'(?:^|\n)\s*\*\s+\*\*Issue:\*\*\s*\*?\*?(.+?)\*?\*?[:\-–—]\s*(.+?)(?=\n|###|\Z)',  # Extract from issue descriptions
-                r'Error[:\-–—]\s*(.+?)(?=\n|$)'
+                r'(?:^|\n)\s*\*?\*?Critical Error\*?\*?\s*[:\-–—]\s*(.*?)(?=\n\n|\n\*|\Z)',
+                r'(?:^|\n)\s*\*?\*?Justification Gap\*?\*?\s*[:\-–—]\s*(.*?)(?=\n\n|\n\*|\Z)',
+                r'\*\s+\*\*Issue:\*\*\s*\*?\*?Critical Error\*?\*?\s*[:\-–—]\s*(.*?)(?=\n\n|\n\*|\Z)',
+                r'\*\s+\*\*Issue:\*\*\s*\*?\*?Justification Gap\*?\*?\s*[:\-–—]\s*(.*?)(?=\n\n|\n\*|\Z)',
             ]
 
             errors_found = []
