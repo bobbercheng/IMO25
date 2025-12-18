@@ -8,53 +8,53 @@
   "tree": {
     "strategy": "root",
     "visits": 5,
-    "total_score": -255.57000000000002,
-    "avg_score": -51.114000000000004,
-    "best_score": -40.435,
+    "total_score": -227.45,
+    "avg_score": -45.489999999999995,
+    "best_score": -29.284999999999997,
     "num_solutions": 5,
     "children": [
       {
         "strategy": "Mathematical induction",
         "visits": 1,
-        "total_score": -56.894999999999996,
-        "avg_score": -56.894999999999996,
-        "best_score": -56.894999999999996,
+        "total_score": -57.855000000000004,
+        "avg_score": -57.855000000000004,
+        "best_score": -57.855000000000004,
         "num_solutions": 1,
         "children": []
       },
       {
         "strategy": "Direct proof / construction",
         "visits": 1,
-        "total_score": -40.435,
-        "avg_score": -40.435,
-        "best_score": -40.435,
+        "total_score": -41.055,
+        "avg_score": -41.055,
+        "best_score": -41.055,
         "num_solutions": 1,
         "children": []
       },
       {
         "strategy": "Proof by contradiction",
         "visits": 1,
-        "total_score": -51.34,
-        "avg_score": -51.34,
-        "best_score": -51.34,
+        "total_score": -48.945,
+        "avg_score": -48.945,
+        "best_score": -48.945,
         "num_solutions": 1,
         "children": []
       },
       {
         "strategy": "Pigeonhole principle",
         "visits": 1,
-        "total_score": -56.245000000000005,
-        "avg_score": -56.245000000000005,
-        "best_score": -56.245000000000005,
+        "total_score": -50.31,
+        "avg_score": -50.31,
+        "best_score": -50.31,
         "num_solutions": 1,
         "children": []
       },
       {
         "strategy": "Combinatorial argument",
         "visits": 1,
-        "total_score": -50.655,
-        "avg_score": -50.655,
-        "best_score": -50.655,
+        "total_score": -29.284999999999997,
+        "avg_score": -29.284999999999997,
+        "best_score": -29.284999999999997,
         "num_solutions": 1,
         "children": []
       },
@@ -141,5 +141,5 @@
       }
     ]
   },
-  "timestamp": "2025-12-17T20:46:49.347321"
+  "timestamp": "2025-12-18T10:06:09.638910"
 }
