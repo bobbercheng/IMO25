@@ -367,7 +367,34 @@ class TemplateMatching:
             with open('stage1_results.json', 'r') as f:
                 results = json.load(f)
 
+            # Try exact match first
             template_content = results['templates'].get(template_name, "")
+
+            # If not found, try common variations (handle naming inconsistencies)
+            if not template_content:
+                # Try with "Errors" suffix
+                alt_name = f"{template_name} Errors"
+                template_content = results['templates'].get(alt_name, "")
+
+            if not template_content:
+                # Try with "Mistakes" suffix (for Case Analysis)
+                alt_name = template_name.replace("Case Analysis", "Case Analysis Mistakes")
+                template_content = results['templates'].get(alt_name, "")
+
+            if not template_content:
+                # Try with "Miscalculations" suffix (for Coverage Counting)
+                alt_name = template_name.replace("Coverage Counting", "Coverage Counting Miscalculations")
+                template_content = results['templates'].get(alt_name, "")
+
+            if not template_content:
+                # Try "Missing or Incomplete Justification" variant
+                alt_name = template_name.replace("Missing Justification", "Missing or Incomplete Justification")
+                template_content = results['templates'].get(alt_name, "")
+
+            if not template_content:
+                # Try "Quantitative Bound Errors" variant (singular/plural)
+                alt_name = template_name.replace("Quantitative Bounds", "Quantitative Bound Errors")
+                template_content = results['templates'].get(alt_name, "")
 
             if not template_content:
                 return f"**Template {template_name}** (detailed fix instructions not available)"
