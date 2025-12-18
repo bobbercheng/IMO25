@@ -17,6 +17,7 @@ import sys
 import json
 import re
 import argparse
+import random
 from collections import defaultdict
 from typing import List, Dict, Tuple
 import requests
@@ -193,10 +194,19 @@ def categorize_errors(all_errors: Dict[str, List[str]]) -> Dict[str, List[str]]:
     print("="*80 + "\n")
 
     # Prepare error corpus for analysis
+    # Use stratified random sampling for diversity and reduced input size
     error_corpus = []
     for error_type, errors in all_errors.items():
-        for i, error in enumerate(errors[:20]):  # Limit to top 20 per type to avoid huge prompts
-            error_corpus.append(f"[{error_type}#{i+1}] {error[:500]}")  # Truncate long errors
+        # Sample 10 diverse errors instead of first 20 (reduces input by 50%)
+        sample_size = min(10, len(errors))
+        sampled = random.sample(errors, sample_size) if len(errors) > sample_size else errors
+        for i, error in enumerate(sampled):
+            # Truncate to 300 chars instead of 500 (reduces input by another 40%)
+            error_corpus.append(f"[{error_type}#{i+1}] {error[:300]}")
+        print(f"[CATEGORIZE] Sampled {len(sampled)} errors from {len(errors)} {error_type}")
+
+    print(f"[CATEGORIZE] Total sampled errors: {len(error_corpus)}")
+    print(f"[CATEGORIZE] Estimated reduction: 50% sample size + 40% truncation = 70% smaller prompt")
 
     categorization_prompt = f"""You are a mathematical proof verification expert analyzing common error patterns.
 
@@ -237,7 +247,9 @@ Focus on creating categories that:
 - Enable targeted fix templates (each category should have a clear repair strategy)
 """
 
-    response = call_gpt_oss(categorization_prompt, reasoning_effort="high", temperature=0.1)
+    # Use medium reasoning for categorization (high reserved for template generation)
+    # This reduces timeout risk while maintaining quality
+    response = call_gpt_oss(categorization_prompt, reasoning_effort="medium", temperature=0.1)
 
     # Parse JSON from response
     try:

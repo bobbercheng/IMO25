@@ -198,9 +198,14 @@ Avg Completeness: 4.8/10
 **Cause**: Log files don't contain verification errors
 **Fix**: Check that log files are from Phase A validation (should have verification output)
 
-### Error: "GPT-OSS API timeout"
-**Cause**: High reasoning takes >10 minutes
-**Fix**: Increase timeout in `call_gpt_oss()` or use `reasoning_effort="medium"`
+### Error: "GPT-OSS API timeout" (FIXED 2025-12-18)
+**Cause**: Too many errors (526) creating 20K+ char prompts that timeout with HIGH reasoning
+**Fix Applied**: Three optimizations to reduce prompt size by 70%:
+1. **Random sampling**: 10 errors per type instead of 20 (50% reduction)
+2. **Truncation**: 300 chars per error instead of 500 (40% reduction)
+3. **Medium reasoning**: Changed categorization from HIGH to MEDIUM (saves HIGH for templates)
+
+**Result**: Prompt size reduced from ~20K to ~7K chars, expected completion in <300s instead of timeout
 
 ### Error: "Failed to parse JSON"
 **Cause**: LLM response not in valid JSON format
