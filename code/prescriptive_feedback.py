@@ -363,8 +363,13 @@ class TemplateMatching:
             print(f"[PRESCRIPTIVE FIX] Generating fix instructions for: {template_name}")
 
         # Load template from stage1_results.json
+        # Use absolute path - file is in parent directory of this module
+        import os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        template_file = os.path.join(script_dir, '..', 'stage1_results.json')
+
         try:
-            with open('stage1_results.json', 'r') as f:
+            with open(template_file, 'r') as f:
                 results = json.load(f)
 
             # Try exact match first
@@ -483,9 +488,12 @@ class VerificationEnhancer:
         # Step 2: If verification failed, match errors to templates
         if not verification_passed and bug_report:
             # Extract individual errors from bug report
+            # Pattern matches both "**Critical Error**" and "Critical Error" (with/without markdown bold)
             error_patterns = [
-                r'\*\*Critical Error\*\*[:\-–—]\s*(.+?)(?=\n\*\*|###|\Z)',
-                r'\*\*Justification Gap\*\*[:\-–—]\s*(.+?)(?=\n\*\*|###|\Z)',
+                r'\*?\*?Critical Error\*?\*?[:\-–—]\s*(.+?)(?=\n[\*#]|###|\Z)',
+                r'\*?\*?Justification Gap\*?\*?[:\-–—]\s*(.+?)(?=\n[\*#]|###|\Z)',
+                r'(?:^|\n)\s*\*\s+\*\*Location:\*\*\s*(.+?)(?=\n\s*\*|###|\Z)',  # Extract from bullet points
+                r'(?:^|\n)\s*\*\s+\*\*Issue:\*\*\s*\*?\*?(.+?)\*?\*?[:\-–—]\s*(.+?)(?=\n|###|\Z)',  # Extract from issue descriptions
                 r'Error[:\-–—]\s*(.+?)(?=\n|$)'
             ]
 
