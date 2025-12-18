@@ -207,9 +207,14 @@ Avg Completeness: 4.8/10
 
 **Result**: Prompt size reduced from ~20K to ~7K chars, expected completion in <300s instead of timeout
 
-### Error: "Failed to parse JSON"
-**Cause**: LLM response not in valid JSON format
-**Fix**: Check API response, adjust temperature (lower = more structured)
+### Error: "Failed to parse JSON" (FIXED 2025-12-18)
+**Cause**: LLM response contains invalid escape sequences (e.g., `\d`, `\s`, `\w`)
+**Fix Applied**: Robust JSON parsing that strips invalid escapes while preserving valid ones
+- Valid JSON escapes: `\"` `\\` `\/` `\b` `\f` `\n` `\r` `\t` `\uXXXX`
+- Invalid escapes (e.g., `\d`) → backslash removed automatically
+- Applied to both categorization and template testing
+
+**Fallback**: If parsing still fails, raw response saved to `categorize_error_response.txt`
 
 ### Low scores (<6.0) on all metrics
 **Cause**: Error corpus too small or not diverse enough
