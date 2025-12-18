@@ -1,0 +1,8 @@
+{
+  "uncovered_count": 75,
+  "uncovered_percentage": 6.912442396313365,
+  "sample_analyzed": 10,
+  "fit_existing": 2,
+  "possible_new": 8,
+  "verdict": "GAPS"
+}

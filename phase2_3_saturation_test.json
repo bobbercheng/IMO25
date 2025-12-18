@@ -1,0 +1,55 @@
+{
+  "phase": "Phase 2.3",
+  "date": "2025-12-18",
+  "corpus_size": 1085,
+  "sample_sizes": [
+    64,
+    128,
+    217
+  ],
+  "results": [
+    {
+      "sample_size": 64,
+      "actual_size": 61,
+      "unique_coverage": 96.72131147540983,
+      "category_matches": {
+        "Integer/Denominator Reasoning Errors": 6,
+        "Faulty Construction/Coverage": 35,
+        "Missing Justification": 23,
+        "Quantitative Bounds/Counting Errors": 26,
+        "Logical Deduction Errors": 14,
+        "Case Analysis Mistakes": 8,
+        "Coverage Counting Miscalculations": 5
+      }
+    },
+    {
+      "sample_size": 128,
+      "actual_size": 126,
+      "unique_coverage": 90.47619047619048,
+      "category_matches": {
+        "Integer/Denominator Reasoning Errors": 14,
+        "Faulty Construction/Coverage": 70,
+        "Missing Justification": 64,
+        "Quantitative Bounds/Counting Errors": 41,
+        "Logical Deduction Errors": 13,
+        "Case Analysis Mistakes": 23,
+        "Coverage Counting Miscalculations": 7
+      }
+    },
+    {
+      "sample_size": 217,
+      "actual_size": 215,
+      "unique_coverage": 95.34883720930233,
+      "category_matches": {
+        "Integer/Denominator Reasoning Errors": 31,
+        "Faulty Construction/Coverage": 132,
+        "Missing Justification": 95,
+        "Quantitative Bounds/Counting Errors": 93,
+        "Logical Deduction Errors": 45,
+        "Case Analysis Mistakes": 31,
+        "Coverage Counting Miscalculations": 20
+      }
+    }
+  ],
+  "saturated": false
+}
