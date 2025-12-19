@@ -184,15 +184,19 @@ echo "Treatment: Empty prescriptive feedback (placeholder only)"
 echo ""
 
 # Test 1 - Control (always run)
-echo -e "${GREEN}Starting Test 1 Control runs (N=2)...${NC}"
+echo -e "${GREEN}Starting Test 1 Control runs (N=4)...${NC}"
 run_test_async "test1_control_full_feedback" "" 1 "Test1-Control-Full"
 run_test_async "test1_control_full_feedback" "" 2 "Test1-Control-Full"
+run_test_async "test1_control_full_feedback" "" 3 "Test1-Control-Full"
+run_test_async "test1_control_full_feedback" "" 4 "Test1-Control-Full"
 
 # Test 1 - Treatment (conditional on code modification)
 if check_variant_ready "Test 1 Treatment" "TEST1_TREATMENT_READY"; then
-    echo -e "${GREEN}Starting Test 1 Treatment runs (N=2)...${NC}"
+    echo -e "${GREEN}Starting Test 1 Treatment runs (N=4)...${NC}"
     run_test_async "test1_treatment_empty_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=empty" 1 "Test1-Treatment-Empty"
     run_test_async "test1_treatment_empty_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=empty" 2 "Test1-Treatment-Empty"
+    run_test_async "test1_treatment_empty_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=empty" 3 "Test1-Treatment-Empty"
+    run_test_async "test1_treatment_empty_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=empty" 4 "Test1-Treatment-Empty"
 else
     echo ""
     echo "To enable Test 1 Treatment:"
@@ -217,9 +221,11 @@ echo ""
 
 # Test 2 - Treatment (conditional on code modification)
 if check_variant_ready "Test 2 Treatment" "TEST2_TREATMENT_READY"; then
-    echo -e "${GREEN}Starting Test 2 Treatment runs (N=2)...${NC}"
+    echo -e "${GREEN}Starting Test 2 Treatment runs (N=4)...${NC}"
     run_test_async "test2_treatment_short_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=short" 1 "Test2-Treatment-Short"
     run_test_async "test2_treatment_short_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=short" 2 "Test2-Treatment-Short"
+    run_test_async "test2_treatment_short_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=short" 3 "Test2-Treatment-Short"
+    run_test_async "test2_treatment_short_feedback" "PRESCRIPTIVE_FEEDBACK_MODE=short" 4 "Test2-Treatment-Short"
 else
     echo ""
     echo "To enable Test 2 Treatment:"
@@ -243,9 +249,11 @@ echo ""
 
 # Test 3 - Instrumented runs (conditional on code modification)
 if check_variant_ready "Test 3 Instrumentation" "TEST3_INSTRUMENTED_READY"; then
-    echo -e "${GREEN}Starting Test 3 Instrumented runs (N=2)...${NC}"
+    echo -e "${GREEN}Starting Test 3 Instrumented runs (N=4)...${NC}"
     run_test_async "test3_instrumented" "DIAGNOSTIC_LOGGING=1" 1 "Test3-Instrumented"
     run_test_async "test3_instrumented" "DIAGNOSTIC_LOGGING=1" 2 "Test3-Instrumented"
+    run_test_async "test3_instrumented" "DIAGNOSTIC_LOGGING=1" 3 "Test3-Instrumented"
+    run_test_async "test3_instrumented" "DIAGNOSTIC_LOGGING=1" 4 "Test3-Instrumented"
 else
     echo ""
     echo "To enable Test 3:"
