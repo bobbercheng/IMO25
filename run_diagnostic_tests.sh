@@ -21,6 +21,19 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Clean up old memory files from previous runs to prevent resume loops
+# (Keep old logs for reference, but remove .json to force fresh runs)
+if [ -d "$OUTPUT_DIR" ]; then
+    old_json_count=$(ls "$OUTPUT_DIR"/*.json 2>/dev/null | wc -l)
+    if [ "$old_json_count" -gt 0 ]; then
+        echo -e "${YELLOW}⚠️  Found $old_json_count old .json memory files from previous runs${NC}"
+        echo "   Removing to prevent resume loops with stuck states (resume_count=59)..."
+        rm -f "$OUTPUT_DIR"/*.json
+        echo -e "${GREEN}   ✓ Cleaned up old memory files${NC}"
+        echo ""
+    fi
+fi
+
 echo -e "${BLUE}==========================================${NC}"
 echo -e "${BLUE}Phase 0: A/B Test Diagnostics (PARALLEL)${NC}"
 echo -e "${BLUE}==========================================${NC}"
@@ -312,15 +325,20 @@ fi
 
 if [ $control_count -ge 2 ]; then
     echo -e "${BLUE}==========================================${NC}"
-    echo -e "${BLUE}QUICK ANALYSIS: Test 1 Control${NC}"
+    echo -e "${BLUE}QUICK ANALYSIS: Test 1 Control (Current Run)${NC}"
     echo -e "${BLUE}==========================================${NC}"
     echo ""
+    echo -e "${YELLOW}Note: Only analyzing logs from current timestamp: $TIMESTAMP${NC}"
+    echo ""
 
-    for log in "$OUTPUT_DIR"/test1_control_*.log; do
+    # Only analyze logs from current run (matching timestamp)
+    for log in "$OUTPUT_DIR"/test1_control_*_${TIMESTAMP}.log; do
         if [ -f "$log" ]; then
             basename=$(basename "$log")
             resume_count=$(grep -c "Resuming from memory" "$log" 2>/dev/null || echo "0")
-            iterations=$(grep "Iteration [0-9]" "$log" | tail -1 | grep -oP "Iteration \K\d+" || echo "0")
+            # macOS-compatible iteration extraction (no -P flag)
+            iterations=$(grep "Iteration [0-9]" "$log" | tail -1 | sed -n 's/.*Iteration \([0-9][0-9]*\).*/\1/p' || echo "0")
+            if [ -z "$iterations" ]; then iterations="0"; fi
             lines=$(wc -l < "$log")
 
             echo "File: $basename"
@@ -331,13 +349,19 @@ if [ $control_count -ge 2 ]; then
         fi
     done
 
-    # Calculate average
-    total_resumes=$(grep -ch "Resuming from memory" "$OUTPUT_DIR"/test1_control_*.log 2>/dev/null | awk '{s+=$1} END {print s}')
-    avg_resumes=$(echo "scale=1; $total_resumes / $control_count" | bc 2>/dev/null || echo "$total_resumes")
+    # Calculate average (only for current timestamp)
+    current_logs=$(ls "$OUTPUT_DIR"/test1_control_*_${TIMESTAMP}.log 2>/dev/null)
+    if [ -n "$current_logs" ]; then
+        total_resumes=$(grep -ch "Resuming from memory" $current_logs 2>/dev/null | awk '{s+=$1} END {print s}')
+        current_count=$(echo "$current_logs" | wc -l)
+        avg_resumes=$(echo "scale=1; $total_resumes / $current_count" | bc 2>/dev/null || echo "$total_resumes")
 
-    echo -e "${GREEN}Baseline (Control) Average Resume Count: $avg_resumes${NC}"
-    echo ""
-    echo "Compare treatment variants to this baseline to measure improvement."
+        echo -e "${GREEN}Baseline (Control) Average Resume Count: $avg_resumes${NC}"
+        echo ""
+        echo "Compare treatment variants to this baseline to measure improvement."
+    else
+        echo -e "${YELLOW}No logs from current run found yet.${NC}"
+    fi
     echo ""
 fi
 
