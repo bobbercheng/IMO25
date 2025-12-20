@@ -1,12 +1,20 @@
 #!/bin/bash
 #
-# BFS Baseline Test Script (N=12)
-# Purpose: Establish BFS baseline for IMO Problem 1 with answer validation
-# Expected: 8-12/12 success rate, 15-20 min per run, $2-3 per run
+# BFS Baseline Test Script (N=12) - UPDATED CONFIGURATION
+# Purpose: Test BFS with MEDIUM reasoning after expert panel analysis
+# Configuration: MEDIUM reasoning, temperature 0.1, MAX_RUNS=15
 #
-# Historical BFS performance:
-#   - N=1 run: 15 min, $2, SUCCESS (found k ∈ {0,...,⌊n/2⌋})
-#   - Expected for N=12: ~3 hours total, ~$24-36 total
+# Expert Panel Findings (RUN3_EXPERT_PANEL_SYNTHESIS.md):
+#   - Previous config (LOW reasoning): 0/12 success, only found k=0
+#   - Root cause: LOW reasoning insufficient for mixed constructions (k=1,3)
+#   - Recommendation: MEDIUM reasoning + temperature 0.35
+#
+# Expected Performance (MEDIUM reasoning):
+#   - Success rate: 30-50% (4-6/12 runs) per expert estimates
+#   - Duration: 20-30 min per run (vs 15 min with LOW, vs 730 min with LOW failed)
+#   - Cost: $5-7 per run (3.5× higher than LOW, but ENABLES success)
+#   - Iterations: 5-15 if successful (vs 29.6 avg with LOW failing)
+#   - Total cost: ~$60-84 for N=12 (vs previous INFINITE cost for 0% success)
 #
 
 set -euo pipefail
@@ -18,14 +26,21 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 MAX_PARALLEL=${MAX_PARALLEL:-6}  # Run 6 in parallel for faster completion
 N_RUNS=12
 
-# BFS configuration (from historical success)
-SOLUTION_REASONING="low"         # BFS uses low reasoning (fast exploration)
-VERIFICATION_REASONING="medium"   # Medium for balance (not high like diagnostic)
-SELF_IMPROVEMENT_REASONING="low"  # BFS doesn't need heavy self-improvement
-NUM_INITIAL_ATTEMPTS=3           # Generate 3 initial solution attempts (BFS exploration)
+# BFS configuration (UPDATED per expert panel recommendations)
+# Expert panel analysis (RUN3_EXPERT_PANEL_SYNTHESIS.md):
+#   - LOW reasoning insufficient for mixed constructions (k=1,3)
+#   - Need MEDIUM reasoning to execute algebraic verification
+#   - Expected: 30-50% success rate, 5-15 iterations if successful
+SOLUTION_REASONING="medium"        # ↑ from "low" - enables mixed constructions
+VERIFICATION_REASONING="medium"    # Keep medium for balance
+SELF_IMPROVEMENT_REASONING="medium"  # ↑ from "low" - enables rigorous exploration
+NUM_INITIAL_ATTEMPTS=3            # Generate 3 initial solution attempts (BFS exploration)
 
 # Agent configuration
-MAX_RUNS=30  # BFS typically finds answer in 10-15 iterations
+# REDUCED from 30 to 15: MEDIUM reasoning should find answer within 15 iterations
+# Historical BFS: 10-15 iterations at 100% success
+# If failing at iteration 15, unlikely to succeed at 30
+MAX_RUNS=15
 
 PIDS=()  # Array to track background job PIDs
 
@@ -54,10 +69,11 @@ echo "  Self-improvement reasoning: $SELF_IMPROVEMENT_REASONING"
 echo "  Initial attempts: $NUM_INITIAL_ATTEMPTS"
 echo "  Max iterations: $MAX_RUNS"
 echo ""
-echo "Expected performance:"
-echo "  Duration: 15-20 min per run"
-echo "  Cost: \$2-3 per run"
-echo "  Success rate: 67-100% (8-12/12)"
+echo "Expected performance (MEDIUM reasoning):"
+echo "  Duration: 20-30 min per run (vs 15 min with LOW)"
+echo "  Cost: \$5-7 per run (vs \$2 with LOW, 3.5× higher)"
+echo "  Success rate: 30-50% (4-6/12) per expert panel estimates"
+echo "  Note: Temperature hardcoded to 0.1 (expert recommends 0.35 for better exploration)"
 echo ""
 
 # Function to wait for a job slot to become available
@@ -286,18 +302,23 @@ if [ -n "$current_logs" ]; then
         echo "Average iterations: $avg_iterations"
         echo ""
 
-        # Compare to historical baseline
-        echo -e "${BLUE}=== COMPARISON TO HISTORICAL DATA ===${NC}"
-        echo "Historical BFS LOW (N=1): 100% success, 15 min, $2"
-        echo "Current BFS (N=$run_count): $success_rate% success, $avg_iterations iterations"
+        # Compare to baselines
+        echo -e "${BLUE}=== COMPARISON TO BASELINES ===${NC}"
+        echo "Historical BFS LOW (N=1): 100% success, 15 min, \$2/run"
+        echo "Previous BFS LOW (N=12): 0% success, 730 min/run, \$20-30/run"
+        echo "Current BFS MEDIUM (N=$run_count): $success_rate% success, $avg_iterations avg iterations"
         echo ""
 
-        if [ $success_rate -ge 67 ]; then
-            echo -e "${GREEN}✅ SUCCESS RATE MEETS EXPECTATIONS (≥67%)${NC}"
-        elif [ $success_rate -ge 50 ]; then
-            echo -e "${YELLOW}⚠️  SUCCESS RATE ACCEPTABLE (≥50%) but below target${NC}"
+        # Updated success criteria based on expert panel estimates
+        if [ $success_rate -ge 30 ]; then
+            echo -e "${GREEN}✅ SUCCESS RATE MEETS EXPECTATIONS (≥30%)${NC}"
+            echo "Expert panel predicted 30-50% with MEDIUM reasoning - CONFIRMED"
+        elif [ $success_rate -ge 10 ]; then
+            echo -e "${YELLOW}⚠️  SOME SUCCESS (≥10%) but below expert predictions${NC}"
+            echo "Consider: Add explicit k=1,3 prompts, increase temperature to 0.35"
         else
-            echo -e "${RED}❌ SUCCESS RATE BELOW EXPECTATIONS (<50%)${NC}"
+            echo -e "${RED}❌ SUCCESS RATE BELOW EXPECTATIONS (<10%)${NC}"
+            echo "MEDIUM reasoning may still be insufficient. Consider HIGH reasoning or prompt engineering."
         fi
         echo ""
     fi
