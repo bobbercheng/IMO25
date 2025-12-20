@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
-Deep analysis of bfs_run8 to create knowledge graph of solution evolution.
+Deep analysis of BFS runs to create knowledge graph of solution evolution.
 Traces all solution attempts, verification results, and how solutions evolved.
+
+Usage:
+  python analyze_knowledge_graph.py <log_file> [json_file]
+
+  If json_file is not provided, it will look for a .json file with the same base name as the log file.
+
+Example:
+  python analyze_knowledge_graph.py bfs_baseline_results/bfs_run8_20251219_225957.log
+  python analyze_knowledge_graph.py bfs_baseline_results/bfs_run1_*.log bfs_baseline_results/bfs_run1_*.json
 """
 
 import re
@@ -235,11 +244,11 @@ def create_knowledge_graph(log_path: str, json_path: str) -> Dict[str, Any]:
 
     return graph
 
-def print_knowledge_graph(graph: Dict[str, Any]):
+def print_knowledge_graph(graph: Dict[str, Any], run_name: str = "BFS Run"):
     """Print knowledge graph in readable format."""
 
     print("\n" + "="*80)
-    print("KNOWLEDGE GRAPH: BFS Run 8 Solution Evolution")
+    print(f"KNOWLEDGE GRAPH: {run_name} Solution Evolution")
     print("="*80)
 
     print("\n### SUMMARY ###")
@@ -290,32 +299,57 @@ def print_knowledge_graph(graph: Dict[str, Any]):
 
 def main():
     import sys
+    import os
 
-    log_path = 'bfs_baseline_results/bfs_run8_20251219_225957.log'
-    json_path = 'bfs_baseline_results/bfs_run8_20251219_225957.json'
+    if len(sys.argv) < 2:
+        print("Usage: python analyze_knowledge_graph.py <log_file> [json_file]")
+        print("\nExample:")
+        print("  python analyze_knowledge_graph.py bfs_baseline_results/bfs_run8_20251219_225957.log")
+        sys.exit(1)
+
+    log_path = sys.argv[1]
+
+    # Auto-detect json path if not provided
+    if len(sys.argv) >= 3:
+        json_path = sys.argv[2]
+    else:
+        # Replace .log with .json
+        json_path = log_path.replace('.log', '.json')
+
+    if not os.path.exists(log_path):
+        print(f"Error: Log file not found: {log_path}")
+        sys.exit(1)
+
+    if not os.path.exists(json_path):
+        print(f"Error: JSON file not found: {json_path}")
+        print(f"Hint: Provide json path explicitly or ensure {json_path} exists")
+        sys.exit(1)
+
+    # Extract run name from log file
+    run_name = os.path.basename(log_path).replace('.log', '')
 
     graph = create_knowledge_graph(log_path, json_path)
 
     # Print to console
-    print_knowledge_graph(graph)
+    print_knowledge_graph(graph, run_name)
 
-    # Save to JSON
-    output_path = 'bfs_run8_knowledge_graph.json'
-    with open(output_path, 'w') as f:
+    # Save to JSON with dynamic name
+    output_json = f'{run_name}_knowledge_graph.json'
+    with open(output_json, 'w') as f:
         json.dump(graph, f, indent=2)
-    print(f"\nKnowledge graph saved to: {output_path}")
+    print(f"\nKnowledge graph saved to: {output_json}")
 
     # Create visual summary
-    create_visual_summary(graph)
+    create_visual_summary(graph, run_name)
 
-def create_visual_summary(graph: Dict[str, Any]):
+def create_visual_summary(graph: Dict[str, Any], run_name: str = "BFS Run"):
     """Create visual markdown summary."""
 
     md = []
-    md.append("# Run 8 Solution Evolution - Visual Summary\n")
+    md.append(f"# {run_name} Solution Evolution - Visual Summary\n")
     md.append(f"**Ground Truth**: k ∈ {{0, 1, 3}} (NOT k ∈ {{0,...,n-2}})\n")
-    md.append(f"**Run 8 Final Answer**: {graph['summary']['final_answer']}\n")
-    md.append(f"**Run 8 Verdict**: {graph['summary']['final_verdict']}\n\n")
+    md.append(f"**Final Answer**: {graph['summary']['final_answer']}\n")
+    md.append(f"**Verdict**: {graph['summary']['final_verdict']}\n\n")
 
     md.append("## Solution Evolution Timeline\n\n")
     md.append("```\n")
@@ -375,7 +409,7 @@ def create_visual_summary(graph: Dict[str, Any]):
     md.append("## Conclusion\n\n")
 
     if graph['summary']['final_verdict'] == 'INVALID':
-        md.append("**Run 8 FAILED to find correct solution.**\n\n")
+        md.append(f"**{run_name} FAILED to find correct solution.**\n\n")
         md.append("The reasoning process:\n")
         md.append("1. Generated multiple initial attempts (BFS), all with negative scores\n")
         md.append("2. Selected best initial solution\n")
@@ -385,10 +419,11 @@ def create_visual_summary(graph: Dict[str, Any]):
 
     content = ''.join(md)
 
-    with open('bfs_run8_visual_summary.md', 'w') as f:
+    output_md = f'{run_name}_visual_summary.md'
+    with open(output_md, 'w') as f:
         f.write(content)
 
-    print(f"Visual summary saved to: bfs_run8_visual_summary.md")
+    print(f"Visual summary saved to: {output_md}")
 
 if __name__ == '__main__':
     main()
