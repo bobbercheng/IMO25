@@ -50,6 +50,17 @@ except ImportError:
     print("[WARNING] TIER 2 refinement module not available")
     TIER2_AVAILABLE = False
 
+# Import small-case verification module
+try:
+    from small_case_verification import (
+        should_trigger_small_case_verification,
+        generate_small_case_prompt
+    )
+    SMALL_CASE_VERIFICATION_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Small-case verification module not available")
+    SMALL_CASE_VERIFICATION_AVAILABLE = False
+
 # --- CONFIGURATION ---
 # Model name - supports OpenRouter prefixes (e.g., "openrouter/openai/gpt-oss-120b")
 MODEL_NAME = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
@@ -5808,6 +5819,64 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 solution = best_solution
                 verify = best_verify
                 good_verify = best_good_verify
+
+                # Small-case verification: detect incomplete solutions and force small-case exploration
+                if SMALL_CASE_VERIFICATION_AVAILABLE:
+                    trigger, reason, missing = should_trigger_small_case_verification(
+                        solution, verify, good_verify
+                    )
+
+                    if trigger:
+                        print(f">>>>>>> [SMALL-CASE] Incompleteness detected: {reason}")
+                        print(f">>>>>>> [SMALL-CASE] Missing: {missing}")
+                        print(f">>>>>>> [SMALL-CASE] Forcing explicit small-case exploration...")
+
+                        small_case_prompt = generate_small_case_prompt(
+                            problem_statement, solution, missing
+                        )
+
+                        # Build request with previous solution as context
+                        p1 = build_request_payload(
+                            system_prompt=step1_prompt,
+                            question_prompt=problem_statement,
+                            other_prompts=other_prompts,
+                            reasoning_effort=sol_reasoning  # Use same reasoning as solution
+                        )
+
+                        # Add small-case prompt to messages
+                        p1["messages"].append({"role": "assistant", "content": solution})
+                        p1["messages"].append({"role": "user", "content": small_case_prompt})
+
+                        # Generate with reasoning effort (needs rigor for all cases)
+                        print(f">>>>>>> [SMALL-CASE] Generating improved solution with {sol_reasoning} reasoning...")
+                        response = send_api_request_with_retry(
+                            get_api_key(), p1,
+                            request_label="Small-case exploration"
+                        )
+                        improved_solution = extract_solution(extract_text_from_response(response))
+
+                        if improved_solution:
+                            # Re-verify improved solution
+                            print(f">>>>>>> [SMALL-CASE] Verifying improved solution...")
+                            improved_verify, improved_good_verify = verify_solution(
+                                problem_statement, improved_solution,
+                                True, ver_reasoning
+                            )
+
+                            # Calculate scores
+                            new_score = calculate_solution_score(improved_verify, improved_good_verify)
+                            print(f">>>>>>> [SMALL-CASE] Improved solution score: {new_score:.2f} (vs {best_score:.2f})")
+
+                            # Update best solution if better
+                            if new_score > best_score:
+                                print(f">>>>>>> [SMALL-CASE] ✓ Improved solution accepted (score: {best_score:.2f} → {new_score:.2f})")
+                                solution = improved_solution
+                                verify = improved_verify
+                                good_verify = improved_good_verify
+                            else:
+                                print(f">>>>>>> [SMALL-CASE] ✗ No improvement, keeping original")
+                        else:
+                            print(f">>>>>>> [SMALL-CASE] Failed to extract improved solution")
             else:
                 print(">>>>>>> BFS: All initial attempts failed")
                 return None
