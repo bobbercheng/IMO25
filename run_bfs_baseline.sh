@@ -56,7 +56,7 @@ echo "  Max iterations: $MAX_RUNS"
 echo ""
 echo "Expected performance:"
 echo "  Duration: 15-20 min per run"
-echo "  Cost: $2-3 per run"
+echo "  Cost: \$2-3 per run"
 echo "  Success rate: 67-100% (8-12/12)"
 echo ""
 
