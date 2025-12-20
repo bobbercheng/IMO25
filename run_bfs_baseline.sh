@@ -22,6 +22,7 @@ N_RUNS=12
 SOLUTION_REASONING="low"         # BFS uses low reasoning (fast exploration)
 VERIFICATION_REASONING="medium"   # Medium for balance (not high like diagnostic)
 SELF_IMPROVEMENT_REASONING="low"  # BFS doesn't need heavy self-improvement
+NUM_INITIAL_ATTEMPTS=3           # Generate 3 initial solution attempts (BFS exploration)
 
 # Agent configuration
 MAX_RUNS=30  # BFS typically finds answer in 10-15 iterations
@@ -50,6 +51,7 @@ echo "BFS Configuration:"
 echo "  Solution reasoning: $SOLUTION_REASONING"
 echo "  Verification reasoning: $VERIFICATION_REASONING"
 echo "  Self-improvement reasoning: $SELF_IMPROVEMENT_REASONING"
+echo "  Initial attempts: $NUM_INITIAL_ATTEMPTS"
 echo "  Max iterations: $MAX_RUNS"
 echo ""
 echo "Expected performance:"
@@ -99,6 +101,7 @@ run_bfs_async() {
         if python code/agent_gpt_oss.py "$PROBLEM" \
             --log "$log_file" \
             --memory "$json_file" \
+            --num-initial-attempts $NUM_INITIAL_ATTEMPTS \
             --max_runs $MAX_RUNS \
             --solution-reasoning "$SOLUTION_REASONING" \
             --verification-reasoning "$VERIFICATION_REASONING" \
