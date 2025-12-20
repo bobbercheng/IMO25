@@ -1,0 +1,506 @@
+{
+  "metadata": {
+    "log_file": "bfs_run8_20251219_225957.log",
+    "json_file": "bfs_run8_20251219_225957.json",
+    "ground_truth": [
+      0,
+      1,
+      3
+    ]
+  },
+  "summary": {
+    "total_iterations": 28,
+    "total_bfs_attempts": 17,
+    "total_runs": 5,
+    "final_answer": {
+      "raw_answer": "\\;k\\in\\{0,1,2,\\dots ,n-2\\",
+      "parsed_set": null,
+      "answer_type": null,
+      "includes_k2": null,
+      "matches_truth": null
+    },
+    "resume_count": 32,
+    "total_iterations_across_resumes": 89
+  },
+  "bfs_initial_phase": {
+    "attempts": [
+      {
+        "timestamp": "2025-12-19 23:15:53",
+        "attempt": 1,
+        "score": -120.92
+      },
+      {
+        "timestamp": "2025-12-19 23:30:49",
+        "attempt": 2,
+        "score": -66.19
+      },
+      {
+        "timestamp": "2025-12-19 23:50:45",
+        "attempt": 3,
+        "score": -81.69
+      },
+      {
+        "timestamp": "2025-12-20 01:48:27",
+        "attempt": 1,
+        "score": -82.31
+      },
+      {
+        "timestamp": "2025-12-20 02:13:47",
+        "attempt": 2,
+        "score": -83.33
+      },
+      {
+        "timestamp": "2025-12-20 02:32:11",
+        "attempt": 3,
+        "score": -96.15
+      },
+      {
+        "timestamp": "2025-12-20 04:05:08",
+        "attempt": 1,
+        "score": -44.84
+      },
+      {
+        "timestamp": "2025-12-20 04:24:36",
+        "attempt": 2,
+        "score": -90.65
+      },
+      {
+        "timestamp": "2025-12-20 04:37:18",
+        "attempt": 3,
+        "score": -66.77
+      },
+      {
+        "timestamp": "2025-12-20 06:04:55",
+        "attempt": 1,
+        "score": -46.82
+      },
+      {
+        "timestamp": "2025-12-20 06:23:17",
+        "attempt": 2,
+        "score": -52.27
+      },
+      {
+        "timestamp": "2025-12-20 06:38:11",
+        "attempt": 3,
+        "score": -54.14
+      },
+      {
+        "timestamp": "2025-12-20 08:09:06",
+        "attempt": 1,
+        "score": -67.5
+      },
+      {
+        "timestamp": "2025-12-20 08:25:53",
+        "attempt": 2,
+        "score": -51.91
+      },
+      {
+        "timestamp": "2025-12-20 08:52:53",
+        "attempt": 3,
+        "score": 93.65
+      },
+      {
+        "timestamp": "2025-12-20 10:46:54",
+        "attempt": 1,
+        "score": -23.72
+      },
+      {
+        "timestamp": "2025-12-20 11:04:26",
+        "attempt": 2,
+        "score": -69.62
+      }
+    ],
+    "best_score": 93.65,
+    "worst_score": -120.92
+  },
+  "iteration0_analysis": {
+    "statistics": {
+      "total": 5,
+      "correct": 0,
+      "incomplete": 0,
+      "overgeneralized": 0,
+      "wrong": 0,
+      "includes_k2": 0
+    },
+    "solutions": [
+      {
+        "run_number": 1,
+        "timestamp": "2025-12-19 23:50:45",
+        "solution_length": 65065,
+        "answer_info": {
+          "raw_answer": "\\\\left\\\\{\\\\,\\\\Bigl\\\\lceil\\\\frac{n-2",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-19 23:42:02] >>>>>>> [RESPONSE] Self-improvement prompt - Response\n[2025-12-19 23:42:02] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-19 23:42:02] >>>>>>> Response ID: 0d18703ba9744041a8737f0b60e1d479\n[2025-12-19 23:42:02] >>>>>>> Model: gpt-oss-120b\n[2025-12-19 23:42:02] >>>>>>> Finish reason: stop\n[2025-12-19 23:42:02] >>>>>>> Content length: 8605 characters\n[2025-12-19 23:42:02] >>>>>>> Full Response Payload:\n{\n    \"id\": \"0d18703ba9744041a8737f0b60e1d479\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766205404,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      },
+      {
+        "run_number": 2,
+        "timestamp": "2025-12-20 02:32:11",
+        "solution_length": 82787,
+        "answer_info": {
+          "raw_answer": "k=0\\\\text{ is possible for every",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 02:16:50] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 02:16:50] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 02:16:50] >>>>>>> Response ID: 00aae57ae46749da963108c6060067e0\n[2025-12-20 02:16:50] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 02:16:50] >>>>>>> Finish reason: stop\n[2025-12-20 02:16:50] >>>>>>> Content length: 5105 characters\n[2025-12-20 02:16:50] >>>>>>> Full Response Payload:\n{\n    \"id\": \"00aae57ae46749da963108c6060067e0\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766214827,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      },
+      {
+        "run_number": 3,
+        "timestamp": "2025-12-20 04:37:18",
+        "solution_length": 69831,
+        "answer_info": {
+          "raw_answer": "k=0",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 04:28:29] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 04:28:29] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 04:28:29] >>>>>>> Response ID: 51ab6055df0a408fb2b7fd1dd5c0d649\n[2025-12-20 04:28:29] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 04:28:29] >>>>>>> Finish reason: stop\n[2025-12-20 04:28:29] >>>>>>> Content length: 5542 characters\n[2025-12-20 04:28:29] >>>>>>> Full Response Payload:\n{\n    \"id\": \"51ab6055df0a408fb2b7fd1dd5c0d649\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766222676,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      },
+      {
+        "run_number": 4,
+        "timestamp": "2025-12-20 06:38:11",
+        "solution_length": 73143,
+        "answer_info": {
+          "raw_answer": "\\\\{0,1,2,\\\\dots ,n\\\\",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 06:27:08] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 06:27:08] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 06:27:08] >>>>>>> Response ID: 14e2c4cc71cf4ae6925e13e7b376021c\n[2025-12-20 06:27:08] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 06:27:08] >>>>>>> Finish reason: stop\n[2025-12-20 06:27:08] >>>>>>> Content length: 6022 characters\n[2025-12-20 06:27:08] >>>>>>> Full Response Payload:\n{\n    \"id\": \"14e2c4cc71cf4ae6925e13e7b376021c\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766229797,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      },
+      {
+        "run_number": 5,
+        "timestamp": "2025-12-20 08:52:53",
+        "solution_length": 88855,
+        "answer_info": {
+          "raw_answer": "\\\\;k\\\\in\\\\{0,1,2,\\\\dots ,n-2\\\\",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 08:31:13] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 08:31:13] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 08:31:13] >>>>>>> Response ID: e1eb6c7925e944538b0ffb0015df44a7\n[2025-12-20 08:31:13] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 08:31:13] >>>>>>> Finish reason: stop\n[2025-12-20 08:31:13] >>>>>>> Content length: 8694 characters\n[2025-12-20 08:31:13] >>>>>>> Full Response Payload:\n{\n    \"id\": \"e1eb6c7925e944538b0ffb0015df44a7\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766237153,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      }
+    ]
+  },
+  "runs": [
+    {
+      "run_number": 1,
+      "total_iterations": 7,
+      "start_time": "2025-12-19 23:50:45",
+      "end_time": "2025-12-20 01:19:02",
+      "iterations": [
+        {
+          "timestamp": "2025-12-19 23:50:45",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 00:11:44",
+          "iteration": 1,
+          "corrects": 1,
+          "errors": 0,
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 00:15:59",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 1,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 00:30:26",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 3,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 00:45:08",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 5,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 01:04:04",
+          "iteration": 5,
+          "corrects": 0,
+          "errors": 7,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 01:19:02",
+          "iteration": 6,
+          "corrects": 0,
+          "errors": 9,
+          "passed_verification": false
+        }
+      ],
+      "pattern": "UNKNOWN",
+      "error_trend": "ACCUMULATING (errors increasing)",
+      "iteration0_solution": {
+        "run_number": 1,
+        "timestamp": "2025-12-19 23:50:45",
+        "solution_length": 65065,
+        "answer_info": {
+          "raw_answer": "\\\\left\\\\{\\\\,\\\\Bigl\\\\lceil\\\\frac{n-2",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-19 23:42:02] >>>>>>> [RESPONSE] Self-improvement prompt - Response\n[2025-12-19 23:42:02] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-19 23:42:02] >>>>>>> Response ID: 0d18703ba9744041a8737f0b60e1d479\n[2025-12-19 23:42:02] >>>>>>> Model: gpt-oss-120b\n[2025-12-19 23:42:02] >>>>>>> Finish reason: stop\n[2025-12-19 23:42:02] >>>>>>> Content length: 8605 characters\n[2025-12-19 23:42:02] >>>>>>> Full Response Payload:\n{\n    \"id\": \"0d18703ba9744041a8737f0b60e1d479\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766205404,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      }
+    },
+    {
+      "run_number": 2,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 02:32:11",
+      "end_time": "2025-12-20 03:37:29",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 02:32:11",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 02:47:00",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 03:06:07",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 03:22:01",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 03:37:29",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)",
+      "iteration0_solution": {
+        "run_number": 2,
+        "timestamp": "2025-12-20 02:32:11",
+        "solution_length": 82787,
+        "answer_info": {
+          "raw_answer": "k=0\\\\text{ is possible for every",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 02:16:50] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 02:16:50] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 02:16:50] >>>>>>> Response ID: 00aae57ae46749da963108c6060067e0\n[2025-12-20 02:16:50] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 02:16:50] >>>>>>> Finish reason: stop\n[2025-12-20 02:16:50] >>>>>>> Content length: 5105 characters\n[2025-12-20 02:16:50] >>>>>>> Full Response Payload:\n{\n    \"id\": \"00aae57ae46749da963108c6060067e0\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766214827,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      }
+    },
+    {
+      "run_number": 3,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 04:37:18",
+      "end_time": "2025-12-20 05:29:12",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 04:37:18",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 04:49:10",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:00:04",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:10:14",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:29:12",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)",
+      "iteration0_solution": {
+        "run_number": 3,
+        "timestamp": "2025-12-20 04:37:18",
+        "solution_length": 69831,
+        "answer_info": {
+          "raw_answer": "k=0",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 04:28:29] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 04:28:29] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 04:28:29] >>>>>>> Response ID: 51ab6055df0a408fb2b7fd1dd5c0d649\n[2025-12-20 04:28:29] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 04:28:29] >>>>>>> Finish reason: stop\n[2025-12-20 04:28:29] >>>>>>> Content length: 5542 characters\n[2025-12-20 04:28:29] >>>>>>> Full Response Payload:\n{\n    \"id\": \"51ab6055df0a408fb2b7fd1dd5c0d649\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766222676,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      }
+    },
+    {
+      "run_number": 4,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 06:38:11",
+      "end_time": "2025-12-20 07:32:57",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 06:38:11",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 06:53:06",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:05:19",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:20:16",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:32:57",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)",
+      "iteration0_solution": {
+        "run_number": 4,
+        "timestamp": "2025-12-20 06:38:11",
+        "solution_length": 73143,
+        "answer_info": {
+          "raw_answer": "\\\\{0,1,2,\\\\dots ,n\\\\",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 06:27:08] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 06:27:08] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 06:27:08] >>>>>>> Response ID: 14e2c4cc71cf4ae6925e13e7b376021c\n[2025-12-20 06:27:08] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 06:27:08] >>>>>>> Finish reason: stop\n[2025-12-20 06:27:08] >>>>>>> Content length: 6022 characters\n[2025-12-20 06:27:08] >>>>>>> Full Response Payload:\n{\n    \"id\": \"14e2c4cc71cf4ae6925e13e7b376021c\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766229797,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      }
+    },
+    {
+      "run_number": 5,
+      "total_iterations": 6,
+      "start_time": "2025-12-20 08:52:53",
+      "end_time": "2025-12-20 10:11:15",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 08:52:53",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 09:05:03",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 1,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:22:05",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 3,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:38:34",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 5,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:52:50",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 7,
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 10:11:15",
+          "iteration": 5,
+          "corrects": 0,
+          "errors": 9,
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)",
+      "iteration0_solution": {
+        "run_number": 5,
+        "timestamp": "2025-12-20 08:52:53",
+        "solution_length": 88855,
+        "answer_info": {
+          "raw_answer": "\\\\;k\\\\in\\\\{0,1,2,\\\\dots ,n-2\\\\",
+          "parsed_set": null,
+          "answer_type": null,
+          "includes_k2": null,
+          "matches_truth": null
+        },
+        "solution_text": "================================================================================\n\n================================================================================\n\n================================================================================\n[2025-12-20 08:31:13] >>>>>>> [RESPONSE] Initial solution prompt - Response\n[2025-12-20 08:31:13] >>>>>>> Response type: Streaming\n================================================================================\n[2025-12-20 08:31:13] >>>>>>> Response ID: e1eb6c7925e944538b0ffb0015df44a7\n[2025-12-20 08:31:13] >>>>>>> Model: gpt-oss-120b\n[2025-12-20 08:31:13] >>>>>>> Finish reason: stop\n[2025-12-20 08:31:13] >>>>>>> Content length: 8694 characters\n[2025-12-20 08:31:13] >>>>>>> Full Response Payload:\n{\n    \"id\": \"e1eb6c7925e944538b0ffb0015df44a7\",\n    \"object\": \"chat.completion\",\n    \"created\": 1766237153,\n    \"model\": \"gpt-oss-120b\",\n    \"choices\": [\n        {\n            \"index\": 0,\n            \"message\": {\n                \"role\": \"assistant\",\n  "
+      }
+    }
+  ]
+}
