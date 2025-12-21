@@ -61,6 +61,18 @@ except ImportError:
     print("[WARNING] Small-case verification module not available")
     SMALL_CASE_VERIFICATION_AVAILABLE = False
 
+# Import dynamic BFS prompts module
+try:
+    from dynamic_bfs_prompts import (
+        should_use_dynamic_prompts,
+        get_bfs_prompt_for_attempt,
+        generate_bfs_prompts
+    )
+    DYNAMIC_BFS_PROMPTS_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Dynamic BFS prompts module not available")
+    DYNAMIC_BFS_PROMPTS_AVAILABLE = False
+
 # --- CONFIGURATION ---
 # Model name - supports OpenRouter prefixes (e.g., "openrouter/openai/gpt-oss-120b")
 MODEL_NAME = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
@@ -5773,6 +5785,18 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         # QUICK WIN BFS: Generate multiple initial solutions if requested
         if not use_mcts and num_initial_attempts > 1:
             print(f">>>>>>> BFS: Generating {num_initial_attempts} diverse initial solutions...")
+
+            # Check if we should use dynamic BFS prompts
+            use_dynamic = False
+            dynamic_prompts_list = []
+            if DYNAMIC_BFS_PROMPTS_AVAILABLE:
+                use_dynamic = should_use_dynamic_prompts(problem_statement, num_initial_attempts)
+                if use_dynamic:
+                    dynamic_prompts_list = generate_bfs_prompts(problem_statement, num_initial_attempts)
+                    print(f">>>>>>> BFS: Using dynamic prompts (explicit parameter exploration)")
+                else:
+                    print(f">>>>>>> BFS: Using generic diversity hints (parameter parsing failed)")
+
             best_solution = None
             best_score = -999999
             best_verify = None
@@ -5783,7 +5807,14 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
 
                 # Add diversity to prompt
                 diverse_prompts = other_prompts.copy()
-                if attempt > 0:
+
+                # Use dynamic BFS prompts if available, otherwise fall back to generic diversity
+                if use_dynamic and attempt < len(dynamic_prompts_list):
+                    explicit_prompt = dynamic_prompts_list[attempt]
+                    diverse_prompts.append(f"\n{explicit_prompt}")
+                    print(f">>>>>>> BFS: Explicit prompt: {explicit_prompt[:100]}...")
+                elif attempt > 0:
+                    # Fallback: generic diversity hints
                     diversity_hints = [
                         "Try a different approach or proof strategy.",
                         "Consider an alternative construction or method.",
