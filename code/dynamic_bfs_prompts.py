@@ -84,12 +84,23 @@ def parse_problem_parameters(problem_statement: str) -> Dict[str, Any]:
             result['max_value'] = param_name  # 'n'
 
     # Pattern 4: Look for description of what we're counting
-    # e.g., "sunny lines" in "exactly k sunny lines"
+    # e.g., "sunny lines" in "exactly k of the lines are sunny"
+    # Handle both "exactly k <desc>" and "exactly $k$ of the <desc> are <adj>"
     if result['variable'] and not result['description']:
-        desc_pattern = rf'exactly\s+{result["variable"]}\s+([^,\.]+?)(?:\s+exist|\s+are|\s+can|,|\.|$)'
+        # Try "of the <noun> are <adj>" format: "exactly $k$ of the lines are sunny"
+        desc_pattern = rf'exactly\s+\$?{result["variable"]}\$?\s+of\s+the\s+([a-z]+)\s+are\s+([a-z]+)'
         desc_match = re.search(desc_pattern, problem_statement, re.IGNORECASE)
         if desc_match:
-            result['description'] = desc_match.group(1).strip()
+            # Reorder from "lines are sunny" to "sunny lines"
+            noun = desc_match.group(1).strip()
+            adjective = desc_match.group(2).strip()
+            result['description'] = f"{adjective} {noun}"
+        else:
+            # Fallback: "exactly k <description>"
+            desc_pattern = rf'exactly\s+\$?{result["variable"]}\$?\s+([^,\.]+?)(?:\s+exist|\s+are|\s+can|,|\.|$)'
+            desc_match = re.search(desc_pattern, problem_statement, re.IGNORECASE)
+            if desc_match:
+                result['description'] = desc_match.group(1).strip()
 
     return result
 
@@ -244,14 +255,22 @@ def get_bfs_prompt_for_attempt(
 
 # Example usage and testing
 if __name__ == '__main__':
-    # Test with IMO 2025 Problem 1
-    problem = """
-    Let n ≥ 3 be an integer. A line ℓ is called sunny if it passes through at least two points
-    of a set of n points in the plane, and if it contains at least one sunny point (a point through
-    which exactly one sunny line passes).
+    import sys
 
-    Determine all k for which there exists a configuration of n points such that exactly k sunny lines exist.
-    """
+    # Test with IMO 2025 Problem 1
+    if len(sys.argv) > 1:
+        # Use problem file from command line
+        with open(sys.argv[1], 'r') as f:
+            problem = f.read()
+    else:
+        # Default test problem
+        problem = """
+        Let n ≥ 3 be an integer. A line ℓ is called sunny if it passes through at least two points
+        of a set of n points in the plane, and if it contains at least one sunny point (a point through
+        which exactly one sunny line passes).
+
+        Determine all k for which there exists a configuration of n points such that exactly k sunny lines exist.
+        """
 
     print("Testing Dynamic BFS Prompt Generator")
     print("="*80)

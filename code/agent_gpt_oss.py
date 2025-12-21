@@ -1202,11 +1202,34 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         print(">>>>>>> Verification results:")
         print(json.dumps(out, indent=4))
 
-    check_correctness = """Response in "yes" or "no". Is the following statement saying the solution is complete, correct, and does not contain critical error or a major justification gap?""" \
-            + "\n\n" + out
-    prompt = build_request_payload(system_prompt="", question_prompt=check_correctness)
-    r = send_api_request_with_retry(get_api_key(), prompt, request_label="Verification correctness check")
-    o = extract_text_from_response(r)
+    # UPDATED (2025-12-21): Accept "Justification Gap" as success for FIND problems
+    # Google Scientist recommendation: Distinguish proof errors from answer errors
+    # - "Critical Error" → reject (wrong answer or fatal logical flaw)
+    # - "Justification Gap" → accept (correct answer, incomplete proof)
+    # - "VALID" → accept (correct answer, complete proof)
+
+    # Check if verification found Critical Error vs Justification Gap
+    out_lower = out.lower()
+    has_critical_error = "critical error" in out_lower
+    has_justification_gap = "justification gap" in out_lower
+
+    if has_critical_error and not has_justification_gap:
+        # Only critical error → reject
+        o = "no"
+        if(verbose):
+            print(">>>>>>> Verification verdict: CRITICAL ERROR (rejected)")
+    elif has_justification_gap and not has_critical_error:
+        # Only justification gap → accept for FIND problems
+        o = "yes"
+        if(verbose):
+            print(">>>>>>> Verification verdict: JUSTIFICATION GAP (accepted for FIND problems)")
+    else:
+        # Either both or neither → use standard yes/no check
+        check_correctness = """Response in "yes" or "no". Is the following statement saying the solution is complete, correct, and does not contain critical error or a major justification gap?""" \
+                + "\n\n" + out
+        prompt = build_request_payload(system_prompt="", question_prompt=check_correctness)
+        r = send_api_request_with_retry(get_api_key(), prompt, request_label="Verification correctness check")
+        o = extract_text_from_response(r)
 
     if(verbose):
         print(">>>>>>> Is verification good?")
