@@ -1,0 +1,693 @@
+{
+  "summary": {
+    "total_iterations": 50,
+    "total_bfs_attempts": 32,
+    "total_runs": 10,
+    "final_answer": "k\\in\\{0,1\\",
+    "final_verdict": "VALID",
+    "final_error_count": 5,
+    "resume_count": 59,
+    "total_iterations_across_resumes": 140
+  },
+  "bfs_initial_phase": {
+    "attempts": [
+      {
+        "timestamp": "2025-12-19 23:18:04",
+        "attempt": 1,
+        "score": -38.06
+      },
+      {
+        "timestamp": "2025-12-19 23:37:48",
+        "attempt": 2,
+        "score": -132.55
+      },
+      {
+        "timestamp": "2025-12-19 23:51:00",
+        "attempt": 3,
+        "score": -55.66
+      },
+      {
+        "timestamp": "2025-12-20 01:30:20",
+        "attempt": 1,
+        "score": -58.01
+      },
+      {
+        "timestamp": "2025-12-20 01:42:26",
+        "attempt": 2,
+        "score": -63.63
+      },
+      {
+        "timestamp": "2025-12-20 02:02:59",
+        "attempt": 3,
+        "score": -102.23
+      },
+      {
+        "timestamp": "2025-12-20 03:53:42",
+        "attempt": 1,
+        "score": -148.98
+      },
+      {
+        "timestamp": "2025-12-20 04:16:23",
+        "attempt": 2,
+        "score": -87.76
+      },
+      {
+        "timestamp": "2025-12-20 04:34:44",
+        "attempt": 3,
+        "score": -95.57
+      },
+      {
+        "timestamp": "2025-12-20 06:02:03",
+        "attempt": 1,
+        "score": -65.35
+      },
+      {
+        "timestamp": "2025-12-20 06:15:27",
+        "attempt": 2,
+        "score": -70.37
+      },
+      {
+        "timestamp": "2025-12-20 06:37:03",
+        "attempt": 3,
+        "score": -67.4
+      },
+      {
+        "timestamp": "2025-12-20 07:50:43",
+        "attempt": 1,
+        "score": -41.6
+      },
+      {
+        "timestamp": "2025-12-20 08:10:54",
+        "attempt": 2,
+        "score": -110.37
+      },
+      {
+        "timestamp": "2025-12-20 08:27:55",
+        "attempt": 3,
+        "score": -46.79
+      },
+      {
+        "timestamp": "2025-12-20 09:49:49",
+        "attempt": 1,
+        "score": -94.43
+      },
+      {
+        "timestamp": "2025-12-20 10:06:47",
+        "attempt": 2,
+        "score": -73.19
+      },
+      {
+        "timestamp": "2025-12-20 10:25:20",
+        "attempt": 3,
+        "score": -80.78
+      },
+      {
+        "timestamp": "2025-12-20 11:43:58",
+        "attempt": 1,
+        "score": -76.31
+      },
+      {
+        "timestamp": "2025-12-20 12:13:54",
+        "attempt": 2,
+        "score": -122.65
+      },
+      {
+        "timestamp": "2025-12-20 12:30:24",
+        "attempt": 3,
+        "score": -58.79
+      },
+      {
+        "timestamp": "2025-12-20 14:11:28",
+        "attempt": 1,
+        "score": -76.65
+      },
+      {
+        "timestamp": "2025-12-20 14:29:08",
+        "attempt": 2,
+        "score": -71.66
+      },
+      {
+        "timestamp": "2025-12-20 14:48:03",
+        "attempt": 3,
+        "score": -94.7
+      },
+      {
+        "timestamp": "2025-12-20 16:15:06",
+        "attempt": 1,
+        "score": -93.28
+      },
+      {
+        "timestamp": "2025-12-20 16:33:12",
+        "attempt": 2,
+        "score": -104.9
+      },
+      {
+        "timestamp": "2025-12-20 16:48:04",
+        "attempt": 3,
+        "score": -58.0
+      },
+      {
+        "timestamp": "2025-12-20 18:05:35",
+        "attempt": 1,
+        "score": -77.39
+      },
+      {
+        "timestamp": "2025-12-20 18:21:07",
+        "attempt": 2,
+        "score": -77.28
+      },
+      {
+        "timestamp": "2025-12-20 18:42:54",
+        "attempt": 3,
+        "score": -97.36
+      },
+      {
+        "timestamp": "2025-12-20 20:12:16",
+        "attempt": 1,
+        "score": -65.63
+      },
+      {
+        "timestamp": "2025-12-20 20:27:13",
+        "attempt": 2,
+        "score": -79.6
+      }
+    ],
+    "best_score": -38.06,
+    "worst_score": -148.98
+  },
+  "runs": [
+    {
+      "run_number": 1,
+      "total_iterations": 5,
+      "start_time": "2025-12-19 23:51:00",
+      "end_time": "2025-12-20 01:03:18",
+      "iterations": [
+        {
+          "timestamp": "2025-12-19 23:51:00",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 00:05:25",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 00:24:56",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 00:44:16",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 01:03:18",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 2,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 02:02:59",
+      "end_time": "2025-12-20 03:17:13",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 02:02:59",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 02:22:19",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 02:42:31",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 02:58:07",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 03:17:13",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 3,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 04:34:44",
+      "end_time": "2025-12-20 05:30:35",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 04:34:44",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 04:45:29",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:00:33",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:17:23",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:30:35",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 4,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 06:37:03",
+      "end_time": "2025-12-20 07:26:38",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 06:37:03",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 06:48:03",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 06:58:50",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:12:49",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:26:38",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 5,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 08:27:55",
+      "end_time": "2025-12-20 09:20:57",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 08:27:55",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 08:44:19",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 08:55:51",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:10:29",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:20:57",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 6,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 10:25:20",
+      "end_time": "2025-12-20 11:09:14",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 10:25:20",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 10:34:45",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 10:44:15",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 10:55:55",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 11:09:14",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 7,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 12:30:24",
+      "end_time": "2025-12-20 13:30:33",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 12:30:24",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 12:46:41",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 13:02:19",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 13:16:35",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 13:30:33",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 8,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 14:48:03",
+      "end_time": "2025-12-20 15:49:32",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 14:48:03",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 15:06:41",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 15:21:10",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 15:32:16",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 15:49:32",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 9,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 16:48:04",
+      "end_time": "2025-12-20 17:39:16",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 16:48:04",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 16:59:21",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 17:09:12",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 17:25:13",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 17:39:16",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 10,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 18:42:54",
+      "end_time": "2025-12-20 19:33:23",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 18:42:54",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 18:53:49",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 19:07:50",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 19:22:29",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 19:33:23",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    }
+  ],
+  "final_state": {
+    "answer": "k\\in\\{0,1\\",
+    "verdict": "VALID",
+    "errors": [
+      "**Critical Error** and is therefore invalid.",
+      "**Critical Error** \u2013 the inequality is derived incorrectly; it does **not** lead to a contradiction, so the conclusion that no horizontal line with index \\(b\\le n-1\\) can be omitted (and consequently \\(m\\le 1\\)) is unsupported.",
+      "**Critical Error** \u2013 this statement follows from the previous flawed inequality; without a valid bound on \\(m\\) the subsequent case analysis (which yields the answer \\(k\\in\\{0,1\\}\\)) is not justified.",
+      "**Justification Gap** \u2013 the argument correctly shows that at least \\(n+1-b_0\\) non\u2011horizontal lines are needed, but it does not explain why this forces a contradiction with the fixed total of \\(n\\) lines. The subsequent step that attempts to derive a contradiction is the flawed inequality noted above.",
+      "**Justification Gap** \u2013 while the statement is correct, the solution does not verify that this line is distinct from all the horizontal lines already used (though this is obvious) nor does it discuss whether other choices might affect the count of sunny lines. The gap is minor and does not affect the main flaw."
+    ],
+    "current_iteration": 4,
+    "max_runs": 30
+  }
+}
