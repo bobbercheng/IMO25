@@ -47,8 +47,14 @@ def parse_problem_parameters(problem_statement: str) -> Dict[str, Any]:
         result['problem_type'] = 'PROVE'
 
     # Pattern 1: "determine all k for which..." or "find all k such that..."
-    match = re.search(r'(?:determine|find|identify)\s+all\s+(\w+)\s+(?:for which|such that|where)',
+    # Handle formats like "all nonnegative integers $k$" or "all k"
+    # Try to match $variable$ format first (LaTeX), then fall back to last word
+    match = re.search(r'(?:determine|find|identify)\s+all\s+.*?\$(\w+)\$\s*(?:for which|such that|where)',
                      problem_statement, re.IGNORECASE)
+    if not match:
+        # Fallback: capture last word before "such that" or "for which"
+        match = re.search(r'(?:determine|find|identify)\s+all\s+.*?\s+(\w+)\s+(?:for which|such that|where)',
+                         problem_statement, re.IGNORECASE)
     if match:
         result['variable'] = match.group(1)
 
@@ -60,7 +66,14 @@ def parse_problem_parameters(problem_statement: str) -> Dict[str, Any]:
             result['description'] = match.group(2)
 
     # Pattern 3: Extract constraints like "n ≥ 3" or "n >= 3"
-    constraint_match = re.search(r'(\w+)\s*[≥>=]+\s*(\d+)', problem_statement)
+    # Prioritize constraints in "Let" statements
+    constraint_match = re.search(r'Let\s+\$?(\w+)\$?\s*\\?ge\s*(\d+)', problem_statement, re.IGNORECASE)
+    if not constraint_match:
+        constraint_match = re.search(r'Let\s+\$?(\w+)\$?\s*[≥>=]+\s*(\d+)', problem_statement, re.IGNORECASE)
+    if not constraint_match:
+        # Fallback: any constraint in the problem
+        constraint_match = re.search(r'(\w+)\s*[≥>=]+\s*(\d+)', problem_statement)
+
     if constraint_match:
         param_name, min_val = constraint_match.groups()
         result['constraint'] = f"{param_name} ≥ {min_val}"
