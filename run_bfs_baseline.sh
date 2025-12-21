@@ -32,7 +32,7 @@ N_RUNS=12
 #   - Need MEDIUM reasoning to execute algebraic verification
 #   - Expected: 30-50% success rate, 5-15 iterations if successful
 SOLUTION_REASONING="medium"        # ↑ from "low" - enables mixed constructions
-VERIFICATION_REASONING="medium"    # Keep medium for balance
+VERIFICATION_REASONING="high"      # ↑ from "medium" - catch semantic errors (Runs 1-6 review)
 SELF_IMPROVEMENT_REASONING="medium"  # ↑ from "low" - enables rigorous exploration
 NUM_INITIAL_ATTEMPTS=3            # Generate 3 initial solution attempts (BFS exploration)
 
