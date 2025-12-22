@@ -153,7 +153,8 @@ wait_for_all_jobs() {
                 new_pids+=($pid)
             fi
         done
-        PIDS=("${new_pids[@]}")
+        # Handle empty array with set -u (unbound variable error)
+        PIDS=("${new_pids[@]+"${new_pids[@]}"}")
 
         # Count job statuses
         local completed=0
