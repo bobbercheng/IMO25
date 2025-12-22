@@ -134,9 +134,12 @@ def parse_meta_response(
     """
     k_values = []
 
-    # Look for "Next Values to Test:" section (single line)
+    # Look for "Next Values to Test:" section
+    # Handle both same-line and next-line formats (LLM may use markdown formatting)
+    # Example 1: "Next Values to Test: 3,4,5"
+    # Example 2: "**Next Values to Test:**\n3, n-1, n"
     next_values_match = re.search(
-        r'(?:Next Values to Test|Values to Test|Test Next):\s*([^\n]+)',
+        r'(?:Next Values to Test|Values to Test|Test Next):\s*\*?\*?\s*\n?([^\n*]+)',
         response,
         re.IGNORECASE
     )
