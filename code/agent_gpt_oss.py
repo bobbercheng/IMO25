@@ -1306,6 +1306,86 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
                 print(f">>>>>>> [COUNTEREXAMPLE VALIDATION] ✅ PASSED (confidence: {confidence:.1%}, stage: {stage})")
                 print(f">>>>>>> [COUNTEREXAMPLE VALIDATION] {counterexample_result['reason'][:200]}...")
 
+    # ANSWER VALIDATION (2025-12-22): Check claimed answer against ground truth
+    # This catches wrong answers that pass proof verification (e.g., k∈{0,1,2,...,n} vs k∈{0,1,3})
+    if "yes" in o.lower():
+        try:
+            from answer_validator import AnswerValidator, extract_final_answer
+
+            if verbose:
+                print("\n" + "="*80)
+                print(">>>>>>> [ANSWER VALIDATION] Checking answer correctness")
+                print("="*80)
+
+            # Determine problem ID (try to extract from problem statement or use default)
+            problem_id = "imo2025_p1"  # Default for IMO Problem 1
+            if "sunny" in problem_statement.lower() and "line" in problem_statement.lower():
+                problem_id = "imo2025_p1"
+
+            validator = AnswerValidator(problem_id)
+            claimed_answer = extract_final_answer(solution)
+
+            if claimed_answer:
+                answer_result = validator.validate(claimed_answer, solution)
+
+                if verbose:
+                    verdict = answer_result["verdict"]
+                    confidence = answer_result["confidence"]
+                    print(f">>>>>>> [ANSWER VALIDATION] Verdict: {verdict} (confidence: {confidence:.1%})")
+                    if answer_result.get("details"):
+                        print(f">>>>>>> [ANSWER VALIDATION] Details: {str(answer_result['details'])[:200]}...")
+
+                # Override verification if answer is definitely wrong
+                if answer_result["verdict"] in ["WRONG", "OVERGENERALIZED"]:
+                    if verbose:
+                        print(f">>>>>>> [ANSWER VALIDATION] ❌ FAILED - Overriding verification to 'no'")
+
+                    # Update bug report and verdict
+                    details = answer_result.get("details", {})
+                    correct_ans = details.get("correct_answer") or details.get("correct", "unknown")
+                    claimed_ans = details.get("claimed", claimed_answer)
+
+                    bug_report = f"**ANSWER VALIDATION FAILED**\n\n" + \
+                                f"Verdict: {answer_result['verdict']}\n" + \
+                                f"Claimed answer: {claimed_ans}\n" + \
+                                f"Correct answer: {correct_ans}\n\n" + \
+                                f"Reason: {details.get('reason', 'Answer does not match ground truth')}\n\n" + \
+                                bug_report
+                    o = "no"
+
+                elif answer_result["verdict"] == "INCOMPLETE":
+                    if verbose:
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  INCOMPLETE - Answer is partial")
+
+                    # Add warning but don't override (incomplete answer can still be valuable)
+                    details = answer_result.get("details", {})
+                    missing = details.get("missing", "some values")
+                    bug_report = f"**ANSWER INCOMPLETE**\n\n" + \
+                                f"Your answer is correct but incomplete.\n" + \
+                                f"Missing: {missing}\n\n" + \
+                                bug_report
+
+                elif answer_result["verdict"] == "SUSPICIOUS":
+                    if verbose:
+                        print(f">>>>>>> [ANSWER VALIDATION] ⚠️  SUSPICIOUS - Possible issues detected")
+
+                    # Add warning
+                    details = answer_result.get("details", {})
+                    issues = details.get("issues", [])
+                    bug_report = f"**ANSWER SUSPICIOUS**\n\n" + \
+                                f"Potential issues: {', '.join(str(i) for i in issues)}\n\n" + \
+                                bug_report
+            else:
+                if verbose:
+                    print(f">>>>>>> [ANSWER VALIDATION] Could not extract answer from solution")
+
+        except ImportError:
+            if verbose:
+                print(">>>>>>> [ANSWER VALIDATION] Module not available, skipping")
+        except Exception as e:
+            if verbose:
+                print(f">>>>>>> [ANSWER VALIDATION] Validation failed: {e}")
+
     # PRESCRIPTIVE FEEDBACK ENHANCEMENT (2025-12-18):
     # Integrate automated checkers and template-based fix suggestions
     # Can be disabled for A/B testing via DISABLE_PRESCRIPTIVE_FEEDBACK=1
