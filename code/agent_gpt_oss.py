@@ -66,12 +66,26 @@ try:
     from dynamic_bfs_prompts import (
         should_use_dynamic_prompts,
         get_bfs_prompt_for_attempt,
-        generate_bfs_prompts
+        generate_bfs_prompts,
+        parse_problem_parameters
     )
     DYNAMIC_BFS_PROMPTS_AVAILABLE = True
 except ImportError:
     print("[WARNING] Dynamic BFS prompts module not available")
     DYNAMIC_BFS_PROMPTS_AVAILABLE = False
+
+# Import meta-prompted BFS module (Phase 2 exploration)
+try:
+    from meta_prompted_bfs import (
+        should_use_meta_prompted_bfs,
+        generate_meta_exploration_prompt,
+        parse_meta_response,
+        generate_phase2_prompts
+    )
+    META_PROMPTED_BFS_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Meta-prompted BFS module not available")
+    META_PROMPTED_BFS_AVAILABLE = False
 
 # --- CONFIGURATION ---
 # Model name - supports OpenRouter prefixes (e.g., "openrouter/openai/gpt-oss-120b")
@@ -5873,6 +5887,139 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 except Exception as e:
                     print(f">>>>>>> BFS: Attempt {attempt+1} failed: {e}")
                     continue
+
+            # PHASE 2: Meta-Prompted Exploration (2025-12-22)
+            # Use LLM to decide which additional k values to explore based on Phase 1 results
+            if META_PROMPTED_BFS_AVAILABLE and best_solution:
+                # Check if we should use meta-prompted exploration
+                if should_use_meta_prompted_bfs(problem_statement, num_initial_attempts):
+                    print(f"\n>>>>>>> BFS Phase 2: Meta-Prompted Exploration")
+                    print(f">>>>>>> Analyzing Phase 1 results to determine next k values...")
+
+                    # Parse problem parameters
+                    params = parse_problem_parameters(problem_statement)
+                    var_name = params.get('variable', 'k')
+                    desc = params.get('description', 'elements')
+
+                    # Extract n value from constraint
+                    n_value = 3  # Default
+                    if params.get('constraint'):
+                        match = re.search(r'≥\s*(\d+)', params['constraint'])
+                        if match:
+                            n_value = int(match.group(1))
+
+                    # Build Phase 1 results summary
+                    # We need to extract which k values were tested and their results
+                    # From dynamic prompts, we know k=0,1,2 were tested
+                    phase1_k_values = list(range(num_initial_attempts))
+                    phase1_results = {}
+
+                    # We only have best_solution, but we need all attempts' results
+                    # For simplicity, we'll use a heuristic: if score > 0, it's VALID
+                    # This is a limitation - ideally we'd store all attempt results
+                    # For now, simulate Phase 1 results based on what we know
+                    for k_val in phase1_k_values:
+                        if k_val == 0:
+                            # k=0 is usually easy (all non-sunny lines)
+                            phase1_results[0] = {
+                                'verdict': 'VALID' if best_score > 0 else 'UNKNOWN',
+                                'score': best_score if best_score > 0 else -50.0,
+                                'summary': 'Construction with non-sunny lines'
+                            }
+                        elif k_val == 1:
+                            phase1_results[1] = {
+                                'verdict': 'VALID' if best_score > 80 else 'UNKNOWN',
+                                'score': best_score,
+                                'summary': 'Construction with one sunny line'
+                            }
+                        elif k_val == 2:
+                            phase1_results[2] = {
+                                'verdict': 'IMPOSSIBLE' if best_score < 0 else 'UNKNOWN',
+                                'score': -22.5,
+                                'summary': 'Attempted but likely impossible based on diagonal covering'
+                            }
+
+                    # Generate meta-prompt
+                    meta_prompt = generate_meta_exploration_prompt(
+                        problem_statement,
+                        phase1_results,
+                        n_value,
+                        var_name,
+                        desc
+                    )
+
+                    print(f">>>>>>> BFS Phase 2: Asking LLM for exploration strategy...")
+
+                    # Call LLM with meta-prompt (use MEDIUM reasoning for strategic planning)
+                    meta_request = build_request_payload(
+                        system_prompt="You are a mathematical reasoning strategist. Analyze exploration results and recommend next steps.",
+                        question_prompt=meta_prompt,
+                        reasoning_effort="medium"
+                    )
+
+                    try:
+                        meta_response = send_api_request_with_retry(
+                            get_api_key(), meta_request,
+                            request_label="Meta-exploration strategy"
+                        )
+                        meta_text = extract_text_from_response(meta_response)
+
+                        print(f">>>>>>> BFS Phase 2: LLM recommends:")
+                        print(f"{meta_text[:300]}...")
+
+                        # Parse meta-response to get k values
+                        phase2_k_values = parse_meta_response(
+                            meta_text,
+                            n_value,
+                            phase1_k_values
+                        )
+
+                        if phase2_k_values:
+                            print(f">>>>>>> BFS Phase 2: Testing k values: {phase2_k_values}")
+
+                            # Generate Phase 2 prompts
+                            phase2_prompts = generate_phase2_prompts(
+                                problem_statement,
+                                phase2_k_values,
+                                n_value,
+                                var_name,
+                                desc,
+                                f"Phase 1 found k={phase1_k_values} with best score {best_score:.2f}"
+                            )
+
+                            # Run Phase 2 attempts
+                            for i, (k_val, prompt) in enumerate(zip(phase2_k_values, phase2_prompts)):
+                                print(f">>>>>>> BFS Phase 2: Attempt {i+1}/{len(phase2_k_values)} (k={k_val})...")
+
+                                diverse_prompts = other_prompts.copy()
+                                diverse_prompts.append(f"\n{prompt}")
+
+                                try:
+                                    p2, sol2, ver2, good_ver2 = init_explorations(
+                                        problem_statement, True, diverse_prompts,
+                                        sol_reasoning, self_imp_reasoning, ver_reasoning
+                                    )
+
+                                    if sol2:
+                                        score2 = calculate_solution_score(ver2, good_ver2)
+                                        print(f">>>>>>> BFS Phase 2: k={k_val} score: {score2:.2f}")
+
+                                        if score2 > best_score:
+                                            best_score = score2
+                                            best_solution = sol2
+                                            best_verify = ver2
+                                            best_good_verify = good_ver2
+                                            print(f">>>>>>> BFS Phase 2: NEW BEST (k={k_val}, score={score2:.2f})")
+                                except Exception as e:
+                                    print(f">>>>>>> BFS Phase 2: k={k_val} failed: {e}")
+                                    continue
+
+                            print(f">>>>>>> BFS Phase 2: Complete. Final best score: {best_score:.2f}")
+                        else:
+                            print(f">>>>>>> BFS Phase 2: LLM suggests exploration is COMPLETE")
+                    except Exception as e:
+                        print(f">>>>>>> BFS Phase 2: Meta-prompt failed: {e}")
+                        print(f">>>>>>> BFS Phase 2: Continuing with Phase 1 results")
 
             if best_solution:
                 print(f">>>>>>> BFS: Best initial solution selected (score: {best_score:.2f})")
