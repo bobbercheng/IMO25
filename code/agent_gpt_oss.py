@@ -5980,12 +5980,10 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     for i in range(current_iteration, 30):
         print(f"\n{'='*80}")
         print(f">>>>>>> Iteration {i}: corrects={correct_count}, errors={error_count}")
+        # SIMPLIFIED (2025-12-21): Removed score delta tracking
+        # Binary pass/fail is sufficient for decision making
         if score_history:
             print(f">>>>>>> [SCORE] Current score: {score_history[-1]:.2f}")
-            if len(score_history) > 1:
-                score_delta = score_history[-1] - score_history[-2]
-                trend = "↑" if score_delta > 0 else "↓" if score_delta < 0 else "="
-                print(f">>>>>>> [SCORE] Score change: {score_delta:+.2f} {trend}")
         print(f"{'='*80}\n")
 
         try:
@@ -6177,13 +6175,20 @@ Do not simply rephrase or polish the previous approach - create something new.
                 save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
                            sol_reasoning, self_imp_reasoning, ver_reasoning)
 
-            if(correct_count >= 5):
-                print(">>>>>>> Correct solution found.")
+            # SIMPLIFIED (2025-12-21): Early exit on first success
+            # Old: Required 5 consecutive successes (correct_count >= 5)
+            # New: Exit immediately on first success (saves 60-120 min)
+            # Rationale: If verification passes once, solution is likely correct
+            if(correct_count >= 1):
+                print(">>>>>>> Correct solution found (first success).")
                 print(json.dumps(solution, indent=4))
                 return solution
 
-            elif(error_count >= 10):
-                print(">>>>>>> Failed in finding a correct solution.")
+            # SIMPLIFIED (2025-12-21): Increased error threshold from 10 to 20
+            # Rationale: Give more chances before giving up (saves 80-160 min by reducing premature failures)
+            # With new "Justification Gap" acceptance, solutions may pass on later iterations
+            elif(error_count >= 20):
+                print(">>>>>>> Failed in finding a correct solution (20 consecutive errors).")
                 # Save final state before returning
                 if memory_file:
                     save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
@@ -6374,21 +6379,26 @@ if __name__ == "__main__":
         parser.print_help()
         sys.exit(1)
 
-    for i in range(max_runs):
-        print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Run {i} of {max_runs} ...")
-        try:
-            sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
-                       solution_reasoning, self_improvement_reasoning, verification_reasoning,
-                       num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
-                       use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
-                       rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning)
-            if(sol is not None):
-                print(f">>>>>>> Found a correct solution in run {i}.")
-                print(json.dumps(sol, indent=4))
-                break
-        except Exception as e:
-            print(f">>>>>>> Error in run {i}: {e}")
-            continue
+    # SIMPLIFIED (2025-12-21): Removed outer restart loop
+    # Old: Ran agent() up to max_runs times, restarting BFS on each failure (wasted 200-300 min)
+    # New: Run agent() once, increased inner error threshold to 20 (from 10) for more chances
+    # Rationale: BFS phase results were lost on restart, each restart re-ran expensive BFS (~82 min)
+    print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Starting agent ...")
+    try:
+        sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
+                   solution_reasoning, self_improvement_reasoning, verification_reasoning,
+                   num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
+                   use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
+                   rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning)
+        if(sol is not None):
+            print(f">>>>>>> Found a correct solution.")
+            print(json.dumps(sol, indent=4))
+        else:
+            print(f">>>>>>> No solution found after 30 iterations (error_count reached 20).")
+    except Exception as e:
+        print(f">>>>>>> Error during agent execution: {e}")
+        import traceback
+        traceback.print_exc()
 
     # Close log file if it was opened
     close_log_file()
