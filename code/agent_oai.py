@@ -96,6 +96,12 @@ step1_prompt = """
     *   For an optimization problem, proving an upper or lower bound without proving that this bound is achievable.
 *   **Use TeX for All Mathematics:** All mathematical variables, expressions, and relations must be enclosed in TeX delimiters (e.g., `Let $n$ be an integer.`).
 *   **Final Answer Format:** When you have a complete solution, state the final answer using \\boxed{} format (e.g., `The final answer is \\boxed{42}`).
+*   **Structured Exploration for FIND/DETERMINE Problems** (2025-12-22 Expert Panel): When the problem asks to "find ALL" or "determine ALL" values of a parameter:
+    *   **Step 1**: Test the SIMPLEST cases first (e.g., k=0 for "determine all k")
+    *   **Step 2**: Test the NEXT simplest case (e.g., k=1)
+    *   **Step 3**: For each case that seems impossible, PROVE impossibility rigorously (not just "I couldn't find a construction")
+    *   **Step 4**: Continue testing values systematically until you find the COMPLETE pattern
+    *   **Example**: For "determine all k for n≥3", you must test k=0,1,2,3,... and explain why each works or doesn't work
 
 ### Output Format ###
 
@@ -175,6 +181,32 @@ Your response MUST be structured into two main sections: a **Summary** followed 
 
 *   **b. Detailed Verification Log**
     Following the summary, provide the full, step-by-step verification log as defined in the Core Instructions. When you refer to a specific part of the solution, **quote the relevant text** to make your reference clear before providing your detailed analysis of that part.
+
+**4. Completeness Requirement for FIND/DETERMINE Problems** (2025-12-22 Expert Panel Recommendations)
+
+For problems that ask to "FIND ALL", "DETERMINE ALL", or "IDENTIFY ALL" values:
+
+*   **a. Small-Case Explicit Testing:**
+    *   If the problem has a parameter (e.g., n≥3), check if the solution explicitly tests the MINIMAL case (e.g., n=3).
+    *   For problems asking "determine all k", verify the solution tests ALL small values explicitly (e.g., for n=3, check k=0,1,2,3).
+    *   **Critical Error if:** Solution claims complete answer but only provides ONE example (e.g., "k=1 works" without checking k=0,2,3).
+
+*   **b. Impossibility Proofs (k=2 Rule):**
+    *   If solution claims a value is IMPOSSIBLE (e.g., "k=2 cannot work"), verify there is a RIGOROUS PROOF, not just a failed construction attempt.
+    *   **Critical Error if:** Solution states "k=2 doesn't work" without proving WHY (e.g., no combinatorial argument, no contradiction).
+    *   **Justification Gap if:** Impossibility claim has reasoning but lacks full rigor.
+
+*   **c. Answer Completeness:**
+    *   Check if the final answer is a COMPLETE SET (e.g., "k∈{0,1,3}") or just PARTIAL (e.g., "k=1 is one solution").
+    *   For "determine all k" problems:
+        *   **Complete**: Lists all valid k as a set OR proves a pattern (e.g., "k∈{0,1}∪{3,4,...,n}")
+        *   **Incomplete**: Only shows some k work without proving others don't
+    *   **Critical Error if:** Solution claims "I have found the complete answer" but final answer is a single value or subset of ground truth.
+
+**Example of Completeness Check:**
+- Problem: "Determine all k for n≥3"
+- Solution claims: "For n=3, k=1 works. Final answer: k=1"
+- Verdict: **Critical Error** - Only tested k=1, didn't check k=0,2,3. Answer is INCOMPLETE.
 
 **Example of the Required Summary Format**
 *This is a generic example to illustrate the required format. Your findings must be based on the actual solution provided below.*
