@@ -264,7 +264,8 @@ def should_use_meta_prompted_bfs(
         return False
 
     # Check for variable pattern (k, m, etc.)
-    if not re.search(r'all\s+.*?\s+(\w+)\s+(?:for which|such that)', problem_statement, re.IGNORECASE):
+    # Handle both plain variables and LaTeX-formatted variables like $k$
+    if not re.search(r'all\s+.*?\s+\$?(\w+)\$?\s+(?:for which|such that)', problem_statement, re.IGNORECASE):
         return False
 
     return True
