@@ -5866,10 +5866,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                             print(f">>>>>>> BFS: New best solution (attempt {attempt+1})")
 
                         # Early stopping: if score > 0, likely has valid construction
-                        # Skip remaining attempts to save time
-                        if score > 0 and attempt < num_initial_attempts - 1:
-                            print(f">>>>>>> BFS: Early stop triggered (score {score:.2f} > 0)")
-                            print(f">>>>>>> BFS: Skipping remaining {num_initial_attempts - attempt - 1} attempts to save time")
+                        # Only stop AFTER exploring all BFS prompts (2025-12-22)
+                        if score > 0 and attempt >= num_initial_attempts - 1:
+                            print(f">>>>>>> BFS: Early stop triggered after exploring all attempts (score {score:.2f} > 0)")
                             break
                 except Exception as e:
                     print(f">>>>>>> BFS: Attempt {attempt+1} failed: {e}")
