@@ -103,6 +103,28 @@ step1_prompt = """
     *   **Step 4**: Continue testing values systematically until you find the COMPLETE pattern
     *   **Example**: For "determine all k for n≥3", you must test k=0,1,2,3,... and explain why each works or doesn't work
 
+*   **Explicit Point-by-Point Verification for Constructions** (2025-12-22 Retest Analysis):
+    *   When you claim a construction works (e.g., "these 3 lines cover all points"), you MUST verify it point-by-point:
+        *   **List all required points** explicitly (e.g., for n=3: (1,1), (1,2), (1,3), (2,1), (2,2), (3,1))
+        *   **For each point**, show which line(s) contain it by substitution (e.g., "Point (2,1) on line y=-2x+5: check 1 = -2(2)+5 = 1 ✓")
+        *   **If ANY point is uncovered**, the construction FAILS - acknowledge this immediately
+    *   **Do NOT claim** "the construction works" without explicit point-by-point verification
+
+*   **Impossibility Proof Requirements** (2025-12-22 Retest Analysis):
+    *   If you claim k=X is impossible, you must use one of these rigorous proof strategies:
+        *   **Counting Argument**: "We need to cover N points, but n lines with k sunny can cover at most M < N points"
+        *   **Pigeonhole Principle**: "We have N constraints but only M degrees of freedom (N > M)"
+        *   **Proof by Contradiction**: "Assume k=X works. Then [derive contradiction]. Therefore k=X is impossible."
+    *   **Do NOT simply state** "k=X doesn't work" or "I couldn't find a construction" - this is NOT a proof of impossibility
+
+*   **Construction Sanity Checks** (2025-12-22 Retest Analysis):
+    *   Before claiming "k=X is achievable", ask yourself:
+        *   **How many points** need covering? (For n=3: |T_3| = 6 points)
+        *   **How many lines** are available? (Exactly n lines total)
+        *   **Typical coverage**: Each sunny line covers ~1-2 points, each non-sunny diagonal covers ~(k-1) points
+        *   **Is k=X feasible?** If k sunny lines + (n-k) diagonals can't cover enough points, k=X is likely impossible
+    *   **Example for n=3, k=3**: Need 6 points, have 3 sunny lines covering ~3 points total → Need special construction!
+
 ### Output Format ###
 
 Your response MUST be structured into the following sections, in this exact order. Use the EXACT section markers shown below.
@@ -207,6 +229,38 @@ For problems that ask to "FIND ALL", "DETERMINE ALL", or "IDENTIFY ALL" values:
 - Problem: "Determine all k for n≥3"
 - Solution claims: "For n=3, k=1 works. Final answer: k=1"
 - Verdict: **Critical Error** - Only tested k=1, didn't check k=0,2,3. Answer is INCOMPLETE.
+
+**5. Construction Verification Requirements** (2025-12-22 Retest Analysis)
+
+When the solution presents a construction (e.g., "these n lines cover all required points"), you MUST verify:
+
+*   **a. Point-by-Point Verification:**
+    *   Check if the solution lists ALL required points explicitly (e.g., for n=3: T_3 = {(1,1), (1,2), (1,3), (2,1), (2,2), (3,1)})
+    *   For EACH point, verify the solution shows which line(s) contain it by algebraic substitution
+    *   **Critical Error if:** Solution claims "all points are covered" WITHOUT explicit point-by-point verification
+    *   **Critical Error if:** Solution provides partial verification (e.g., checks 3 out of 6 points) without checking ALL points
+    *   **Example of VALID verification:** "Point (2,1) on line y=-2x+5: check 1 = -2(2)+5 = 1 ✓"
+
+*   **b. Impossibility Proof Rigor:**
+    *   If solution claims a value is impossible (e.g., "k=2 cannot be achieved"), verify it uses ONE of these rigorous strategies:
+        *   **Counting Argument:** "Need to cover N points, but k sunny + (n-k) non-sunny can cover at most M < N points"
+        *   **Pigeonhole Principle:** "Have N constraints but only M degrees of freedom (N > M), therefore impossible"
+        *   **Proof by Contradiction:** "Assume k=X works. Then [derive contradiction]. Therefore k=X is impossible."
+    *   **Critical Error if:** Solution states "k=X doesn't work" or "I couldn't find a construction" without a rigorous impossibility proof
+    *   **Justification Gap if:** Impossibility claim has reasoning but lacks complete rigor (allow if direction is sound)
+
+*   **c. Construction Feasibility Sanity Check:**
+    *   When solution claims "k=X is achievable", verify the claim is plausible:
+        *   Check if solution counted required points (e.g., |T_n| = n(n+1)/2 for sunny lines problem)
+        *   Check if k sunny lines + (n-k) non-sunny lines can cover enough points
+        *   **Justification Gap if:** Solution doesn't discuss coverage capacity (allow if construction is explicitly verified point-by-point)
+        *   **Critical Error if:** Construction is clearly infeasible (e.g., "3 lines each covering 1 point" cannot cover 6 points) AND solution provides no point-by-point verification
+
+**Example of Construction Verification:**
+- Solution claims: "For n=3, k=3, use lines L1: y=-2x+5, L2: y=-2x+6, L3: y=-2x+7. These cover all 6 points."
+- Verification check: Does solution verify all 6 points (1,1), (1,2), (1,3), (2,1), (2,2), (3,1) algebraically?
+  - If YES → Accept construction
+  - If NO → **Critical Error** - Construction not verified point-by-point
 
 **Example of the Required Summary Format**
 *This is a generic example to illustrate the required format. Your findings must be based on the actual solution provided below.*
