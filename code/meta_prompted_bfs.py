@@ -134,16 +134,17 @@ def parse_meta_response(
     """
     k_values = []
 
-    # Check if LLM says exploration is complete
-    if re.search(r'\bCOMPLETE\b', response, re.IGNORECASE):
-        return []
-
     # Look for "Next Values to Test:" section (single line)
     next_values_match = re.search(
         r'(?:Next Values to Test|Values to Test|Test Next):\s*([^\n]+)',
         response,
         re.IGNORECASE
     )
+
+    # Check if LLM says exploration is complete (only in the values section)
+    if next_values_match and re.search(r'\bCOMPLETE\b', next_values_match.group(1), re.IGNORECASE):
+        print("[DEBUG] Found COMPLETE in Next Values section, exploration finished")
+        return []
 
     if next_values_match:
         values_text = next_values_match.group(1)
