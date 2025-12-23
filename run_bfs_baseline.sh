@@ -24,7 +24,7 @@ PROBLEM="${1:-problems/imo01.txt}"
 OUTPUT_DIR="${2:-bfs_baseline_results}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 MAX_PARALLEL=${MAX_PARALLEL:-6}  # Run 6 in parallel for faster completion
-N_RUNS=12
+N_RUNS=${N_RUNS:-12} # Active jobs number, default 12
 
 # BFS configuration (UPDATED per expert panel recommendations)
 # Expert panel analysis (RUN3_EXPERT_PANEL_SYNTHESIS.md):
