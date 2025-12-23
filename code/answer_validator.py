@@ -440,7 +440,9 @@ def extract_final_answer(solution_text: str) -> str:
         return captured
 
     # Pattern 2: Last occurrence of "k ∈" or "k ="
-    matches = list(re.finditer(r'k\s*[∈=]\s*[^.]+', solution_text))
+    # BUGFIX (2025-12-23): Changed [^.]+ to [^\n]+ to handle "..." in parametric answers
+    # Example: "k ∈ {0, 1, 2, ..., n}" would stop at first period with [^.]+
+    matches = list(re.finditer(r'k\s*[∈=]\s*[^\n]+', solution_text))
     if matches:
         return matches[-1].group(0)
 

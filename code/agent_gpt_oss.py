@@ -810,11 +810,12 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
         ])
 
         # Graduated validation based on content
+        # BUGFIX (2025-12-23): Relax math requirement for plain-text test solutions
+        # Accept if solution has answer OR reasoning, even without LaTeX math delimiters
         min_length = 100  # Reduced from 500 - allow shorter valid proofs
         is_valid = (
             len(solution) >= min_length and
-            has_math and
-            (has_answer or has_reasoning)
+            (has_math or has_answer or has_reasoning)  # Accept plain text if has content
         )
 
         if is_valid:
