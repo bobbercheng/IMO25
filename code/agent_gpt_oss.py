@@ -6409,16 +6409,44 @@ Do not simply rephrase or polish the previous approach - create something new.
                 save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
                            sol_reasoning, self_imp_reasoning, ver_reasoning)
 
-            # SIMPLIFIED (2025-12-21): Early exit on first success
-            # Old: Required 5 consecutive successes (correct_count >= 5)
-            # New: Exit immediately on first success (saves 60-120 min)
-            # Rationale: If verification passes once, solution is likely correct
-            # FIX (2025-12-23): Also check answer_is_correct to prevent false positives
-            # (e.g., Run 1 had verification pass but answer was INCOMPLETE)
-            if(correct_count >= 1 and answer_is_correct):
-                print(">>>>>>> Correct solution found (first success).")
-                print(json.dumps(solution, indent=4))
-                return solution
+            # SUCCESS DETECTION (2025-12-23): Option B - Full Solution Validation
+            # Strategy: Accept solution if verification passes (complete rigorous proof)
+            # Ground truth provides confidence level, not primary validation
+            #
+            # Three success modes:
+            # 1. HIGH CONFIDENCE: Verification passed + answer correct (ground truth exists)
+            # 2. VERIFICATION ONLY: Verification passed + no ground truth available
+            # 3. EDGE CASE WARNING: Verification passed + answer wrong (investigate)
+            if(correct_count >= 1):  # Verification passed - proof is complete
+
+                # Determine confidence based on answer validation
+                if answer_is_correct:
+                    # BEST CASE: Verification passed + answer matches ground truth
+                    print(">>>>>>> ✅ CORRECT SOLUTION FOUND (HIGH CONFIDENCE)")
+                    print(f"    Verification: PASSED (iteration {i})")
+                    print(f"    Answer: CORRECT (matches ground truth)")
+                    print(json.dumps(solution, indent=4))
+                    return solution
+
+                elif problem_id is not None:
+                    # EDGE CASE: Ground truth exists but answer is wrong
+                    # This is rare - usually means verification is too lenient
+                    print(">>>>>>> ⚠️  VERIFICATION PASSED but ANSWER WRONG (edge case)")
+                    print(f"    Verification: PASSED (iteration {i})")
+                    print(f"    Answer: Does not match ground truth")
+                    print(f"    This suggests verification may be too lenient - continuing search")
+                    # Don't count as success - continue to find correct solution
+                    correct_count = 0
+
+                else:
+                    # NO GROUND TRUTH: Accept based on verification alone
+                    # This is the "Option B" path - trust the proof is complete
+                    print(">>>>>>> ✅ VERIFICATION PASSED (NO GROUND TRUTH)")
+                    print(f"    Verification: PASSED (iteration {i})")
+                    print(f"    Answer: Not validated (no ground truth available)")
+                    print(f"    Accepting solution based on proof completeness")
+                    print(json.dumps(solution, indent=4))
+                    return solution
 
             # SIMPLIFIED (2025-12-21): Increased error threshold from 10 to 20
             # Rationale: Give more chances before giving up (saves 80-160 min by reducing premature failures)
