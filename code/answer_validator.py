@@ -74,8 +74,16 @@ def parse_answer_to_set(answer_text: str) -> Set[int]:
     """
     answer_text = answer_text.strip()
 
+    # FIX (2025-12-23): Strip LaTeX formatting before parsing
+    # LaTeX uses \{ \} and \; which break the original regex
+    # Also handle double-escaped backslashes from log files: \\{ → \{ → {
+    clean_text = answer_text.replace(r'\\{', '{').replace(r'\\}', '}')
+    clean_text = clean_text.replace(r'\{', '{').replace(r'\}', '}')
+    clean_text = clean_text.replace(r'\\;', ' ').replace(r'\;', ' ')
+    clean_text = clean_text.replace(r'\\,', ',').replace(r'\,', ',')
+
     # Pattern 1: Explicit set {0, 1, 3}
-    match = re.search(r'\{([0-9,\s]+)\}', answer_text)
+    match = re.search(r'\{([0-9,\s]+)\}', clean_text)
     if match:
         nums = match.group(1).split(',')
         try:
@@ -416,9 +424,20 @@ def extract_final_answer(solution_text: str) -> str:
     - Last occurrence of "k ∈" or "k ="
     """
     # Pattern 1: \boxed{...}
-    match = re.search(r'\\boxed\{([^}]+)\}', solution_text)
+    # FIX (2025-12-23): Handle nested braces like \boxed{\{0,\;1,\;3\}}
+    # Original regex r'\\boxed\{([^}]+)\}' stops at first }, missing inner content
+    # New approach: look for \boxed{ then match to the corresponding closing }
+    match = re.search(r'\\boxed\{(.+?)\}(?:\s|$|\\)', solution_text)
     if match:
-        return match.group(1)
+        # Also try longer match for nested braces
+        captured = match.group(1)
+        # If it looks like an incomplete LaTeX set, try to get more
+        if captured.endswith('\\'):
+            # Try to capture nested braces
+            match2 = re.search(r'\\boxed\{((?:[^{}]|\\{[^}]*\\})+)\}', solution_text)
+            if match2:
+                return match2.group(1)
+        return captured
 
     # Pattern 2: Last occurrence of "k ∈" or "k ="
     matches = list(re.finditer(r'k\s*[∈=]\s*[^.]+', solution_text))
