@@ -207,7 +207,7 @@ for run_num in $(seq 1 $N_RUNS); do
 done
 
 # Wait for all tests to complete
-if [ ${#PIDS[@]} -gt 0 ]; then
+if [ "${#PIDS[@]}" -gt 0 ] 2>/dev/null || [ $N_RUNS -gt 0 ]; then
     wait_for_all_jobs
 
     # Cleanup progress files
