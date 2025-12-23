@@ -1307,16 +1307,16 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
                 print(f">>>>>>> [COUNTEREXAMPLE VALIDATION] {counterexample_result['reason'][:200]}...")
 
     # ANSWER VALIDATION (2025-12-23): Check claimed answer against ground truth
-    # CRITICAL FIX: Run BEFORE checking verification verdict (was only running if o="yes")
-    # This catches wrong answers that pass proof verification AND validates correct answers
-    # that fail proof verification due to presentation issues.
-    answer_is_correct = False  # Track answer correctness for later logic
+    # ANSWER VALIDATION (2025-12-23 FIX):
+    # Run validation for MEASUREMENT ONLY - DO NOT feed results back to LLM
+    # This prevents ground truth leakage while still allowing offline success measurement
+    answer_is_correct = False  # Track for "Correct solution found" marker only
     try:
         from answer_validator import AnswerValidator, extract_final_answer
 
         if verbose:
             print("\n" + "="*80)
-            print(">>>>>>> [ANSWER VALIDATION] Checking answer correctness")
+            print(">>>>>>> [ANSWER VALIDATION] Checking answer correctness (for measurement only)")
             print("="*80)
 
         # Determine problem ID (try to extract from problem statement or use default)
@@ -1337,67 +1337,21 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
                 if answer_result.get("details"):
                     print(f">>>>>>> [ANSWER VALIDATION] Details: {str(answer_result['details'])[:200]}...")
 
-            # Handle different answer validation verdicts
-            if answer_result["verdict"] in ["WRONG", "OVERGENERALIZED"]:
-                if verbose:
-                    print(f">>>>>>> [ANSWER VALIDATION] ❌ FAILED - Overriding verification to 'no'")
-
-                # Update bug report and verdict
-                details = answer_result.get("details", {})
-                correct_ans = details.get("correct_answer") or details.get("correct", "unknown")
-                claimed_ans = details.get("claimed", claimed_answer)
-
-                bug_report = f"**ANSWER VALIDATION FAILED**\n\n" + \
-                            f"Verdict: {answer_result['verdict']}\n" + \
-                            f"Claimed answer: {claimed_ans}\n" + \
-                            f"Correct answer: {correct_ans}\n\n" + \
-                            f"Reason: {details.get('reason', 'Answer does not match ground truth')}\n\n" + \
-                            bug_report
-                o = "no"  # Override to failure
-                answer_is_correct = False
-
-            elif answer_result["verdict"] == "CORRECT":
+            # CRITICAL: Only use for internal tracking, NOT for bug_report feedback
+            # This prevents ground truth leakage to the LLM
+            if answer_result["verdict"] == "CORRECT":
+                answer_is_correct = True
                 if verbose:
                     print(f">>>>>>> [ANSWER VALIDATION] ✅ CORRECT - Answer matches ground truth")
-
-                answer_is_correct = True
-
-                # If answer is CORRECT but verification failed, add context
-                if "no" in o.lower():
-                    if verbose:
-                        print(f">>>>>>> [ANSWER VALIDATION] ℹ️  Note: Answer is CORRECT but proof has issues")
-
-                    details = answer_result.get("details", {})
-                    bug_report = f"**ANSWER IS CORRECT**\n\n" + \
-                                f"Your final answer matches the ground truth: {details.get('correct', claimed_answer)}\n" + \
-                                f"However, the proof verification found issues (see below).\n\n" + \
-                                f"**Recommendation**: Focus on fixing proof presentation, not the answer.\n\n" + \
-                                bug_report
-
-            elif answer_result["verdict"] == "INCOMPLETE":
-                if verbose:
-                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  INCOMPLETE - Answer is partial")
-
-                # Add warning but don't override (incomplete answer can still be valuable)
-                details = answer_result.get("details", {})
-                missing = details.get("missing", "some values")
-                bug_report = f"**ANSWER INCOMPLETE**\n\n" + \
-                            f"Your answer is correct but incomplete.\n" + \
-                            f"Missing: {missing}\n\n" + \
-                            bug_report
-                answer_is_correct = False  # Incomplete is not fully correct
-
-            elif answer_result["verdict"] == "SUSPICIOUS":
-                if verbose:
-                    print(f">>>>>>> [ANSWER VALIDATION] ⚠️  SUSPICIOUS - Possible issues detected")
-
-                # Add warning
-                details = answer_result.get("details", {})
-                issues = details.get("issues", [])
-                bug_report = f"**ANSWER SUSPICIOUS**\n\n" + \
-                            f"Potential issues: {', '.join(str(i) for i in issues)}\n\n" + \
-                            bug_report
+            else:
                 answer_is_correct = False
+                if verbose:
+                    print(f">>>>>>> [ANSWER VALIDATION] ❌ Not correct: {verdict}")
+
+            # DO NOT modify bug_report based on answer validation
+            # DO NOT override verification verdict (o) based on answer
+            # Let the LLM self-discover the answer without hints
+
         else:
             if verbose:
                 print(f">>>>>>> [ANSWER VALIDATION] Could not extract answer from solution")
@@ -1409,40 +1363,10 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         if verbose:
             print(f">>>>>>> [ANSWER VALIDATION] Validation failed: {e}")
 
-    # PRE-VERIFICATION ENFORCEMENT (2025-12-23):
-    # If answer is CORRECT but verification failed due to presentation issues,
-    # provide targeted feedback to improve proof presentation
-    if answer_is_correct and "no" in o.lower():
-        # Check if verification failed due to missing point-by-point verification
-        if any(keyword in bug_report.lower() for keyword in [
-            "point-by-point", "explicit verification", "coverage",
-            "verify all points", "check each point"
-        ]):
-            if verbose:
-                print("\n" + "="*80)
-                print(">>>>>>> [PRE-VERIFICATION ENFORCEMENT] Answer is CORRECT but proof needs improvement")
-                print(">>>>>>> [PRE-VERIFICATION ENFORCEMENT] Targeting: Missing point-by-point verification")
-                print("="*80)
-
-            # Add targeted guidance at the top of bug report
-            targeted_prompt = """**PRE-VERIFICATION ENFORCEMENT**
-
-✅ Your final answer is CORRECT!
-
-However, your proof lacks explicit point-by-point verification of the construction.
-
-**What to do:**
-1. List ALL required points explicitly (e.g., for n=3: T_3 = {(1,1), (1,2), (1,3), (2,1), (2,2), (3,1)})
-2. For EACH point (a,b), show which line contains it by substitution:
-   - Example: "Point (2,1) on line y=-2x+5: check 1 = -2(2)+5 = 1 ✓"
-3. Verify every single point is covered by at least one line
-
-**Your answer is already correct, just add the explicit verification steps!**
-
----
-
-"""
-            bug_report = targeted_prompt + bug_report
+    # PRE-VERIFICATION ENFORCEMENT (2025-12-23 - DISABLED):
+    # REMOVED: This section was leaking ground truth ("Your answer is CORRECT!")
+    # Answer validation is now MEASUREMENT ONLY, not for feedback
+    # The LLM must self-discover correctness without external hints
 
     # PRESCRIPTIVE FEEDBACK ENHANCEMENT (2025-12-18):
     # Integrate automated checkers and template-based fix suggestions
