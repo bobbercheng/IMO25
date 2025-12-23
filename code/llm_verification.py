@@ -348,7 +348,9 @@ Output JSON only:"""
             Extraction result with answer field
         """
         # Pattern 1: k ∈ {0, 1, 3} or k ∈ {0,1,3}
-        pattern1 = r'k\s*∈\s*\{([0-9,\s]+)\}'
+        # BUGFIX (2025-12-23): Handle LaTeX spacing commands like \; in \boxed{\;k\in\{0,1,3\}\;}
+        # Use [\s\\;]* to match spaces, newlines, and \; commands
+        pattern1 = r'k[\s\\;]*[∈=][\s\\;]*\{([0-9,\s]+)\}'
         match = re.search(pattern1, text)
         if match:
             values_str = match.group(1)
@@ -366,7 +368,9 @@ Output JSON only:"""
                 pass
 
         # Pattern 2: {0, 1, 3} or {0,1,3} (standalone set)
-        pattern2 = r'(?:answer is|values are)?\s*\{([0-9,\s]+)\}'
+        # BUGFIX (2025-12-23): Make prefix REQUIRED to avoid matching equation tags like {1.1}
+        # Changed (?:answer is|values are)? to (?:answer is|values are|final answer)
+        pattern2 = r'(?:answer is|values are|final answer)[\s:]*\{([0-9,\s]+)\}'
         match = re.search(pattern2, text, re.IGNORECASE)
         if match:
             values_str = match.group(1)
