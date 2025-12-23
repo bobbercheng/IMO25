@@ -140,7 +140,9 @@ def test_1_complete_proof_from_bfs_run2():
     - Upper bound proof for k≥4
     - Complete and rigorous (IMO-level proof)
     """
-    json_path = "/home/user/IMO25/bfs_no_answer_validation/bfs_run2_20251223_000814.json"
+    # Use relative path from repository root
+    repo_root = os.path.join(os.path.dirname(__file__), '..')
+    json_path = os.path.join(repo_root, 'bfs_no_answer_validation', 'bfs_run2_20251223_000814.json')
 
     if not os.path.exists(json_path):
         print(f"⚠️  Skipping Test 1: {json_path} not found")
@@ -166,7 +168,9 @@ def test_2_complete_proof_from_bfs_run8():
 
     Why: Another complete proof (different approach but rigorous)
     """
-    json_path = "/home/user/IMO25/bfs_no_answer_validation/bfs_run8_20251223_000814.json"
+    # Use relative path from repository root
+    repo_root = os.path.join(os.path.dirname(__file__), '..')
+    json_path = os.path.join(repo_root, 'bfs_no_answer_validation', 'bfs_run8_20251223_000814.json')
 
     if not os.path.exists(json_path):
         print(f"⚠️  Skipping Test 2: {json_path} not found")
