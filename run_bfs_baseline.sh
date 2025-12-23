@@ -53,6 +53,20 @@ declare -A PID_TO_JOB  # Maps PID to job number for completion reporting
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
+# FIX (2025-12-23): Validate sufficient disk space before starting N=100 test
+# Estimated space needed: ~71MB for logs + ~20MB temp files = ~100MB total
+available_space=$(df -k "$OUTPUT_DIR" | tail -1 | awk '{print $4}')
+required_space=102400  # 100MB in KB
+if [ "$available_space" -lt "$required_space" ]; then
+    echo -e "${RED}ERROR: Insufficient disk space${NC}"
+    echo "  Available: $(($available_space / 1024))MB"
+    echo "  Required:  $(($required_space / 1024))MB"
+    echo "  Please free up space before running the test"
+    exit 1
+fi
+echo "Disk space check: $(($available_space / 1024))MB available (OK)"
+echo ""
+
 # ANSI color codes
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -146,6 +160,8 @@ run_bfs_async() {
         echo "[$(date +%H:%M:%S)] START: BFS Run $run_num" >> "$progress_file"
 
         # Run BFS agent
+        # FIX (2025-12-23): Removed "> /dev/null" which was discarding all output
+        # All output now goes to both progress_file (via tee) and log_file (via --log)
         if python code/agent_gpt_oss.py "$PROBLEM" \
             --log "$log_file" \
             --memory "$json_file" \
@@ -154,7 +170,7 @@ run_bfs_async() {
             --solution-reasoning "$SOLUTION_REASONING" \
             --verification-reasoning "$VERIFICATION_REASONING" \
             --self-improvement-reasoning "$SELF_IMPROVEMENT_REASONING" \
-            2>&1 | tee -a "$progress_file" > /dev/null; then
+            2>&1 | tee -a "$progress_file"; then
             echo "[$(date +%H:%M:%S)] SUCCESS: BFS Run $run_num" >> "$progress_file"
             echo "SUCCESS" > "$progress_file"
         else

@@ -1319,10 +1319,20 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
             print(">>>>>>> [ANSWER VALIDATION] Checking answer correctness (for measurement only)")
             print("="*80)
 
-        # Determine problem ID (try to extract from problem statement or use default)
-        problem_id = "imo2025_p1"  # Default for IMO Problem 1
-        if "sunny" in problem_statement.lower() and "line" in problem_statement.lower():
-            problem_id = "imo2025_p1"
+        # Determine problem ID from problem statement
+        # FIX (2025-12-23): Support multiple IMO problems, not just P1
+        problem_id = None
+        problem_lower = problem_statement.lower()
+
+        if "sunny" in problem_lower and "line" in problem_lower:
+            problem_id = "imo2025_p1"  # FIND problem with ground truth {0,1,3}
+        elif "prove that" in problem_lower and ("circumcircle" in problem_lower or "tangent" in problem_lower):
+            problem_id = "imo2025_p2"  # PROVE problem (geometry, no ground truth)
+        # Add more problems as needed
+        # elif "....." in problem_lower:
+        #     problem_id = "imo2025_p3"
+        else:
+            problem_id = None  # Unknown problem, skip answer validation
 
         validator = AnswerValidator(problem_id)
         claimed_answer = extract_final_answer(solution)
@@ -1898,13 +1908,28 @@ def save_memory(memory_file, problem_statement, other_prompts, current_iteration
         "resume_count": existing_memory.get("resume_count", 0) + (1 if existing_memory else 0),
     }
 
+    # FIX (2025-12-23): Atomic write to prevent corruption on crash
+    # Write to temp file first, then atomically rename
     try:
-        with open(memory_file, 'w', encoding='utf-8') as f:
+        import os
+        temp_file = f"{memory_file}.tmp.{os.getpid()}"
+        with open(temp_file, 'w', encoding='utf-8') as f:
             json.dump(memory, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())  # Force write to disk
+
+        # Atomic rename (replaces old file if exists)
+        os.replace(temp_file, memory_file)
         print(f"Memory saved to {memory_file}")
         return True
     except Exception as e:
         print(f"Error saving memory to {memory_file}: {e}")
+        # Clean up temp file if it exists
+        try:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        except:
+            pass
         return False
 
 
@@ -6387,7 +6412,9 @@ Do not simply rephrase or polish the previous approach - create something new.
             # Old: Required 5 consecutive successes (correct_count >= 5)
             # New: Exit immediately on first success (saves 60-120 min)
             # Rationale: If verification passes once, solution is likely correct
-            if(correct_count >= 1):
+            # FIX (2025-12-23): Also check answer_is_correct to prevent false positives
+            # (e.g., Run 1 had verification pass but answer was INCOMPLETE)
+            if(correct_count >= 1 and answer_is_correct):
                 print(">>>>>>> Correct solution found (first success).")
                 print(json.dumps(solution, indent=4))
                 return solution
