@@ -211,3 +211,5 @@ test_enhancements_logs/
 test_logs_mcts_translation/
 test_*_logs/
 test_rlac_log/
+# Generated validation results
+**/validation_results.json
