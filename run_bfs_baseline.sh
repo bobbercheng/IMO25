@@ -48,6 +48,7 @@ NUM_INITIAL_ATTEMPTS=3            # Generate 3 initial solution attempts (BFS ex
 MAX_RUNS=15
 
 PIDS=()  # Array to track background job PIDs
+declare -A PID_TO_JOB  # Maps PID to job number for completion reporting
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
@@ -81,6 +82,29 @@ echo "  Success rate: 30-50% (4-6/12) per expert panel estimates"
 echo "  Note: Temperature hardcoded to 0.1 (expert recommends 0.35 for better exploration)"
 echo ""
 
+# Function to report job completion
+report_job_completion() {
+    local pid=$1
+    local job_num=${PID_TO_JOB[$pid]:-unknown}
+    local progress_file="$OUTPUT_DIR/.bfs_run${job_num}.progress"
+
+    if [ -f "$progress_file" ]; then
+        local status=$(head -n 1 "$progress_file")
+        if [ "$status" = "SUCCESS" ]; then
+            echo -e "${GREEN}[COMPLETED]${NC} Job $job_num (PID $pid) - SUCCESS"
+        elif [ "$status" = "FAILED" ]; then
+            echo -e "${RED}[COMPLETED]${NC} Job $job_num (PID $pid) - FAILED"
+        else
+            echo -e "${YELLOW}[COMPLETED]${NC} Job $job_num (PID $pid) - Unknown status"
+        fi
+    else
+        echo -e "${YELLOW}[COMPLETED]${NC} Job $job_num (PID $pid) - No progress file"
+    fi
+
+    # Clean up the mapping
+    unset PID_TO_JOB[$pid]
+}
+
 # Function to wait for a job slot to become available
 wait_for_slot() {
     while [ ${#PIDS[@]} -ge $MAX_PARALLEL ]; do
@@ -90,6 +114,9 @@ wait_for_slot() {
             if kill -0 $pid 2>/dev/null; then
                 # Job still running
                 new_pids+=($pid)
+            else
+                # Job completed - report it
+                report_job_completion $pid
             fi
         done
         PIDS=("${new_pids[@]}")
@@ -138,6 +165,7 @@ run_bfs_async() {
 
     local new_pid=$!
     PIDS+=($new_pid)
+    PID_TO_JOB[$new_pid]=$run_num  # Map PID to job number for completion reporting
     echo -e "${GREEN}[STARTED]${NC} BFS Run $run_num - PID: $new_pid - Slot: ${#PIDS[@]}/$MAX_PARALLEL - Log: $log_file"
 }
 
@@ -151,11 +179,14 @@ wait_for_all_jobs() {
     while true; do
         sleep 5
 
-        # Clean up completed jobs from PIDS array
+        # Clean up completed jobs from PIDS array and report completions
         local new_pids=()
         for pid in "${PIDS[@]}"; do
             if kill -0 $pid 2>/dev/null; then
                 new_pids+=($pid)
+            else
+                # Job completed - report it
+                report_job_completion $pid
             fi
         done
         # Handle empty array with set -u (unbound variable error)
