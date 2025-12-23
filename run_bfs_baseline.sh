@@ -4,6 +4,11 @@
 # Purpose: Test BFS with MEDIUM reasoning after expert panel analysis
 # Configuration: MEDIUM reasoning, temperature 0.1, MAX_RUNS=15
 #
+# CRITICAL FIX (2025-12-23):
+#   - Removed answer validation from feedback loop (was leaking ground truth)
+#   - Success criterion: "Correct solution found (first success)" (agent's judgment)
+#   - Post-hoc validation: Use validate_runs_offline.py for ground truth comparison
+#
 # Expert Panel Findings (RUN3_EXPERT_PANEL_SYNTHESIS.md):
 #   - Previous config (LOW reasoning): 0/12 success, only found k=0
 #   - Root cause: LOW reasoning insufficient for mixed constructions (k=1,3)
@@ -230,8 +235,8 @@ if [ "${#PIDS[@]}" -gt 0 ] 2>/dev/null || [ $N_RUNS -gt 0 ]; then
         echo ""
         echo "Next steps:"
         echo "  1. Analyze results: python analyze_bfs_baseline.py $OUTPUT_DIR"
-        echo "  2. Check success rate: grep -l 'verification good' $OUTPUT_DIR/*.log | wc -l"
-        echo "  3. Compare to RLAC baseline (diagnostic_results/)"
+        echo "  2. Check success rate: grep -l 'Correct solution found (first success)' $OUTPUT_DIR/*.log | wc -l"
+        echo "  3. Offline validation: python validate_runs_offline.py $OUTPUT_DIR"
         echo ""
     else
         echo -e "${YELLOW}⚠️  Only $run_count runs completed (expected 12)${NC}"
@@ -262,8 +267,8 @@ if [ -n "$current_logs" ]; then
     for log in $current_logs; do
         basename=$(basename "$log")
 
-        # Check for success
-        if grep -q "verification good" "$log" 2>/dev/null; then
+        # Check for success (agent's own judgment, not verification status)
+        if grep -q "Correct solution found (first success)" "$log" 2>/dev/null; then
             ((success_count++))
         fi
 
@@ -281,7 +286,7 @@ if [ -n "$current_logs" ]; then
         echo "  Iterations: $iterations"
         echo "  Log lines: $lines"
 
-        if grep -q "verification good" "$log" 2>/dev/null; then
+        if grep -q "Correct solution found (first success)" "$log" 2>/dev/null; then
             echo "  Status: ✅ SUCCESS"
         else
             echo "  Status: ❌ FAILED"
@@ -348,8 +353,12 @@ echo "Monitor progress in real-time:"
 echo "  watch -n 5 'ls -lh $OUTPUT_DIR/*.log | tail -12'"
 echo ""
 
-echo "Check success rate:"
-echo "  grep -l 'verification good' $OUTPUT_DIR/bfs_run*_${TIMESTAMP}.log | wc -l"
+echo "Check success rate (agent's judgment):"
+echo "  grep -l 'Correct solution found (first success)' $OUTPUT_DIR/bfs_run*_${TIMESTAMP}.log | wc -l"
+echo ""
+
+echo "Offline validation (ground truth comparison):"
+echo "  python validate_runs_offline.py $OUTPUT_DIR"
 echo ""
 
 echo "Analyze results:"
