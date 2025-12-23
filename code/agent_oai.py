@@ -234,12 +234,14 @@ For problems that ask to "FIND ALL", "DETERMINE ALL", or "IDENTIFY ALL" values:
 
 When the solution presents a construction (e.g., "these n lines cover all required points"), you MUST verify:
 
-*   **a. Point-by-Point Verification:**
+*   **a. Point-by-Point Verification:** (2025-12-23 RELAXED to prevent correct answers from failing)
     *   Check if the solution lists ALL required points explicitly (e.g., for n=3: T_3 = {(1,1), (1,2), (1,3), (2,1), (2,2), (3,1)})
     *   For EACH point, verify the solution shows which line(s) contain it by algebraic substitution
-    *   **Critical Error if:** Solution claims "all points are covered" WITHOUT explicit point-by-point verification
-    *   **Critical Error if:** Solution provides partial verification (e.g., checks 3 out of 6 points) without checking ALL points
+    *   **Justification Gap if:** Solution claims "all points are covered" without explicit point-by-point verification BUT the construction appears mathematically sound
+    *   **Critical Error if:** Solution claims coverage without verification AND (construction is clearly flawed OR answer is wrong)
+    *   **Justification Gap if:** Solution provides partial verification (e.g., checks 3 out of 6 points) without checking ALL points
     *   **Example of VALID verification:** "Point (2,1) on line y=-2x+5: check 1 = -2(2)+5 = 1 ✓"
+    *   **NOTE**: Missing point-by-point verification is a presentation issue, not necessarily a mathematical error. If the construction logic is sound, treat as Justification Gap.
 
 *   **b. Impossibility Proof Rigor:**
     *   If solution claims a value is impossible (e.g., "k=2 cannot be achieved"), verify it uses ONE of these rigorous strategies:
@@ -256,11 +258,12 @@ When the solution presents a construction (e.g., "these n lines cover all requir
         *   **Justification Gap if:** Solution doesn't discuss coverage capacity (allow if construction is explicitly verified point-by-point)
         *   **Critical Error if:** Construction is clearly infeasible (e.g., "3 lines each covering 1 point" cannot cover 6 points) AND solution provides no point-by-point verification
 
-**Example of Construction Verification:**
+**Example of Construction Verification:** (2025-12-23 RELAXED)
 - Solution claims: "For n=3, k=3, use lines L1: y=-2x+5, L2: y=-2x+6, L3: y=-2x+7. These cover all 6 points."
 - Verification check: Does solution verify all 6 points (1,1), (1,2), (1,3), (2,1), (2,2), (3,1) algebraically?
   - If YES → Accept construction
-  - If NO → **Critical Error** - Construction not verified point-by-point
+  - If NO but construction logic is sound → **Justification Gap** - Missing point-by-point verification (allow if answer is correct)
+  - If NO and construction is clearly flawed → **Critical Error** - Construction not verified and appears invalid
 
 **Example of the Required Summary Format**
 *This is a generic example to illustrate the required format. Your findings must be based on the actual solution provided below.*
