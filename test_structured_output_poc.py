@@ -7,14 +7,22 @@ native JSON schema enforcement via response_format parameter.
 """
 
 import json
+import os
 import re
 import requests
 import sys
 
 # OpenRouter API Configuration
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
-API_KEY = "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"
+API_KEY = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("GPT_OSS_API_KEY")
 MODEL = "openai/gpt-oss-120b"
+
+if not API_KEY:
+    print("ERROR: No API key found!")
+    print("Please set one of these environment variables:")
+    print("  export OPENROUTER_API_KEY=your_key_here")
+    print("  export GPT_OSS_API_KEY=your_key_here")
+    sys.exit(1)
 
 
 def extract_json_from_harmony_format(content: str) -> str:
