@@ -80,7 +80,7 @@ def run_verification_test(test_name: str, solution: str, expected_pass: bool,
             problem_statement=IMO01_PROBLEM,
             solution=solution,
             verbose=True,
-            reasoning_effort="medium"  # TESTING: medium to avoid high reasoning override
+            reasoning_effort="high"  # TESTING: medium to avoid high reasoning override
         )
 
         # Check if verification passed
