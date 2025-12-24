@@ -245,6 +245,82 @@ def get_api_key():
     api_key = os.getenv("GPT_OSS_API_KEY", "")
     return api_key
 
+def extract_json_from_harmony_format(content: str) -> str:
+    """
+    Extract JSON from GPT-OSS Harmony format responses.
+
+    GPT-OSS uses Harmony response format which sometimes outputs reasoning text
+    before JSON when using response_format parameter. This function extracts
+    the JSON portion by finding the first '{' and matching '}'.
+
+    Handles cases like:
+    - "prefix text.{\"key\":\"value\"}"  (simple prefix)
+    - ".###{\n{\n\"key\":\"value\"\n}"   (nested braces / double brace)
+    - "text{...}more text"               (extract first complete JSON)
+
+    Args:
+        content: Raw content from API response
+
+    Returns:
+        Extracted JSON string
+
+    Raises:
+        ValueError: If no JSON object found in content
+
+    Source: Confirmed in POC testing (2025-12-24)
+    """
+    # Find first '{' (start of JSON)
+    first_brace = content.find('{')
+
+    if first_brace == -1:
+        raise ValueError("No JSON object found in content")
+
+    # Extract from first '{' onward
+    json_portion = content[first_brace:]
+
+    # Check if second character is also '{' (double brace case)
+    # GPT-OSS sometimes outputs "{\n{" - skip first one
+    if len(json_portion) > 1 and json_portion[1] in ['\n', '\r', ' ', '\t']:
+        # Check if next non-whitespace is another '{'
+        for i in range(1, min(10, len(json_portion))):
+            if json_portion[i] == '{':
+                # Found double brace, skip first one
+                json_portion = json_portion[i:]
+                break
+            elif json_portion[i] not in ['\n', '\r', ' ', '\t']:
+                # Found non-whitespace that's not '{', use original
+                break
+
+    # Try to parse incrementally to find matching '}'
+    brace_count = 0
+    in_string = False
+    escape_next = False
+
+    for i, char in enumerate(json_portion):
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == '\\':
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if not in_string:
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    # Found matching closing brace
+                    return json_portion[:i+1]
+
+    # If no matching brace found, return from first '{' to end
+    return json_portion
+
 def read_file_content(filepath):
     """
     Reads and returns the content of a file.
@@ -260,7 +336,7 @@ def read_file_content(filepath):
         print(f"Error reading file '{filepath}': {e}")
         sys.exit(1)
 
-def build_request_payload(system_prompt, question_prompt, other_prompts=None, reasoning_effort=None):
+def build_request_payload(system_prompt, question_prompt, other_prompts=None, reasoning_effort=None, response_format=None):
     """
     Builds the JSON payload for the OpenAI-compatible API request.
 
@@ -270,6 +346,9 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
         other_prompts: Optional list of additional prompts
         reasoning_effort: Override default reasoning effort (low/medium/high)
                          If None, uses SOLUTION_REASONING_EFFORT for generation tasks
+        response_format: Optional JSON schema for structured outputs
+                        Example: {"type": "json_schema", "json_schema": {...}}
+                        Enables native structured output with constrained decoding
     """
     # Use specified reasoning effort, or default to solution reasoning
     effort = reasoning_effort if reasoning_effort is not None else SOLUTION_REASONING_EFFORT
@@ -296,17 +375,25 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
         "seed": 42  # Reproducible sampling (if OpenRouter supports)
     }
 
+    # Add structured output format if specified (Option C: Structured JSON Output)
+    if response_format:
+        payload["response_format"] = response_format
+
     # Detect if model uses a prefix (e.g., "openrouter/" for OpenRouter)
     # OpenRouter requires reasoning in extra_body, not top-level
     has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
 
     if has_prefix:
         # OpenRouter API spec: reasoning goes in extra_body
-        payload["extra_body"] = {
-            "reasoning": {
-                "effort": effort
+        if "extra_body" in payload:
+            # Merge with existing extra_body (from response_format)
+            payload["extra_body"]["reasoning"] = {"effort": effort}
+        else:
+            payload["extra_body"] = {
+                "reasoning": {
+                    "effort": effort
+                }
             }
-        }
     else:
         # Standard OpenAI-compatible API: reasoning at top level
         payload["reasoning"] = {
@@ -1207,15 +1294,25 @@ def validate_solution_with_counterexamples(solution, problem_statement, verbose=
 
 def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
     """
-    Verifies a solution using the verification system.
+    Verifies a solution using the verification system with structured JSON output.
 
     Args:
         problem_statement: The original problem
         solution: The solution to verify
         verbose: Print detailed verification steps
         reasoning_effort: Override reasoning effort for verification
-                         If None, uses VERIFICATION_REASONING_EFFORT (default: high)
+                         If None, uses VERIFICATION_REASONING_EFFORT (default: medium)
+
+    Returns:
+        Tuple of (bug_report, verdict)
+            - bug_report: Detailed verification feedback (or empty if passed)
+            - verdict: "yes" (passed) or "no" (failed)
+
+    Note: Uses structured JSON output (Option C) to eliminate keyword parsing bugs.
     """
+    # Import verification schema
+    from verification_schema import VERIFICATION_VERDICT_SCHEMA, interpret_verdict
+
     dsol = extract_detailed_solution(solution)
 
     newst = f"""
@@ -1232,67 +1329,103 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 {verification_examples}
 
 {verification_remider}
+
+**IMPORTANT**: Return your verdict as JSON matching the provided schema.
 """
     if(verbose):
-        print(">>>>>>> Start verification.")
+        print(">>>>>>> Start verification (using structured JSON output)")
 
-    # Use specified reasoning effort, or default to verification reasoning (high)
+    # Use specified reasoning effort, or default to verification reasoning
+    # NOTE: Using medium instead of high to avoid token padding (POC finding)
     verification_effort = reasoning_effort if reasoning_effort is not None else VERIFICATION_REASONING_EFFORT
 
     if(verbose):
         print(f">>>>>>> Verification using reasoning effort: {verification_effort}")
+        print(f">>>>>>> Using structured output schema: verification_verdict")
 
+    # Build request with response_format for structured output
     p2 = build_request_payload(
         system_prompt=verification_system_prompt,
         question_prompt=newst,
-        reasoning_effort=verification_effort  # Use high reasoning for rigorous verification
+        reasoning_effort=verification_effort,
+        response_format=VERIFICATION_VERDICT_SCHEMA  # Enable structured JSON output
     )
 
-    res = send_api_request_with_retry(get_api_key(), p2, request_label="Verification prompt")
-    out = extract_text_from_response(res)
+    res = send_api_request_with_retry(get_api_key(), p2, request_label="Verification prompt (structured)")
+    raw_content = extract_text_from_response(res)
 
     if(verbose):
-        print(">>>>>>> Verification results:")
-        print(json.dumps(out, indent=4))
+        print(">>>>>>> Verification raw response (first 500 chars):")
+        print(raw_content[:500])
 
-    # UPDATED (2025-12-21): Accept "Justification Gap" as success for FIND problems
-    # Google Scientist recommendation: Distinguish proof errors from answer errors
-    # - "Critical Error" → reject (wrong answer or fatal logical flaw)
-    # - "Justification Gap" → accept (correct answer, incomplete proof)
-    # - "VALID" → accept (correct answer, complete proof)
+    # Extract JSON from Harmony format (POC finding: GPT-OSS outputs reasoning before JSON)
+    try:
+        # Check if content starts with JSON or has prefix
+        if raw_content.strip()[0] != '{':
+            if verbose:
+                print(">>>>>>> [HARMONY FORMAT] Detected non-JSON prefix, extracting JSON...")
+            json_content = extract_json_from_harmony_format(raw_content)
+            if verbose:
+                print(f">>>>>>> [HARMONY FORMAT] Extracted {len(json_content)} chars")
+        else:
+            json_content = raw_content
 
-    # Check if verification found Critical Error vs Justification Gap
-    out_lower = out.lower()
-    has_critical_error = "critical error" in out_lower
-    has_justification_gap = "justification gap" in out_lower
+        # Parse JSON verdict
+        verdict_obj = json.loads(json_content)
 
-    if has_critical_error and not has_justification_gap:
-        # Only critical error → reject
-        o = "no"
-        if(verbose):
-            print(">>>>>>> Verification verdict: CRITICAL ERROR (rejected)")
-    elif has_justification_gap and not has_critical_error:
-        # Only justification gap → accept for FIND problems
-        o = "yes"
-        if(verbose):
-            print(">>>>>>> Verification verdict: JUSTIFICATION GAP (accepted for FIND problems)")
+        if verbose:
+            print(">>>>>>> Verification verdict (structured):")
+            print(json.dumps(verdict_obj, indent=2))
+
+    except (ValueError, json.JSONDecodeError) as e:
+        # JSON parsing failed - fallback to text processing
+        if verbose:
+            print(f">>>>>>> [ERROR] JSON parsing failed: {e}")
+            print(f">>>>>>> [ERROR] Falling back to legacy keyword parsing")
+
+        # Fallback: Use legacy keyword parsing
+        out_lower = raw_content.lower()
+        has_critical_error = "critical error" in out_lower
+        has_justification_gap = "justification gap" in out_lower
+
+        if has_critical_error:
+            o = "no"
+            verdict_obj = {"verdict": "FAIL", "reasoning": "Critical error detected (fallback parsing)"}
+        elif has_justification_gap:
+            o = "yes"
+            verdict_obj = {"verdict": "PASS", "reasoning": "Justification gap accepted (fallback parsing)"}
+        else:
+            o = "no"
+            verdict_obj = {"verdict": "FAIL", "reasoning": "Unknown error (fallback parsing)"}
+
+        bug_report = raw_content if o == "no" else ""
+        if verbose:
+            print(f">>>>>>> [FALLBACK] Verdict: {o}")
+
+        # Skip structured interpretation, return fallback result
+        # (counterexample validation and answer validation will still run below)
     else:
-        # Either both or neither → use standard yes/no check
-        check_correctness = """Response in "yes" or "no". Is the following statement saying the solution is complete, correct, and does not contain critical error or a major justification gap?""" \
-                + "\n\n" + out
-        prompt = build_request_payload(system_prompt="", question_prompt=check_correctness)
-        r = send_api_request_with_retry(get_api_key(), prompt, request_label="Verification correctness check")
-        o = extract_text_from_response(r)
+        # Interpret structured verdict (replaces keyword parsing + meta-checker)
+        verdict_obj, o = interpret_verdict(verdict_obj)
 
-    if(verbose):
-        print(">>>>>>> Is verification good?")
-        print(json.dumps(o, indent=4))
+        if verbose:
+            print(f">>>>>>> Interpreted verdict: {o} (PASS={o=='yes'})")
 
-    bug_report = ""
+        # Generate bug report from structured verdict
+        bug_report = ""
+        if o == "no":
+            # Construct bug report from structured issues
+            bug_report = f"**Verification Verdict: {verdict_obj['verdict']}**\n\n"
+            bug_report += f"**Confidence:** {verdict_obj['confidence']:.1%}\n\n"
+            bug_report += f"**Answer Correctness:** {verdict_obj['answer_correctness']}\n\n"
+            bug_report += f"**Reasoning:** {verdict_obj['reasoning']}\n\n"
 
-    if("yes" not in o.lower()):
-        # Get full detailed verification feedback
-        bug_report = extract_detailed_solution(out, "Detailed Verification", False)
+            if verdict_obj.get('issues'):
+                bug_report += f"**Issues Found ({len(verdict_obj['issues'])}):**\n\n"
+                for i, issue in enumerate(verdict_obj['issues'], 1):
+                    bug_report += f"{i}. **[{issue['type']}]** (Severity: {issue['severity']}/10)\n"
+                    bug_report += f"   - **Location:** {issue['location']}\n"
+                    bug_report += f"   - **Description:** {issue['description']}\n\n"
 
     if(verbose):
         print(">>>>>>>Bug report:")
