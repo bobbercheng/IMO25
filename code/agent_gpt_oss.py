@@ -39,6 +39,7 @@ from agent_oai import (
     check_verification_prompt,
     correction_prompt,
     verification_system_prompt,
+    verification_examples,
     verification_remider
 )
 
@@ -1196,6 +1197,8 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 ### Solution ###
 
 {dsol}
+
+{verification_examples}
 
 {verification_remider}
 """

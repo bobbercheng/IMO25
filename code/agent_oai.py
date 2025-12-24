@@ -207,9 +207,11 @@ When you identify an issue in a step, you MUST first classify it into one of the
     *   Construction is demonstrably wrong (not just unverified)
     *   Impossibility claim is completely unjustified (not just lacking rigor)
 
-    **Decision Rule:**
-    *   If the final answer is correct AND the constructions are valid AND the impossibility arguments have sound direction (even if not fully rigorous), classify presentation issues as **Justification Gaps**.
-    *   If the final answer is wrong OR the constructions are invalid OR the logical chain is fundamentally broken, classify as **Critical Error**.
+    **Decision Rule (Simplified for FIND Problems):**
+    *   If the final answer is CORRECT → Classify errors as **Justification Gaps** (unless construction produces demonstrably wrong output when tested)
+    *   If the final answer is WRONG → Classify errors as **Critical Errors**
+
+    **IMPORTANT EXCEPTION:** If the impossibility argument uses completely invalid reasoning (e.g., "I tried many constructions and failed" or nonsense like "even numbers have bad karma"), this is a **Critical Error** EVEN IF the final answer is correct. The reasoning must use valid mathematical principles (counting arguments, pigeonhole principle, proof by contradiction, structural constraints).
 
 **3. Output Format**
 Your response MUST be structured into two main sections: a **Summary** followed by the **Detailed Verification Log**.
@@ -285,12 +287,28 @@ When the solution presents a construction (e.g., "these n lines cover all requir
   - If NO but construction logic is sound → **Justification Gap** - Missing point-by-point verification (allow if answer is correct)
   - If NO and construction is clearly flawed → **Critical Error** - Construction not verified and appears invalid
 
+"""
+
+# Few-shot calibration examples (placed immediately before verification task for maximum effectiveness)
+verification_examples = """
+
+---
+
+## CRITICAL: Few-Shot Calibration Examples (2025-12-24 Phase 2)
+
+**These examples show you how to apply the decision rule above. Study them carefully before verifying the solution.**
+
 **Example 1: Justification Gap (NOT Critical Error)**
 *This example shows presentation issues that should be classified as Justification Gaps.*
 
 Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
 
-Solution excerpt: "Column x=n-2 has 3 points, so one of the non-sunny lines **must be vertical**. Therefore k=2 is impossible."
+Solution excerpt: "Column x=n-2 has 3 points, so one of the non-sunny lines **must be vertical**. Therefore k=2 is impossible. Final answer: k∈{0,1,3}."
+
+**Applying the Decision Rule:**
+1. Check final answer: k∈{0,1,3} ✓ CORRECT
+2. Check constructions: Valid constructions provided for k=0,1,3 ✓
+3. Decision: Answer correct → Classify as **Justification Gap**
 
 **Correct Classification:**
 *   **Location:** "one of the non-sunny lines must be vertical"
@@ -300,6 +318,8 @@ Solution excerpt: "Column x=n-2 has 3 points, so one of the non-sunny lines **mu
 *   ~~**Location:** "must be vertical"~~
     *   ~~**Issue:** Critical Error - This claim is false because non-sunny lines could be horizontal.~~ ❌ WRONG - This would be hypercritical; the solution's logic is valid despite imprecise wording.
 
+---
+
 **Example 2: Critical Error (truly invalid)**
 *This example shows a fundamental mathematical error.*
 
@@ -307,9 +327,16 @@ Problem: "Determine all k..."
 
 Solution excerpt: "For k=2, I tried many constructions and couldn't find one. Therefore k=2 doesn't work. Final answer: k∈{0,1,3}."
 
+**Applying the Decision Rule:**
+1. Check final answer: k∈{0,1,3} ✓ CORRECT
+2. Check impossibility reasoning: "I tried and failed" ✗ INVALID (falls under EXCEPTION)
+3. Decision: Invalid reasoning → Classify as **Critical Error**
+
 **Correct Classification:**
 *   **Location:** "I tried many constructions and couldn't find one"
-    *   **Issue:** Critical Error - Failure to find a construction is not a proof of impossibility. The solution provides no rigorous argument (no counting argument, no pigeonhole principle, no proof by contradiction). This is a fundamental gap in reasoning, not just a presentation issue.
+    *   **Issue:** Critical Error - Failure to find a construction is not a proof of impossibility. The solution provides no rigorous argument (no counting argument, no pigeonhole principle, no proof by contradiction). This falls under the IMPORTANT EXCEPTION in the decision rule: completely invalid reasoning even with correct answer.
+
+---
 
 **Example 3: Presentation Issue with Typo (Justification Gap)**
 
@@ -317,12 +344,33 @@ Problem: "Determine all k..."
 
 Solution excerpt: "With |p+q|=2 we get three lines: (p,q)=(1,1), (-2,1), (-1,2). These cover all required points. Final answer: k∈{0,1,3}."
 
+**Applying the Decision Rule:**
+1. Check final answer: k∈{0,1,3} ✓ CORRECT
+2. Check constructions: Three lines are valid and explicitly verified ✓
+3. Decision: Answer correct + constructions valid → Classify as **Justification Gap**
+
 **Correct Classification:**
 *   **Location:** "|p+q|=2 we get three lines: (p,q)=(-2,1), (-1,2)"
-    *   **Issue:** Justification Gap - The pairs (-2,1) and (-1,2) actually satisfy |p+q|=1, not |p+q|=2, so this is a mis-classification. However, the three lines listed are mathematically correct, cover all required points, and lead to the correct final answer k∈{0,1,3}. This is a typo/presentation issue, not a fundamental error.
+    *   **Issue:** Justification Gap - The pairs (-2,1) and (-1,2) actually satisfy |p+q|=1, not |p+q|=2, so this is a mis-classification in the intermediate step. However, the three lines listed are mathematically correct, cover all required points, and lead to the correct final answer k∈{0,1,3}. This is a typo/presentation issue, not a fundamental error.
+
+---
+
+**CRITICAL META-INSTRUCTION:**
+
+**Do NOT override these few-shot examples with your own detailed reasoning.**
+
+When you encounter a pattern matching Example 1, 2, or 3 above:
+1. **STOP** - Do not generate 3000+ tokens of detailed analysis explaining why a claim is imprecise
+2. **CHECK** - Is the final answer correct? Are constructions valid?
+3. **APPLY** - Use the SAME classification shown in the example (Justification Gap or Critical Error)
+4. **REMEMBER** - Your detailed mathematical reasoning is SECONDARY to the decision rule and few-shot guidance
+
+If you find yourself writing "the claim is false" or "this is mathematically incorrect" about imprecise wording:
+→ PAUSE and check if the final answer is correct
+→ If YES, classify as Justification Gap (presentation issue)
+→ Only classify as Critical Error if the final answer is WRONG or reasoning uses completely invalid principles
 
 """
-
 
 verification_remider = """
 ### Verification Task Reminder ###
