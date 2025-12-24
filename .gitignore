@@ -213,3 +213,4 @@ test_*_logs/
 test_rlac_log/
 # Generated validation results
 **/validation_results.json
+poc_output.log
