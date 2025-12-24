@@ -286,9 +286,13 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
             }
         ],
         "model": MODEL_NAME,
-        "temperature": 0.1
-        # Removed repetition_penalty (Option A improvement)
-        # Allows natural token distribution for mathematical proofs
+        # CRITICAL FIX (2025-12-24): Enforce full determinism to prevent hallucinations
+        # Expert panel (Google Scientist + Nvidia Engineer + Netflix Data Scientist) unanimous recommendation
+        "temperature": 0.0,  # Changed from 0.1 (fully deterministic sampling)
+        "top_p": 1.0,  # Don't truncate probability distribution
+        "frequency_penalty": 0.0,  # No repetition penalty (math proofs naturally repeat terms)
+        "presence_penalty": 0.0,  # No diversity penalty
+        "seed": 42  # Reproducible sampling (if OpenRouter supports)
     }
 
     # Detect if model uses a prefix (e.g., "openrouter/" for OpenRouter)

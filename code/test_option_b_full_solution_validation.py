@@ -72,11 +72,13 @@ def run_verification_test(test_name: str, solution: str, expected_pass: bool,
 
     try:
         # Run verification
+        # CRITICAL FIX (2025-12-24): Use HIGH reasoning to prevent hallucinations
+        # Expert panel unanimous recommendation: medium reasoning insufficient for rigorous verification
         verification_output, is_good = verify_solution(
             problem_statement=IMO01_PROBLEM,
             solution=solution,
             verbose=True,
-            reasoning_effort="medium"
+            reasoning_effort="high"  # Changed from "medium" - prevents confabulated counterexamples
         )
 
         # Check if verification passed
