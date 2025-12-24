@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "sample_size": 12,
+    "analysis_date": "2025-12-24",
+    "analyst": "Senior Netflix Data Scientist",
+    "recommendation": "DO NOT SHIP - FIX INFRASTRUCTURE FIRST",
+    "confidence": "HIGH"
+  },
+  "raw_data": {
+    "scores": [
+      4,
+      5,
+      1,
+      1,
+      4,
+      1,
+      1,
+      2,
+      1,
+      2,
+      5,
+      3
+    ],
+    "accuracies": [
+      0.6666666666666666,
+      0.8333333333333334,
+      0.16666666666666666,
+      0.16666666666666666,
+      0.6666666666666666,
+      0.16666666666666666,
+      0.16666666666666666,
+      0.3333333333333333,
+      0.16666666666666666,
+      0.3333333333333333,
+      0.8333333333333334,
+      0.5
+    ]
+  },
+  "statistics": {
+    "mean": 0.4166666666666667,
+    "median": 0.3333333333333333,
+    "std": 0.27061471362866285,
+    "min": 0.16666666666666666,
+    "max": 0.8333333333333334,
+    "bootstrap_95_ci": [
+      0.27777777777777773,
+      0.5694444444444444
+    ],
+    "ci_width": 0.2916666666666667,
+    "catastrophic_failure_rate": 0.5833333333333334,
+    "acceptable_quality_rate": 0.16666666666666666
+  },
+  "scenarios": {
+    "ship_as_is": {
+      "expected_accuracy": 0.4166666666666667,
+      "catastrophic_failure_rate": 0.5833333333333334,
+      "cost_multiplier": 1.0,
+      "verdict": "DO NOT SHIP"
+    },
+    "best_of_3": {
+      "expected_accuracy": 0.6424666666666491,
+      "catastrophic_failure_rate": 0.199,
+      "cost_multiplier": 3.0,
+      "verdict": "DO NOT SHIP"
+    },
+    "majority_vote_3": {
+      "expected_accuracy": 0.3915333333333195,
+      "catastrophic_failure_rate": 0.6189,
+      "cost_multiplier": 3.0,
+      "verdict": "DO NOT SHIP"
+    },
+    "fix_infrastructure": {
+      "expected_accuracy": 0.9,
+      "cost": "1-2 weeks engineering",
+      "verdict": "YES - ONLY ACCEPTABLE PATH"
+    }
+  },
+  "hypothesis_tests": {
+    "threshold_95": {
+      "null_hypothesis": "accuracy >= 0.95",
+      "p_value": 4.357292304746352e-12,
+      "result": "REJECT H0"
+    },
+    "threshold_90": {
+      "null_hypothesis": "accuracy >= 0.90",
+      "p_value": 3.076817689517952e-10,
+      "result": "REJECT H0"
+    }
+  }
+}
