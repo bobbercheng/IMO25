@@ -72,15 +72,13 @@ def run_verification_test(test_name: str, solution: str, expected_pass: bool,
 
     try:
         # Run verification
-        # PHASE 2 ENHANCED TEST (2025-12-24): Test with MEDIUM reasoning first
-        # Nvidia Engineer hypothesis: high reasoning (3000+ tokens) overrides few-shot examples
-        # If medium achieves 6/6 → high reasoning was causing override
-        # If medium still 4/6 → issue is decision rule complexity or example placement
+        # CRITICAL FIX (2025-12-24): Use HIGH reasoning to prevent hallucinations
+        # Expert panel unanimous recommendation: medium reasoning insufficient for rigorous verification
         verification_output, is_good = verify_solution(
             problem_statement=IMO01_PROBLEM,
             solution=solution,
             verbose=True,
-            reasoning_effort="high"  # TESTING: medium to avoid high reasoning override
+            reasoning_effort="high"  # Changed from "medium" - prevents confabulated counterexamples
         )
 
         # Check if verification passed

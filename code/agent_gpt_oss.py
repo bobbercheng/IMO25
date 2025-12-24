@@ -1231,27 +1231,22 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     # - "VALID" → accept (correct answer, complete proof)
 
     # Check if verification found Critical Error vs Justification Gap
-    # FIX (2025-12-24): Extract verdict sentence only to avoid false positives
-    # Bug: "not Critical Errors" was matching "critical error" substring
-    import re
+    # FIX (2025-12-24): Add negation detection to prevent false positives (Test 6)
+    # Bug in 42015fb: "no Critical Errors" matched "critical error" substring
+    # Expert panel unanimous recommendation: Add negation context checking
     out_lower = out.lower()
-
-
-    # Try to extract only the Final Verdict sentence for precise matching
-    verdict_match = re.search(r'\*\*Final Verdict:?\*\*\s*(.+?)(?:\n|$)', out, re.IGNORECASE | re.DOTALL)
-    if verdict_match:
-        verdict_sentence = verdict_match.group(1).lower()
-    else:
-        # Fallback: use first 500 chars if no verdict found
-        verdict_sentence = out_lower[:500]
-
-    if(verbose):
-        print("Verification sentence: " + verdict_sentence)
-
-
-    # Check for phrases with negation context
-    has_critical_error = "critical error" in verdict_sentence and "not" not in verdict_sentence.split("critical error")[0][-50:]
-    has_justification_gap = "justification gap" in verdict_sentence and "not" not in verdict_sentence.split("justification gap")[0][-50:]
+    has_critical_error = (
+        "critical error" in out_lower and
+        "no critical error" not in out_lower and
+        "does not contain critical error" not in out_lower and
+        "not critical error" not in out_lower
+    )
+    has_justification_gap = (
+        "justification gap" in out_lower and
+        "no justification gap" not in out_lower and
+        "does not contain justification gap" not in out_lower and
+        "not justification gap" not in out_lower
+    )
 
     if has_critical_error and not has_justification_gap:
         # Only critical error → reject
