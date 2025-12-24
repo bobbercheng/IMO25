@@ -1231,9 +1231,22 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     # - "VALID" → accept (correct answer, complete proof)
 
     # Check if verification found Critical Error vs Justification Gap
+    # FIX (2025-12-24): Add negation detection to prevent false positives (Test 6)
+    # Bug in 42015fb: "no Critical Errors" matched "critical error" substring
+    # Expert panel unanimous recommendation: Add negation context checking
     out_lower = out.lower()
-    has_critical_error = "critical error" in out_lower
-    has_justification_gap = "justification gap" in out_lower
+    has_critical_error = (
+        "critical error" in out_lower and
+        "no critical error" not in out_lower and
+        "does not contain critical error" not in out_lower and
+        "not critical error" not in out_lower
+    )
+    has_justification_gap = (
+        "justification gap" in out_lower and
+        "no justification gap" not in out_lower and
+        "does not contain justification gap" not in out_lower and
+        "not justification gap" not in out_lower
+    )
 
     if has_critical_error and not has_justification_gap:
         # Only critical error → reject
