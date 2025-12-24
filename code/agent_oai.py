@@ -191,6 +191,26 @@ When you identify an issue in a step, you MUST first classify it into one of the
         *   State that you will **assume the step's conclusion is true** for the sake of argument.
         *   Then, proceed to verify all subsequent steps to check if the remainder of the argument is sound.
 
+*   **c. IMPORTANT: Distinguishing Critical Errors from Presentation Issues** (2025-12-24 Phase 2)
+
+    Some solutions arrive at the correct final answer through valid mathematical reasoning but contain **presentation issues** (imprecise wording, typos in intermediate steps, minor classification errors that don't affect correctness). These must be classified as **Justification Gaps**, NOT Critical Errors.
+
+    **Presentation Issues (Justification Gap):**
+    *   Imprecise wording that doesn't affect logical validity (e.g., "must be vertical" when "can be taken to be vertical without loss of generality" is more precise)
+    *   Typos or mis-classifications in intermediate steps that don't propagate to the final answer (e.g., saying "|p+q|=2" when it's "|p+q|=1" but the three lines listed are still correct)
+    *   Missing algebraic details that would be straightforward to fill in
+    *   Incomplete verification of constructions when the construction is clearly valid
+
+    **Critical Errors (truly invalid):**
+    *   Final answer is incorrect (e.g., claims k∈{0,1,2,3} when correct answer is k∈{0,1,3})
+    *   Logical chain is fundamentally broken (e.g., assumes false premises, uses invalid deductions)
+    *   Construction is demonstrably wrong (not just unverified)
+    *   Impossibility claim is completely unjustified (not just lacking rigor)
+
+    **Decision Rule:**
+    *   If the final answer is correct AND the constructions are valid AND the impossibility arguments have sound direction (even if not fully rigorous), classify presentation issues as **Justification Gaps**.
+    *   If the final answer is wrong OR the constructions are invalid OR the logical chain is fundamentally broken, classify as **Critical Error**.
+
 **3. Output Format**
 Your response MUST be structured into two main sections: a **Summary** followed by the **Detailed Verification Log**.
 
@@ -265,16 +285,41 @@ When the solution presents a construction (e.g., "these n lines cover all requir
   - If NO but construction logic is sound → **Justification Gap** - Missing point-by-point verification (allow if answer is correct)
   - If NO and construction is clearly flawed → **Critical Error** - Construction not verified and appears invalid
 
-**Example of the Required Summary Format**
-*This is a generic example to illustrate the required format. Your findings must be based on the actual solution provided below.*
+**Example 1: Justification Gap (NOT Critical Error)**
+*This example shows presentation issues that should be classified as Justification Gaps.*
 
-**Final Verdict:** The solution is **invalid** because it contains a Critical Error.
+Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
 
-**List of Findings:**
-*   **Location:** "By interchanging the limit and the integral, we get..."
-    *   **Issue:** Justification Gap - The solution interchanges a limit and an integral without providing justification, such as proving uniform convergence.
-*   **Location:** "From $A > B$ and $C > D$, it follows that $A-C > B-D$"
-    *   **Issue:** Critical Error - This step is a logical fallacy. Subtracting inequalities in this manner is not a valid mathematical operation.
+Solution excerpt: "Column x=n-2 has 3 points, so one of the non-sunny lines **must be vertical**. Therefore k=2 is impossible."
+
+**Correct Classification:**
+*   **Location:** "one of the non-sunny lines must be vertical"
+    *   **Issue:** Justification Gap - The wording is imprecise; the solution should say "can be taken to be vertical without loss of generality" since non-sunny lines could also be horizontal or slope -1. However, the underlying logic (that columns with many points require special handling) is sound, and the final answer k∈{0,1,3} is correct. This is a presentation issue, not a mathematical error.
+
+**WRONG Classification (don't do this):**
+*   ~~**Location:** "must be vertical"~~
+    *   ~~**Issue:** Critical Error - This claim is false because non-sunny lines could be horizontal.~~ ❌ WRONG - This would be hypercritical; the solution's logic is valid despite imprecise wording.
+
+**Example 2: Critical Error (truly invalid)**
+*This example shows a fundamental mathematical error.*
+
+Problem: "Determine all k..."
+
+Solution excerpt: "For k=2, I tried many constructions and couldn't find one. Therefore k=2 doesn't work. Final answer: k∈{0,1,3}."
+
+**Correct Classification:**
+*   **Location:** "I tried many constructions and couldn't find one"
+    *   **Issue:** Critical Error - Failure to find a construction is not a proof of impossibility. The solution provides no rigorous argument (no counting argument, no pigeonhole principle, no proof by contradiction). This is a fundamental gap in reasoning, not just a presentation issue.
+
+**Example 3: Presentation Issue with Typo (Justification Gap)**
+
+Problem: "Determine all k..."
+
+Solution excerpt: "With |p+q|=2 we get three lines: (p,q)=(1,1), (-2,1), (-1,2). These cover all required points. Final answer: k∈{0,1,3}."
+
+**Correct Classification:**
+*   **Location:** "|p+q|=2 we get three lines: (p,q)=(-2,1), (-1,2)"
+    *   **Issue:** Justification Gap - The pairs (-2,1) and (-1,2) actually satisfy |p+q|=1, not |p+q|=2, so this is a mis-classification. However, the three lines listed are mathematically correct, cover all required points, and lead to the correct final answer k∈{0,1,3}. This is a typo/presentation issue, not a fundamental error.
 
 """
 
