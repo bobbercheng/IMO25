@@ -241,8 +241,13 @@ def get_api_key():
     """
     Retrieves the GPT_OSS API key from environment variables.
     Returns empty string if not set (for local deployments that don't require auth).
+
+    FIX (2025-12-25): Check both GPT_OSS_API_KEY and OPENROUTER_API_KEY
     """
     api_key = os.getenv("GPT_OSS_API_KEY", "")
+    if not api_key:
+        # Fallback to OPENROUTER_API_KEY for OpenRouter deployments
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
     return api_key
 
 def extract_json_from_harmony_format(content: str) -> str:
@@ -1398,6 +1403,9 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     # NOTE: Using medium instead of high to avoid token padding (POC finding)
     verification_effort = reasoning_effort if reasoning_effort is not None else VERIFICATION_REASONING_EFFORT
 
+    # Store response_format for later checks (FIX 2025-12-25)
+    response_format = VERIFICATION_VERDICT_SCHEMA
+
     if(verbose):
         print(f">>>>>>> Verification using reasoning effort: {verification_effort}")
         print(f">>>>>>> Using structured output schema: verification_verdict")
@@ -1407,7 +1415,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         system_prompt=verification_system_prompt,
         question_prompt=newst,
         reasoning_effort=verification_effort,
-        response_format=VERIFICATION_VERDICT_SCHEMA  # Enable structured JSON output
+        response_format=response_format  # Enable structured JSON output
     )
 
     res = send_api_request_with_retry(get_api_key(), p2, request_label="Verification prompt (structured)")
