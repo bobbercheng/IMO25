@@ -204,125 +204,69 @@ Follow this THREE-LEVEL decision process in strict sequential order:
 *   **A solution with correct answer (Level 1 ✓) and valid reasoning (Level 2 ✓) MUST PASS**, even if presentation has gaps (Level 3).
 *   **Justification gaps are NEVER grounds for FAIL** if Levels 1 and 2 passed.
 
-### Instructions ###
+### Detailed Implementation Instructions ###
 
-**1. Core Instructions**
-*   Your task is to identify genuine mathematical errors, not to demand perfect presentation. You must act as a **verifier**, NOT a nitpicker. **Do NOT mark solutions as FAIL due to minor wording issues or missing algebraic details when the mathematical logic is sound.**
-*   You must perform a **step-by-step** check of the entire solution. This analysis will be presented in a **Detailed Verification Log**, where you justify your assessment of each step: for correct steps, a brief justification suffices; for steps with errors or gaps, you must provide a detailed explanation.
+**1. How to Apply the Hierarchical Decision Tree**
 
-**2. How to Handle Issues in the Solution**
-When you identify an issue in a step, you MUST first classify it into one of the following two categories and then follow the specified procedure.
+Follow the three levels sequentially. Do NOT skip levels or apply them out of order.
 
-*   **a. Critical Error:**
-    This is any error that breaks the logical chain of the proof. This includes both **logical fallacies** (e.g., claiming that `A>B, C>D` implies `A-C>B-D`) and **factual errors** (e.g., a calculation error like `2+3=6`).
-    *   **Procedure:**
-        *   Explain the specific error and state that it **invalidates the current line of reasoning**.
-        *   Do NOT check any further steps that rely on this error.
-        *   You MUST, however, scan the rest of the solution to identify and verify any fully independent parts. For example, if a proof is split into multiple cases, an error in one case does not prevent you from checking the other cases.
+**LEVEL 1 IMPLEMENTATION: Answer Correctness**
+*   Extract the final answer from the solution (look for conclusive statements like "Therefore k∈{0,1,3}", "The maximum value is 42", "This completes the proof").
+*   For FIND problems: Check if the answer is a complete set (e.g., "k∈{0,1,3}") vs partial (e.g., "k=1 works").
+*   For PROVE problems: Check if the claimed theorem/inequality is actually proven.
+*   For DETERMINE problems: Check if all requested values are identified.
+*   **Gate Decision:** WRONG answer → immediate FAIL, CORRECT answer → proceed to Level 2.
 
-*   **b. Justification Gap:**
-    This is for steps where the conclusion may be correct, but the provided argument is incomplete, hand-wavy, or lacks sufficient rigor.
-    *   **Procedure:**
-        *   Explain the gap in the justification.
-        *   State that you will **assume the step's conclusion is true** for the sake of argument.
-        *   Then, proceed to verify all subsequent steps to check if the remainder of the argument is sound.
+**LEVEL 2 IMPLEMENTATION: Reasoning Validity**
+*   Examine the mathematical methods used:
+    *   **Valid methods include:** Algebraic manipulation, counting arguments, pigeonhole principle, proof by contradiction, structural constraints, induction, geometric constructions, case analysis, etc.
+    *   **Invalid methods include:** "I tried and couldn't find it" (without proof), circular reasoning, unjustified assertions, nonsense reasoning.
+*   **Key Question:** Does the solution use recognized mathematical principles, or does it rely on trial-and-error/intuition without justification?
+*   **Special Case - Impossibility Claims:**
+    *   If solution claims "k=X is impossible", check if there's ANY mathematical reasoning (even if incomplete).
+    *   "I tried constructions and failed" with NO mathematical justification → INVALID reasoning.
+    *   "Column counting shows we need at least X lines" (even if details missing) → VALID reasoning.
+*   **Gate Decision:** INVALID reasoning → immediate FAIL, VALID reasoning → proceed to Level 3.
 
-*   **c. IMPORTANT: Distinguishing Critical Errors from Presentation Issues** (2025-12-24 Phase 2)
+**LEVEL 3 IMPLEMENTATION: Presentation Quality**
+*   Now that answer is correct (Level 1 ✓) and reasoning is valid (Level 2 ✓), examine presentation details.
+*   Classify issues into two categories:
 
-    Some solutions arrive at the correct final answer through valid mathematical reasoning but contain **presentation issues** (imprecise wording, typos in intermediate steps, minor classification errors that don't affect correctness). These must be classified as **Justification Gaps**, NOT Critical Errors.
+    **Justification Gap (acceptable):**
+    *   Imprecise wording that doesn't affect logic (e.g., "must be vertical" when "can be taken as vertical" is more precise)
+    *   Missing intermediate algebraic steps that would be straightforward to fill in
+    *   Incomplete verification of constructions when construction logic is sound
+    *   Typos in intermediate steps that don't propagate to final answer
 
-    **Presentation Issues (Justification Gap):**
-    *   Imprecise wording that doesn't affect logical validity (e.g., "must be vertical" when "can be taken to be vertical without loss of generality" is more precise)
-    *   Typos or mis-classifications in intermediate steps that don't propagate to the final answer (e.g., saying "|p+q|=2" when it's "|p+q|=1" but the three lines listed are still correct)
-    *   Missing algebraic details that would be straightforward to fill in
-    *   Incomplete verification of constructions when the construction is clearly valid
+    **Critical Error (unacceptable):**
+    *   Demonstrably wrong intermediate calculations that invalidate logic chain
+    *   Circular reasoning or logical fallacies
+    *   Construction that produces wrong output when tested
 
-    **Critical Errors (truly invalid):**
-    *   Final answer is incorrect (e.g., claims k∈{0,1,2,3} when correct answer is k∈{0,1,3})
-    *   Logical chain is fundamentally broken (e.g., assumes false premises, uses invalid deductions)
-    *   Construction is demonstrably wrong (not just unverified)
-    *   Impossibility claim is completely unjustified (not just lacking rigor)
+*   **Quality Decision:** Only Justification Gaps → PASS, Any Critical Errors in logic chain → FAIL.
 
-    **Decision Rule (Simplified for FIND Problems):**
-    *   If the final answer is CORRECT → Classify errors as **Justification Gaps** (unless construction produces demonstrably wrong output when tested)
-    *   If the final answer is WRONG → Classify errors as **Critical Errors**
-
-    **IMPORTANT EXCEPTION:** If the impossibility argument uses completely invalid reasoning (e.g., "I tried many constructions and failed" or nonsense like "even numbers have bad karma"), this is a **Critical Error** EVEN IF the final answer is correct. The reasoning must use valid mathematical principles (counting arguments, pigeonhole principle, proof by contradiction, structural constraints).
+**2. Core Verification Procedure**
+*   Perform a **step-by-step** check of the solution.
+*   For each step: quote the relevant text, then provide your analysis.
+*   For correct steps: brief justification suffices.
+*   For steps with issues: explain the issue and classify (Justification Gap or Critical Error).
+*   Present findings in a **Detailed Verification Log** following the output format below.
 
 **3. Output Format**
-Your response MUST be structured into two main sections: a **Summary** followed by the **Detailed Verification Log**.
+Your response MUST be structured into two main sections:
 
-*   **a. Summary**
-    This section MUST be at the very beginning of your response. It must contain two components:
-    *   **Final Verdict**: A single, clear sentence declaring the overall validity of the solution. For example: "The solution is correct," "The solution contains a Critical Error and is therefore invalid," or "The solution's approach is viable but contains several Justification Gaps."
-    *   **List of Findings**: A bulleted list that summarizes **every** issue you discovered. For each finding, you must provide:
-        *   **Location:** A direct quote of the key phrase or equation where the issue occurs.
-        *   **Issue:** A brief description of the problem and its classification (**Critical Error** or **Justification Gap**).
+*   **Summary Section (at the beginning):**
+    *   **Level 1 Result:** State whether the final answer is CORRECT or WRONG (quote the answer)
+    *   **Level 2 Result:** State whether reasoning uses VALID or INVALID mathematical principles
+    *   **Level 3 Result:** List any presentation issues found (Justification Gaps or Critical Errors in logic chain)
+    *   **Final Verdict:** "PASS" or "FAIL" based on the hierarchical decision tree
+    *   **Reasoning:** 1-2 sentence explanation of the verdict
 
-*   **b. Detailed Verification Log**
-    Following the summary, provide the full, step-by-step verification log as defined in the Core Instructions. When you refer to a specific part of the solution, **quote the relevant text** to make your reference clear before providing your detailed analysis of that part.
-
-**4. Completeness Requirement for FIND/DETERMINE Problems** (2025-12-22 Expert Panel Recommendations)
-
-For problems that ask to "FIND ALL", "DETERMINE ALL", or "IDENTIFY ALL" values:
-
-*   **a. Small-Case Explicit Testing:**
-    *   If the problem has a parameter (e.g., n≥3), check if the solution explicitly tests the MINIMAL case (e.g., n=3).
-    *   For problems asking "determine all k", verify the solution tests ALL small values explicitly (e.g., for n=3, check k=0,1,2,3).
-    *   **Critical Error if:** Solution claims complete answer but only provides ONE example (e.g., "k=1 works" without checking k=0,2,3).
-
-*   **b. Impossibility Proofs (k=2 Rule):** (2025-12-25 RELAXED)
-    *   If solution claims a value is IMPOSSIBLE (e.g., "k=2 cannot work"), check if there is some mathematical reasoning (counting argument, contradiction, structural constraints).
-    *   **Critical Error if:** Solution uses completely invalid reasoning (e.g., "I tried and failed" with NO mathematical justification).
-    *   **Justification Gap if:** Impossibility claim has valid reasoning direction but lacks some details (ACCEPTABLE - should still PASS if answer correct).
-    *   **PASS if:** Impossibility argument uses valid mathematical principles (e.g., column counting, pigeonhole, contradiction) even if not 100% rigorous.
-
-*   **c. Answer Completeness:**
-    *   Check if the final answer is a COMPLETE SET (e.g., "k∈{0,1,3}") or just PARTIAL (e.g., "k=1 is one solution").
-    *   For "determine all k" problems:
-        *   **Complete**: Lists all valid k as a set OR proves a pattern (e.g., "k∈{0,1}∪{3,4,...,n}")
-        *   **Incomplete**: Only shows some k work without proving others don't
-    *   **Critical Error if:** Solution claims "I have found the complete answer" but final answer is a single value or subset of ground truth.
-
-**Example of Completeness Check:**
-- Problem: "Determine all k for n≥3"
-- Solution claims: "For n=3, k=1 works. Final answer: k=1"
-- Verdict: **Critical Error** - Only tested k=1, didn't check k=0,2,3. Answer is INCOMPLETE.
-
-**5. Construction Verification Requirements** (2025-12-22 Retest Analysis)
-
-When the solution presents a construction (e.g., "these n lines cover all required points"), you MUST verify:
-
-*   **a. Point-by-Point Verification:** (2025-12-23 RELAXED to prevent correct answers from failing)
-    *   Check if the solution lists ALL required points explicitly (e.g., for n=3: T_3 = {(1,1), (1,2), (1,3), (2,1), (2,2), (3,1)})
-    *   For EACH point, verify the solution shows which line(s) contain it by algebraic substitution
-    *   **Justification Gap if:** Solution claims "all points are covered" without explicit point-by-point verification BUT the construction appears mathematically sound
-    *   **Critical Error if:** Solution claims coverage without verification AND (construction is clearly flawed OR answer is wrong)
-    *   **Justification Gap if:** Solution provides partial verification (e.g., checks 3 out of 6 points) without checking ALL points
-    *   **Example of VALID verification:** "Point (2,1) on line y=-2x+5: check 1 = -2(2)+5 = 1 ✓"
-    *   **NOTE**: Missing point-by-point verification is a presentation issue, not necessarily a mathematical error. If the construction logic is sound, treat as Justification Gap.
-
-*   **b. Impossibility Proof Rigor:**
-    *   If solution claims a value is impossible (e.g., "k=2 cannot be achieved"), verify it uses ONE of these rigorous strategies:
-        *   **Counting Argument:** "Need to cover N points, but k sunny + (n-k) non-sunny can cover at most M < N points"
-        *   **Pigeonhole Principle:** "Have N constraints but only M degrees of freedom (N > M), therefore impossible"
-        *   **Proof by Contradiction:** "Assume k=X works. Then [derive contradiction]. Therefore k=X is impossible."
-    *   **Critical Error if:** Solution states "k=X doesn't work" or "I couldn't find a construction" without a rigorous impossibility proof
-    *   **Justification Gap if:** Impossibility claim has reasoning but lacks complete rigor (allow if direction is sound)
-
-*   **c. Construction Feasibility Sanity Check:**
-    *   When solution claims "k=X is achievable", verify the claim is plausible:
-        *   Check if solution counted required points (e.g., |T_n| = n(n+1)/2 for sunny lines problem)
-        *   Check if k sunny lines + (n-k) non-sunny lines can cover enough points
-        *   **Justification Gap if:** Solution doesn't discuss coverage capacity (allow if construction is explicitly verified point-by-point)
-        *   **Critical Error if:** Construction is clearly infeasible (e.g., "3 lines each covering 1 point" cannot cover 6 points) AND solution provides no point-by-point verification
-
-**Example of Construction Verification:** (2025-12-23 RELAXED)
-- Solution claims: "For n=3, k=3, use lines L1: y=-2x+5, L2: y=-2x+6, L3: y=-2x+7. These cover all 6 points."
-- Verification check: Does solution verify all 6 points (1,1), (1,2), (1,3), (2,1), (2,2), (3,1) algebraically?
-  - If YES → Accept construction
-  - If NO but construction logic is sound → **Justification Gap** - Missing point-by-point verification (allow if answer is correct)
-  - If NO and construction is clearly flawed → **Critical Error** - Construction not verified and appears invalid
+*   **Detailed Verification Log (following the summary):**
+    *   Step-by-step analysis of the solution
+    *   Quote relevant text before analyzing each step
+    *   Classify issues as Justification Gap or Critical Error
+    *   Explain how each issue affects the final verdict per the hierarchical decision tree
 
 """
 
