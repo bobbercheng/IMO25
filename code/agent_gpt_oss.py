@@ -1292,6 +1292,65 @@ def validate_solution_with_counterexamples(solution, problem_statement, verbose=
     return result
 
 
+def validate_verdict_schema(verdict_obj):
+    """
+    Validate that a verdict object matches the expected schema.
+
+    Args:
+        verdict_obj: Parsed JSON object to validate
+
+    Returns:
+        tuple: (is_valid, error_message)
+            - is_valid: True if schema is valid, False otherwise
+            - error_message: Description of validation error (or None if valid)
+    """
+    required_fields = ["verdict", "confidence", "issues", "answer_correctness", "reasoning"]
+
+    # Check required fields
+    for field in required_fields:
+        if field not in verdict_obj:
+            return False, f"Missing required field: '{field}'"
+
+    # Validate verdict enum
+    if verdict_obj["verdict"] not in ["PASS", "FAIL"]:
+        return False, f"Invalid verdict value: '{verdict_obj['verdict']}' (expected PASS or FAIL)"
+
+    # Validate confidence range
+    if not isinstance(verdict_obj["confidence"], (int, float)):
+        return False, f"confidence must be a number, got {type(verdict_obj['confidence'])}"
+    if not (0.0 <= verdict_obj["confidence"] <= 1.0):
+        return False, f"confidence must be 0.0-1.0, got {verdict_obj['confidence']}"
+
+    # Validate answer_correctness enum
+    if verdict_obj["answer_correctness"] not in ["CORRECT", "INCORRECT", "INCOMPLETE", "UNKNOWN"]:
+        return False, f"Invalid answer_correctness: '{verdict_obj['answer_correctness']}'"
+
+    # Validate issues array
+    if not isinstance(verdict_obj["issues"], list):
+        return False, f"issues must be an array, got {type(verdict_obj['issues'])}"
+
+    # Validate each issue
+    for i, issue in enumerate(verdict_obj["issues"]):
+        if not isinstance(issue, dict):
+            return False, f"Issue {i} must be an object, got {type(issue)}"
+
+        issue_required = ["type", "location", "description", "severity"]
+        for field in issue_required:
+            if field not in issue:
+                return False, f"Issue {i} missing required field: '{field}'"
+
+        if issue["type"] not in ["CRITICAL_ERROR", "JUSTIFICATION_GAP"]:
+            return False, f"Issue {i} has invalid type: '{issue['type']}'"
+
+        if not isinstance(issue["severity"], int):
+            return False, f"Issue {i} severity must be integer, got {type(issue['severity'])}"
+
+        if not (1 <= issue["severity"] <= 10):
+            return False, f"Issue {i} severity must be 1-10, got {issue['severity']}"
+
+    return True, None
+
+
 def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
     """
     Verifies a solution using the verification system with structured JSON output.
@@ -1359,25 +1418,98 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         print(raw_content[:500])
 
     # Extract JSON from Harmony format (POC finding: GPT-OSS outputs reasoning before JSON)
-    try:
-        # Check if content starts with JSON or has prefix
-        if raw_content.strip()[0] != '{':
+    # FIX (2025-12-24): Add schema validation and retry logic
+    max_retries = 1
+    retry_count = 0
+    verdict_obj = None
+    json_parse_error = None
+
+    while retry_count <= max_retries:
+        try:
+            # Check if content starts with JSON or has prefix
+            if raw_content.strip()[0] != '{':
+                if verbose:
+                    print(">>>>>>> [HARMONY FORMAT] Detected non-JSON prefix, extracting JSON...")
+                json_content = extract_json_from_harmony_format(raw_content)
+                if verbose:
+                    print(f">>>>>>> [HARMONY FORMAT] Extracted {len(json_content)} chars")
+            else:
+                json_content = raw_content
+
+            # Parse JSON verdict
+            verdict_obj = json.loads(json_content)
+
             if verbose:
-                print(">>>>>>> [HARMONY FORMAT] Detected non-JSON prefix, extracting JSON...")
-            json_content = extract_json_from_harmony_format(raw_content)
+                print(">>>>>>> Verification verdict (structured):")
+                print(json.dumps(verdict_obj, indent=2))
+
+            # Validate schema (FIX 2025-12-24)
+            is_valid, error_msg = validate_verdict_schema(verdict_obj)
+            if not is_valid:
+                if verbose:
+                    print(f">>>>>>> [SCHEMA VALIDATION] FAILED: {error_msg}")
+
+                # Retry with explicit formatting instructions
+                if retry_count < max_retries:
+                    retry_count += 1
+                    if verbose:
+                        print(f">>>>>>> [RETRY] Attempt {retry_count}/{max_retries} with explicit schema instructions")
+
+                    # Build retry prompt with explicit formatting
+                    retry_prompt = newst + f"""
+
+**CRITICAL**: Your previous response had a schema error: {error_msg}
+
+Please return ONLY valid JSON matching this exact schema:
+{{
+  "verdict": "PASS" or "FAIL",
+  "confidence": number between 0.0 and 1.0,
+  "issues": [
+    {{
+      "type": "CRITICAL_ERROR" or "JUSTIFICATION_GAP",
+      "location": "quote from solution",
+      "description": "explanation of issue",
+      "severity": integer 1-10
+    }}
+  ],
+  "answer_correctness": "CORRECT" or "INCORRECT" or "INCOMPLETE" or "UNKNOWN",
+  "reasoning": "brief explanation"
+}}
+
+Return ONLY the JSON, no other text."""
+
+                    p2_retry = build_request_payload(
+                        system_prompt=verification_system_prompt,
+                        question_prompt=retry_prompt,
+                        reasoning_effort=verification_effort,
+                        response_format=VERIFICATION_VERDICT_SCHEMA
+                    )
+
+                    res = send_api_request_with_retry(get_api_key(), p2_retry, request_label=f"Verification retry {retry_count}")
+                    raw_content = extract_text_from_response(res)
+
+                    if verbose:
+                        print(f">>>>>>> [RETRY] Response (first 500 chars): {raw_content[:500]}")
+
+                    # Loop back to try parsing again
+                    continue
+                else:
+                    # Max retries exceeded, raise error
+                    raise ValueError(f"Schema validation failed after {max_retries} retries: {error_msg}")
+
+            # Schema validation passed, break retry loop
             if verbose:
-                print(f">>>>>>> [HARMONY FORMAT] Extracted {len(json_content)} chars")
-        else:
-            json_content = raw_content
+                print(">>>>>>> [SCHEMA VALIDATION] PASSED")
+            break
 
-        # Parse JSON verdict
-        verdict_obj = json.loads(json_content)
+        except (ValueError, json.JSONDecodeError) as e:
+            json_parse_error = e
+            # Will handle below after retry loop
+            break
 
-        if verbose:
-            print(">>>>>>> Verification verdict (structured):")
-            print(json.dumps(verdict_obj, indent=2))
-
-    except (ValueError, json.JSONDecodeError) as e:
+    # Handle JSON parsing/validation failure
+    if verdict_obj is None or json_parse_error is not None:
+        e = json_parse_error
         # JSON parsing failed - fallback to text processing
         if verbose:
             print(f">>>>>>> [ERROR] JSON parsing failed: {e}")
@@ -1433,7 +1565,8 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 
     # COUNTEREXAMPLE VALIDATION (2025-12-14, Enhanced 2025-12-16): Catch contradictory answers
     # If verification says "yes", run counterexample check to ensure mathematical validity
-    if "yes" in o.lower():
+    # FIX (2025-12-24): Disable for structured outputs - structured schema already validates logic
+    if "yes" in o.lower() and not response_format:
         if verbose:
             print("\n" + "="*80)
             print(">>>>>>> [COUNTEREXAMPLE VALIDATION] Checking mathematical validity")

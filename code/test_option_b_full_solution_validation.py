@@ -231,8 +231,8 @@ k ∈ {0, 1, 3}
     return run_verification_test(
         test_name="Test 3: Incomplete - Missing k=2 impossibility proof",
         solution=solution,
-        expected_pass=True,  # Policy: Accept gaps for FIND problems with correct answers
-        expected_keywords=[]  # Gap detected but accepted
+        expected_pass=False,  # Trial-and-error without proof = CRITICAL_ERROR
+        expected_keywords=["critical", "error", "trial", "invalid"]
     )
 
 
