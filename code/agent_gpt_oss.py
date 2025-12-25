@@ -1469,16 +1469,51 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     # BUGFIX (2025-12-25): Add max_tokens limit to prevent runaway generation
     # Test data showed responses up to 117k lines (176k+ chars) causing JSON corruption
     # Hierarchical decision tree should not need >8k tokens
-    p2["max_tokens"] = 8192
+    # Start with 8192, will increase if truncated
+    initial_max_tokens = 8192
+    max_tokens_limit = initial_max_tokens
+    p2["max_tokens"] = max_tokens_limit
 
-    # BUGFIX (2025-12-25): Disable streaming for structured output to prevent newline bug
-    # Accept +3-5s latency to eliminate 20% occurrence rate of newline loop
-    res = send_api_request_with_retry(get_api_key(), p2, stream=False, request_label="Verification prompt (structured)")
-    raw_content = extract_text_from_response(res)
+    # BUGFIX (2025-12-25): Retry on truncation with increased max_tokens
+    truncation_retry_count = 0
+    max_truncation_retries = 2  # Try with 8k, 12k, 16k
 
-    if(verbose):
-        print(">>>>>>> Verification raw response (first 500 chars):")
-        print(raw_content[:500])
+    while truncation_retry_count <= max_truncation_retries:
+        # BUGFIX (2025-12-25): Disable streaming for structured output to prevent newline bug
+        # Accept +3-5s latency to eliminate 20% occurrence rate of newline loop
+        res = send_api_request_with_retry(get_api_key(), p2, stream=False, request_label="Verification prompt (structured)")
+        raw_content = extract_text_from_response(res)
+
+        if(verbose):
+            print(">>>>>>> Verification raw response (first 500 chars):")
+            print(raw_content[:500])
+
+        # Check if content is empty (happens when finish_reason='length')
+        finish_reason = res.get('choices', [{}])[0].get('finish_reason', 'unknown')
+        is_empty = not raw_content or len(raw_content.strip()) == 0
+
+        if is_empty or finish_reason == 'length':
+            if verbose:
+                print(f">>>>>>> [TRUNCATION DETECTED] Empty content: {is_empty}, Finish reason: {finish_reason}")
+                print(f">>>>>>> Usage tokens: {res.get('usage', {})}")
+
+            # Retry with increased max_tokens
+            if truncation_retry_count < max_truncation_retries:
+                truncation_retry_count += 1
+                max_tokens_limit = initial_max_tokens + (4096 * truncation_retry_count)  # 8k → 12k → 16k
+                p2["max_tokens"] = max_tokens_limit
+                if verbose:
+                    print(f">>>>>>> [RETRY] Truncation retry {truncation_retry_count}/{max_truncation_retries}, increasing max_tokens to {max_tokens_limit}")
+                continue
+            else:
+                # Max retries exceeded, treat as error
+                if verbose:
+                    print(f">>>>>>> [ERROR] Still truncated after {max_truncation_retries} retries with max_tokens={max_tokens_limit}")
+                # Fall back to legacy parsing
+                raise ValueError(f"Response truncated after {max_truncation_retries} retries with max_tokens={max_tokens_limit}")
+        else:
+            # Content is not empty and not truncated, proceed with parsing
+            break
 
     # Extract JSON from Harmony format (POC finding: GPT-OSS outputs reasoning before JSON)
     # FIX (2025-12-24): Add schema validation and retry logic
@@ -1490,7 +1525,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 
     while retry_count <= max_retries:
         try:
-            # Check if content starts with JSON or has prefix
+            # Check if content starts with JSON or has prefix (safe now - we know raw_content is not empty)
             if raw_content.strip()[0] != '{':
                 if verbose:
                     print(">>>>>>> [HARMONY FORMAT] Detected non-JSON prefix, extracting JSON...")
