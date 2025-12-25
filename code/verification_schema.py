@@ -56,8 +56,18 @@ VERIFICATION_VERDICT_SCHEMA = {
                                 "type": "string",
                                 "enum": ["CRITICAL_ERROR", "JUSTIFICATION_GAP"],
                                 "description": (
-                                    "CRITICAL_ERROR: Breaks logical chain (wrong answer, invalid reasoning, factual error). "
-                                    "JUSTIFICATION_GAP: Conclusion may be correct but argument is incomplete or not rigorous."
+                                    "CRITICAL_ERROR: Breaks logical chain. Use when: "
+                                    "(1) Final answer is wrong, "
+                                    "(2) Proof contains a PROVABLY FALSE claim (can construct counterexample), "
+                                    "(3) Proof uses incorrect formula or theorem, "
+                                    "(4) Proof makes EXPLICIT universal claim (for all X) that is false. "
+                                    "JUSTIFICATION_GAP: Conclusion correct but argument incomplete. Use when: "
+                                    "(1) Missing proof steps, "
+                                    "(2) Claim is TRUE in context but not explicitly proven, "
+                                    "(3) Claim is context-dependent (true for case being analyzed) but scope not stated, "
+                                    "(4) Uses 'obvious' or 'by inspection' without showing work. "
+                                    "CRITICAL DISTINCTION: Context-dependent claims that are TRUE in the relevant case "
+                                    "but lack explicit scope are JUSTIFICATION_GAP (severity 4-5), NOT CRITICAL_ERROR."
                                 )
                             },
                             "location": {
@@ -81,11 +91,13 @@ VERIFICATION_VERDICT_SCHEMA = {
                                 "maximum": 10,
                                 "description": (
                                     "Severity rating (1=minor, 10=critical). "
-                                    "Use 8-10 for CRITICAL_ERROR, 1-5 for JUSTIFICATION_GAP. "
-                                    "Severity 10: Wrong final answer. "
-                                    "Severity 8-9: Major logical flaw. "
-                                    "Severity 3-5: Missing rigor but approach valid. "
-                                    "Severity 1-2: Minor presentation issues."
+                                    "CRITICAL_ERROR: Use 8-10 (wrong answer=10, provably false claim=8-9). "
+                                    "JUSTIFICATION_GAP: Use 1-5 based on impact: "
+                                    "Severity 4-5: Major missing scope (context-dependent claim not explicitly scoped), "
+                                    "Severity 3: Missing intermediate steps but logic sound, "
+                                    "Severity 1-2: Minor presentation issues or obvious skipped steps. "
+                                    "IMPORTANT: Context-dependent claims (true in relevant case but not scoped) "
+                                    "are GAPS (4-5), NOT ERRORS (8-9)."
                                 )
                             }
                         },

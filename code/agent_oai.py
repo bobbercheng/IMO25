@@ -426,20 +426,47 @@ Solution excerpt: "By the pigeonhole principle, if we have n points and k lines,
 
 ---
 
+**Example 6: Context-Dependent Claim (Justification Gap, NOT Critical Error)**
+*This example shows a claim that is TRUE in context but lacks explicit scope.*
+
+Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
+
+Solution excerpt: "If k≤2 then column x=n-2 (which contains three points) cannot be covered solely by sunny lines; consequently one of the non-sunny lines must be vertical and must be the line x=n-2. Now consider k≥4: Since a sunny line can meet each column in at most one point, having k≥4 would force at least four columns to rely on sunny lines. Because the three rightmost columns already force the use of a vertical line for column n-2, we would run out of vertical lines. Final answer: k∈{0,1,3}."
+
+**Applying the Decision Rule:**
+1. Check final answer: k∈{0,1,3} ✓ CORRECT
+2. Check reasoning method: Case analysis (k≤2 vs k≥4), counting arguments ✓ VALID mathematical tools
+3. Check context-dependent claim: "columns force vertical line" is TRUE for k≤2 case but stated without explicit scope in k≥4 analysis
+
+**Correct Classification:**
+*   **Location:** "Because the three rightmost columns already force the use of a vertical line for column n-2"
+    *   **Issue:** Justification Gap (severity 4-5) - The claim that "columns force vertical line for n-2" is TRUE in the k≤2 case (which was analyzed earlier) but is context-dependent - it would be FALSE for k≥4 if analyzed in isolation. The proof doesn't explicitly state "as established for k≤2" or similar scope qualifier. However, this is a **missing quantifier scope**, not a provably false claim. The reasoning in context is sound; it just lacks explicit cross-reference.
+
+**WRONG Classification (do NOT do this):**
+*   ~~**Location:** "columns force the use of a vertical line for column n-2"~~
+    *   ~~**Issue:** Critical Error (severity 9) - This claim is FALSE for k≥4 because with four sunny lines, column n-2 (3 points) can be covered entirely by sunny lines. The argument for k≥4 impossibility is invalid.~~ ❌ WRONG - This treats a context-dependent claim (true for k≤2, the case being referenced) as if it were a universal claim. The proof is analyzing k≥4 by referencing earlier k≤2 results. Missing explicit scope is a JUSTIFICATION_GAP (severity 4-5), NOT a CRITICAL_ERROR (severity 8-9).
+
+**CRITICAL RULE:** Context-dependent claims that are **TRUE in the relevant case** (even if false in other cases) are **JUSTIFICATION_GAP** when scope is not explicit. Only classify as **CRITICAL_ERROR** if the claim is **provably false in the case being analyzed** or makes an **explicit universal claim** (e.g., "for all k").
+
+---
+
 **CRITICAL META-INSTRUCTION:**
 
 **Do NOT override these few-shot examples with your own detailed reasoning.**
 
-When you encounter a pattern matching Example 1, 2, 3, 4, or 5 above:
+When you encounter a pattern matching Example 1, 2, 3, 4, 5, or 6 above:
 1. **STOP** - Do not generate 3000+ tokens of detailed analysis explaining why a claim is imprecise
 2. **CHECK** - Is the final answer correct? Are constructions valid? Is the reasoning method valid?
 3. **APPLY** - Use the SAME classification shown in the example (Justification Gap or Critical Error)
 4. **REMEMBER** - Your detailed mathematical reasoning is SECONDARY to the decision rule and few-shot guidance
-5. **DISAMBIGUATE** - Example 4 vs 5: Wrong answer or missing construction = Critical Error; Correct conclusion with valid method = Justification Gap
+5. **DISAMBIGUATE** - Key patterns:
+   - Example 4 vs 5: Wrong answer or missing construction = Critical Error; Correct conclusion with valid method = Justification Gap
+   - Example 6: Context-dependent claim (true in relevant case, scope not stated) = Justification Gap (4-5), NOT Critical Error (8-9)
 
 If you find yourself writing "the claim is false" or "this is mathematically incorrect" about imprecise wording:
-→ PAUSE and check if the final answer is correct
-→ If YES, classify as Justification Gap (presentation issue)
+→ PAUSE and check: Is the claim FALSE in the case being analyzed, or just lacking explicit scope?
+→ If claim is TRUE in context but scope not stated: Justification Gap (severity 4-5)
+→ If claim is FALSE in the case being analyzed: Critical Error (severity 8-9)
 → Only classify as Critical Error if the final answer is WRONG or reasoning uses completely invalid principles
 
 """
