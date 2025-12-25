@@ -215,3 +215,5 @@ test_rlac_log/
 **/validation_results.json
 poc_output.log
 test_structured_output_validation.log
+test_structured_output_fixed_test.log
+test_structured_output_validation_run*.log
