@@ -13,12 +13,18 @@ Test data:
 - bfs_run2_20251223_000814.json: SUCCESSFUL run (complete proof)
 - bfs_run8_20251223_000814.json: SUCCESSFUL run (alternative complete proof)
 - Synthetic incomplete proofs: For testing failure cases
+
+Usage:
+  python test_option_b_full_solution_validation.py          # Run all tests
+  python test_option_b_full_solution_validation.py --test 1 # Run only test 1
+  python test_option_b_full_solution_validation.py --test 1 3 5 # Run tests 1, 3, 5
 """
 
 import os
 import sys
 import json
-from typing import Dict, Any
+import argparse
+from typing import Dict, Any, List
 
 # Import agent functions
 sys.path.insert(0, os.path.dirname(__file__))
@@ -364,8 +370,24 @@ k ∈ {0, 1, 3}
 # Main Test Runner
 # =============================================================================
 
-def main():
-    """Run all Option B validation tests."""
+# Test function registry
+TEST_FUNCTIONS = {
+    1: test_1_complete_proof_from_bfs_run2,
+    2: test_2_complete_proof_from_bfs_run8,
+    3: test_3_incomplete_proof_missing_k2_impossibility,
+    4: test_4_incomplete_proof_missing_constructions,
+    5: test_5_wrong_proof_incorrect_answer,
+    6: test_6_proof_with_justification_gap,
+}
+
+
+def main(test_numbers: List[int] = None):
+    """
+    Run Option B validation tests.
+
+    Args:
+        test_numbers: List of test numbers to run (1-6). If None, run all tests.
+    """
 
     print("\n" + "="*80)
     print("OPTION B: FULL SOLUTION VALIDATION - UNIT TESTS")
@@ -376,6 +398,23 @@ def main():
     print("  ✗ Wrong proofs → FAIL")
     print()
 
+    # Determine which tests to run
+    if test_numbers is None:
+        # Run all tests
+        tests_to_run = sorted(TEST_FUNCTIONS.keys())
+    else:
+        # Run only specified tests
+        tests_to_run = sorted(test_numbers)
+        # Validate test numbers
+        invalid_tests = [t for t in tests_to_run if t not in TEST_FUNCTIONS]
+        if invalid_tests:
+            print(f"✗ Invalid test number(s): {invalid_tests}")
+            print(f"  Valid test numbers: {sorted(TEST_FUNCTIONS.keys())}")
+            return 1
+
+    print(f"Running tests: {tests_to_run}")
+    print()
+
     # Check API key
     try:
         api_key = get_api_key()
@@ -384,30 +423,13 @@ def main():
         print("✗ API key not configured. Set GPT_OSS_API_KEY or OPENAI_API_KEY")
         return 1
 
-    # Run tests
+    # Run specified tests
     results = []
-
-    # Test 1: Real successful run (bfs_run2)
-    result = test_1_complete_proof_from_bfs_run2()
-    if result:
-        results.append(result)
-
-    # Test 2: Alternative successful run (bfs_run8)
-    result = test_2_complete_proof_from_bfs_run8()
-    if result:
-        results.append(result)
-
-    # Test 3: Incomplete - missing k=2 impossibility
-    results.append(test_3_incomplete_proof_missing_k2_impossibility())
-
-    # Test 4: Incomplete - missing constructions
-    results.append(test_4_incomplete_proof_missing_constructions())
-
-    # Test 5: Wrong proof - incorrect answer
-    results.append(test_5_wrong_proof_incorrect_answer())
-
-    # Test 6: Justification gap
-    results.append(test_6_proof_with_justification_gap())
+    for test_num in tests_to_run:
+        test_func = TEST_FUNCTIONS[test_num]
+        result = test_func()
+        if result:  # Some tests may return None if data file missing
+            results.append(result)
 
     # Print summary
     print("\n" + "="*80)
@@ -453,5 +475,32 @@ def main():
 
 
 if __name__ == "__main__":
-    exit_code = main()
+    parser = argparse.ArgumentParser(
+        description="Run Option B (Full Solution Validation) unit tests",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                # Run all tests
+  %(prog)s --test 1       # Run only test 1
+  %(prog)s --test 1 3 5   # Run tests 1, 3, and 5
+
+Available tests:
+  1. Complete Proof (bfs_run2 - Real Success)
+  2. Complete Proof (bfs_run8 - Alternative Success)
+  3. Incomplete - Missing k=2 impossibility proof
+  4. Incomplete - Missing explicit constructions
+  5. Wrong Proof - Incorrect answer (includes k=2)
+  6. Proof with Justification Gap (correct but not rigorous)
+        """
+    )
+    parser.add_argument(
+        '--test', '-t',
+        type=int,
+        nargs='+',
+        metavar='N',
+        help='Test number(s) to run (1-6). If not specified, runs all tests.'
+    )
+
+    args = parser.parse_args()
+    exit_code = main(test_numbers=args.test)
     sys.exit(exit_code)
