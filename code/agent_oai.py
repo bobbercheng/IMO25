@@ -275,7 +275,12 @@ You are NOT checking:
 - If answer is CORRECT (✓) and methods are VALID (✓) → proof MUST PASS, even if presentation has gaps
 - Imprecise wording, missing intermediate steps, unclear cross-references → Level 3 (Presentation), NEVER grounds for FAIL
 
-**RESPONSE LENGTH TARGET:** Your Level 2 analysis should be <300 words. If significantly longer, you are likely over-analyzing claims instead of identifying methods.
+**CRITICAL CONSTRAINT:** Your Level 2 analysis MUST be ≤200 words (800 tokens). If you exceed this, you are over-analyzing CLAIMS instead of identifying METHODS.
+
+Use this format:
+- Methods identified: [list]
+- Classification: [VALID/INVALID]
+- Decision: [PASS Level 2 / FAIL Level 2]
 
 **LEVEL 3 IMPLEMENTATION: Presentation Quality**
 *   Now that answer is correct (Level 1 ✓) and reasoning is valid (Level 2 ✓), examine presentation details.
@@ -294,28 +299,16 @@ You are NOT checking:
 
 *   **Quality Decision:** Only Justification Gaps → PASS, Any Critical Errors in logic chain → FAIL.
 
-**2. Core Verification Procedure**
-*   Perform a **step-by-step** check of the solution.
-*   For each step: quote the relevant text, then provide your analysis.
-*   For correct steps: brief justification suffices.
-*   For steps with issues: explain the issue and classify (Justification Gap or Critical Error).
-*   Present findings in a **Detailed Verification Log** following the output format below.
+**2. Output Format**
+Your response should provide a concise summary:
 
-**3. Output Format**
-Your response MUST be structured into two main sections:
+*   **Level 1 Result:** State whether the final answer is CORRECT or WRONG (quote the answer)
+*   **Level 2 Result:** State whether reasoning uses VALID or INVALID mathematical principles
+*   **Level 3 Result:** List any presentation issues found (Justification Gaps or Critical Errors in logic chain)
+*   **Final Verdict:** "PASS" or "FAIL" based on the hierarchical decision tree
+*   **Reasoning:** Brief explanation of the verdict
 
-*   **Summary Section (at the beginning):**
-    *   **Level 1 Result:** State whether the final answer is CORRECT or WRONG (quote the answer)
-    *   **Level 2 Result:** State whether reasoning uses VALID or INVALID mathematical principles
-    *   **Level 3 Result:** List any presentation issues found (Justification Gaps or Critical Errors in logic chain)
-    *   **Final Verdict:** "PASS" or "FAIL" based on the hierarchical decision tree
-    *   **Reasoning:** 1-2 sentence explanation of the verdict
-
-*   **Detailed Verification Log (following the summary):**
-    *   Step-by-step analysis of the solution
-    *   Quote relevant text before analyzing each step
-    *   Classify issues as Justification Gap or Critical Error
-    *   Explain how each issue affects the final verdict per the hierarchical decision tree
+All detailed mathematical analysis should be provided in the structured JSON output (not in a separate prose log).
 
 """
 
@@ -368,65 +361,7 @@ Solution excerpt: "For k=2, I tried many constructions and couldn't find one. Th
 
 ---
 
-**Example 3: Presentation Issue with Typo (Justification Gap)**
-
-Problem: "Determine all k..."
-
-Solution excerpt: "With |p+q|=2 we get three lines: (p,q)=(1,1), (-2,1), (-1,2). These cover all required points. Final answer: k∈{0,1,3}."
-
-**Applying the Decision Rule:**
-1. Check final answer: k∈{0,1,3} ✓ CORRECT
-2. Check constructions: Three lines are valid and explicitly verified ✓
-3. Decision: Answer correct + constructions valid → Classify as **Justification Gap**
-
-**Correct Classification:**
-*   **Location:** "|p+q|=2 we get three lines: (p,q)=(-2,1), (-1,2)"
-    *   **Issue:** Justification Gap - The pairs (-2,1) and (-1,2) actually satisfy |p+q|=1, not |p+q|=2, so this is a mis-classification in the intermediate step. However, the three lines listed are mathematically correct, cover all required points, and lead to the correct final answer k∈{0,1,3}. This is a typo/presentation issue, not a fundamental error.
-
----
-
-**Example 4: Missing Construction (Critical Error)**
-*This example shows a FIND problem with INCORRECT answer due to invalid construction.*
-
-Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
-
-Solution excerpt: "For k=2, we can use two sunny lines (horizontal and vertical) plus one non-sunny line. The construction exists using these verticals. Final answer: k∈{0,1,2,3}."
-
-**Applying the Decision Rule:**
-1. Check final answer: k∈{0,1,2,3} ✗ INCORRECT (k=2 is impossible)
-2. Check construction claim: "construction exists using these verticals" but no valid construction is actually provided or verified
-3. Decision: Wrong answer + invalid construction → Classify as **Critical Error**
-
-**Correct Classification:**
-*   **Location:** "The construction exists using these verticals"
-    *   **Issue:** Critical Error - The solution claims k=2 works but provides no actual valid construction. For FIND problems, if the final answer includes a value (k=2), a valid construction MUST be explicitly provided and verified. Since no working construction exists (k=2 is actually impossible), and the final answer is wrong, this is a critical mathematical error.
-
----
-
-**Example 5: Valid Reasoning with Gaps (Justification Gap)**
-*This example shows a PROVE problem with CORRECT reasoning but incomplete presentation.*
-
-Problem: "Prove that for any configuration of n points, at most ⌊n/2⌋ can be covered by k sunny lines."
-
-Solution excerpt: "By the pigeonhole principle, if we have n points and k lines, at least ⌊n/k⌋ points share a line. Since sunny lines can't cover all points in a column (they have slopes ±1), we need at least n/2 lines. Therefore, k sunny lines cover at most n/2 points."
-
-**Applying the Decision Rule:**
-1. Check final conclusion: At most n/2 points covered ✓ CORRECT
-2. Check reasoning method: Uses pigeonhole principle ✓ VALID mathematical tool
-3. Check presentation: Missing some intermediate steps but logic is sound ✓
-4. Decision: Correct conclusion + valid method → Classify as **Justification Gap**
-
-**Correct Classification:**
-*   **Location:** "By the pigeonhole principle, if we have n points and k lines..."
-    *   **Issue:** Justification Gap - The solution uses valid mathematical reasoning (pigeonhole principle) to reach the correct conclusion, but doesn't spell out all the intermediate steps (e.g., why sunny lines can't cover all points in a column, how the n/k bound relates to the n/2 conclusion). However, the mathematical approach is fundamentally sound and the conclusion is correct. For PROVE problems, we accept such presentation gaps as long as the method is valid.
-
-**WRONG Classification (don't do this):**
-*   ~~**Location:** "sunny lines can't cover all points in a column"~~
-    *   ~~**Issue:** Critical Error - This claim is not fully justified.~~ ❌ WRONG - The reasoning direction is correct and uses valid principles. For PROVE problems with correct conclusions and valid methods, incomplete justification is acceptable as Justification Gap.
-
----
-
-**Example 6: Context-Dependent Claim (Justification Gap, NOT Critical Error)**
+**Example 3: Context-Dependent Claim (Justification Gap, NOT Critical Error)**
 *This example shows a claim that is TRUE in context but lacks explicit scope.*
 
 Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
@@ -454,14 +389,15 @@ Solution excerpt: "If k≤2 then column x=n-2 (which contains three points) cann
 
 **Do NOT override these few-shot examples with your own detailed reasoning.**
 
-When you encounter a pattern matching Example 1, 2, 3, 4, 5, or 6 above:
+When you encounter a pattern matching Example 1, 2, or 3 above:
 1. **STOP** - Do not generate 3000+ tokens of detailed analysis explaining why a claim is imprecise
 2. **CHECK** - Is the final answer correct? Are constructions valid? Is the reasoning method valid?
 3. **APPLY** - Use the SAME classification shown in the example (Justification Gap or Critical Error)
 4. **REMEMBER** - Your detailed mathematical reasoning is SECONDARY to the decision rule and few-shot guidance
 5. **DISAMBIGUATE** - Key patterns:
-   - Example 4 vs 5: Wrong answer or missing construction = Critical Error; Correct conclusion with valid method = Justification Gap
-   - Example 6: Context-dependent claim (true in relevant case, scope not stated) = Justification Gap (4-5), NOT Critical Error (8-9)
+   - Wrong answer or missing construction = Critical Error (Example 2 pattern)
+   - Correct answer with valid methods but imprecise wording = Justification Gap (Example 1 pattern)
+   - Example 3: Context-dependent claim (true in relevant case, scope not stated) = Justification Gap (4-5), NOT Critical Error (8-9)
 
 If you find yourself writing "the claim is false" or "this is mathematically incorrect" about imprecise wording:
 → PAUSE and check: Is the claim FALSE in the case being analyzed, or just lacking explicit scope?

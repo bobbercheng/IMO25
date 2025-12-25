@@ -80,7 +80,8 @@ VERIFICATION_VERDICT_SCHEMA = {
                             "description": {
                                 "type": "string",
                                 "description": (
-                                    "Clear explanation of the issue. "
+                                    "Clear explanation of the issue (up to 500 tokens). "
+                                    "Include full mathematical reasoning that would have been in the detailed verification log. "
                                     "For CRITICAL_ERROR: Explain why reasoning is invalid or answer is wrong. "
                                     "For JUSTIFICATION_GAP: Explain what justification is missing."
                                 )

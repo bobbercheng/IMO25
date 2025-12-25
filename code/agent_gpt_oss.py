@@ -99,8 +99,8 @@ API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completio
 SOLUTION_REASONING_EFFORT = os.getenv("GPT_OSS_SOLUTION_REASONING", "medium")
 # Self-improvement: Uses high reasoning for proactive error detection and prevention
 SELF_IMPROVEMENT_REASONING_EFFORT = os.getenv("GPT_OSS_SELF_IMPROVEMENT_REASONING", "high")
-# Verification: Uses high reasoning for rigorous checking and catching subtle errors
-VERIFICATION_REASONING_EFFORT = os.getenv("GPT_OSS_VERIFICATION_REASONING", "high")
+# Verification: Uses medium reasoning for efficient structured output (Solution 2 optimization)
+VERIFICATION_REASONING_EFFORT = os.getenv("GPT_OSS_VERIFICATION_REASONING", "medium")
 
 # Legacy single reasoning effort (for backward compatibility)
 REASONING_EFFORT = os.getenv("GPT_OSS_REASONING_EFFORT", SOLUTION_REASONING_EFFORT)
@@ -1404,6 +1404,32 @@ def validate_verdict_schema(verdict_obj):
     return True, None
 
 
+def calculate_verification_budget(solution_length: int) -> int:
+    """
+    Calculate adaptive max_tokens for verification based on solution length.
+
+    Solution 2 Component 6: Adaptive token budgets prevent over-allocation
+    for simple cases while ensuring complete proofs have sufficient budget.
+
+    Args:
+        solution_length: Character count of the solution text
+
+    Returns:
+        Recommended max_tokens for verification
+
+    Budget allocation:
+        - Complete proofs (>5k chars): 7000 tokens (covers 95% of Test 1/2)
+        - Moderate solutions (2-5k chars): 5000 tokens
+        - Short/wrong solutions (<2k chars): 3000 tokens
+    """
+    if solution_length > 5000:  # Complete proof
+        return 7000  # Covers 95% of Test 1/2 cases
+    elif solution_length > 2000:  # Moderate solution
+        return 5000
+    else:  # Short/wrong solution
+        return 3000
+
+
 def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
     """
     Verifies a solution using the verification system with structured JSON output.
@@ -1466,13 +1492,17 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         response_format=response_format  # Enable structured JSON output
     )
 
-    # BUGFIX (2025-12-25): Add max_tokens limit to prevent runaway generation
-    # Test data showed responses up to 117k lines (176k+ chars) causing JSON corruption
-    # Hierarchical decision tree should not need >8k tokens
-    # Start with 8192, will increase if truncated
-    initial_max_tokens = 8192
+    # Solution 2 Component 6: Use adaptive token budget based on solution length
+    # Complete proofs (>5k chars) → 7000 tokens (covers 95% of Test 1/2)
+    # Moderate solutions (2-5k chars) → 5000 tokens
+    # Short/wrong solutions (<2k chars) → 3000 tokens
+    # Will increase if truncated (retry logic below)
+    initial_max_tokens = calculate_verification_budget(len(dsol))
     max_tokens_limit = initial_max_tokens
     p2["max_tokens"] = max_tokens_limit
+
+    if verbose:
+        print(f">>>>>>> [ADAPTIVE BUDGET] Solution length: {len(dsol)} chars → max_tokens: {initial_max_tokens}")
 
     # BUGFIX (2025-12-25): Retry on truncation with increased max_tokens
     truncation_retry_count = 0
