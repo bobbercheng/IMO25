@@ -534,6 +534,31 @@ def send_api_request_with_retry(api_key, payload, stream=True, request_label="AP
 
             return result
 
+        except RuntimeError as e:
+            # BUGFIX (2025-12-25): Handle newline circuit breaker
+            # The circuit breaker raises RuntimeError when it detects newline loops
+            if "Newline loop detected" in str(e):
+                if attempt < max_retries:
+                    print(f"\n{'='*80}")
+                    print(f"[RETRY] Attempt {attempt + 1}/{max_retries + 1} - Newline circuit breaker triggered")
+                    print(f"[RETRY] Error: {e}")
+                    print(f"[RETRY] Retrying in {delay:.1f} seconds...")
+                    print(f"{'='*80}\n")
+
+                    time.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    # Max retries exhausted
+                    print(f"\n{'='*80}")
+                    print(f"[RETRY] Max retries ({max_retries}) exhausted after newline loop detection")
+                    print(f"[RETRY] Final error: {e}")
+                    print(f"{'='*80}\n")
+                    raise e
+            else:
+                # Some other RuntimeError - re-raise immediately
+                raise e
+
         except requests.exceptions.RequestException as e:
             # Check if this is a retryable error
             is_retryable = False
@@ -583,6 +608,9 @@ def _handle_streaming_response(response):
     Handles streaming SSE response and displays content in real-time.
     Returns the complete accumulated response in standard format.
     Includes repetition detection to prevent infinite loops.
+
+    BUGFIX (2025-12-25): Add circuit breaker for newline bug detection.
+    Aborts streaming if >100 consecutive newlines detected.
     """
     print(">>>>>>> Streaming Response:")
     print("=" * 80)
@@ -595,6 +623,10 @@ def _handle_streaming_response(response):
     REPETITION_WINDOW = 50  # Check last N characters
     REPETITION_THRESHOLD = 5  # Number of times a pattern can repeat
     MAX_CONTENT_LENGTH = 50000  # Maximum content length before forcing stop (baseline)
+
+    # BUGFIX (2025-12-25): Newline bug circuit breaker
+    NEWLINE_THRESHOLD = 100  # Abort if >100 consecutive newlines
+    consecutive_newlines = 0  # Counter for consecutive newline chunks
 
     def detect_repetition(text, window_size=REPETITION_WINDOW):
         """Detect if the same pattern repeats excessively at the end of text."""
@@ -646,6 +678,22 @@ def _handle_streaming_response(response):
                             accumulated_content += content_chunk
                             # Print in real-time without newline
                             original_print(content_chunk, end='', flush=True)
+
+                            # BUGFIX (2025-12-25): Circuit breaker for newline bug
+                            # Check if this chunk is only newlines/whitespace
+                            if content_chunk.strip() == '':
+                                consecutive_newlines += 1
+                                if consecutive_newlines > NEWLINE_THRESHOLD:
+                                    print("\n\n" + "="*80)
+                                    print(f"[CIRCUIT BREAKER] Newline loop detected!")
+                                    print(f"[CIRCUIT BREAKER] {consecutive_newlines} consecutive empty chunks")
+                                    print(f"[CIRCUIT BREAKER] Aborting streaming to prevent 30k+ empty lines")
+                                    print("="*80 + "\n")
+                                    # Raise exception to trigger retry in send_api_request_with_retry
+                                    raise RuntimeError(f"Newline loop detected: {consecutive_newlines} consecutive empty chunks")
+                            else:
+                                # Reset counter when we see actual content
+                                consecutive_newlines = 0
 
                             # Check for repetition
                             if detect_repetition(accumulated_content):
@@ -1418,7 +1466,9 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         response_format=response_format  # Enable structured JSON output
     )
 
-    res = send_api_request_with_retry(get_api_key(), p2, request_label="Verification prompt (structured)")
+    # BUGFIX (2025-12-25): Disable streaming for structured output to prevent newline bug
+    # Accept +3-5s latency to eliminate 20% occurrence rate of newline loop
+    res = send_api_request_with_retry(get_api_key(), p2, stream=False, request_label="Verification prompt (structured)")
     raw_content = extract_text_from_response(res)
 
     if(verbose):
@@ -1493,7 +1543,8 @@ Return ONLY the JSON, no other text."""
                         response_format=VERIFICATION_VERDICT_SCHEMA
                     )
 
-                    res = send_api_request_with_retry(get_api_key(), p2_retry, request_label=f"Verification retry {retry_count}")
+                    # BUGFIX (2025-12-25): Disable streaming for retry as well
+                    res = send_api_request_with_retry(get_api_key(), p2_retry, stream=False, request_label=f"Verification retry {retry_count}")
                     raw_content = extract_text_from_response(res)
 
                     if verbose:
