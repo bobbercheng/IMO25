@@ -218,15 +218,64 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
 *   **Gate Decision:** WRONG answer → immediate FAIL, CORRECT answer → proceed to Level 2.
 
 **LEVEL 2 IMPLEMENTATION: Reasoning Validity**
-*   Examine the mathematical methods used:
-    *   **Valid methods include:** Algebraic manipulation, counting arguments, pigeonhole principle, proof by contradiction, structural constraints, induction, geometric constructions, case analysis, etc.
-    *   **Invalid methods include:** "I tried and couldn't find it" (without proof), circular reasoning, unjustified assertions, nonsense reasoning.
-*   **Key Question:** Does the solution use recognized mathematical principles, or does it rely on trial-and-error/intuition without justification?
-*   **Special Case - Impossibility Claims:**
-    *   If solution claims "k=X is impossible", check if there's ANY mathematical reasoning (even if incomplete).
-    *   "I tried constructions and failed" with NO mathematical justification → INVALID reasoning.
-    *   "Column counting shows we need at least X lines" (even if details missing) → VALID reasoning.
-*   **Gate Decision:** INVALID reasoning → immediate FAIL, VALID reasoning → proceed to Level 3.
+
+**SCOPE:** Check mathematical METHODS used (not individual claims).
+
+**BEFORE YOU START - Pre-Flight Check:**
+Ask yourself: "Am I about to evaluate whether a specific CLAIM is true/false?"
+→ If YES: STOP. That's Level 3, not Level 2.
+→ If NO: Proceed with method identification below.
+
+**Step 1: Identify Methods Used**
+List the mathematical methods/tools employed in the proof:
+- [ ] Case analysis ("If k≤2, then... If k≥4, then...")
+- [ ] Counting arguments ("Column x has h points, so...")
+- [ ] Pigeonhole principle
+- [ ] Proof by contradiction
+- [ ] Explicit construction with verification
+- [ ] Algebraic manipulation
+- [ ] Geometric reasoning
+- [ ] Induction
+- [ ] Other recognized mathematical method: _______
+
+**Step 2: Classify Methods**
+- **VALID methods:** Any recognized mathematical tool from Step 1
+- **INVALID methods:**
+  - Trial-and-error without proof ("I tried 100 cases and failed" with NO mathematical reasoning)
+  - Circular logic ("A is true because B, B is true because A")
+  - Unjustified intuition/baseless claims (no reasoning provided)
+  - Nonsense reasoning ("even numbers have bad karma")
+
+**Step 3: Make Gate Decision**
+- If ALL methods are VALID → **PASS Level 2** (proceed to Level 3)
+- If ANY method is INVALID → **FAIL Level 2** (stop, do not proceed)
+
+**CRITICAL SCOPE LIMIT:**
+You are checking the TOOLS/METHODS used in the proof.
+You are NOT checking:
+- Whether specific claims are precisely worded (Level 3)
+- Whether intermediate steps are completely rigorous (Level 3)
+- Whether cross-references are perfectly clear (Level 3)
+
+**Example: Correct Level 2 Analysis**
+
+*Proof excerpt:* "If k≤2, then column x=n-2 forces a vertical line for column n-2. Now consider k≥4: having k≥4 would force at least four columns to rely on sunny lines. Because the three rightmost columns already force the use of a vertical line for column n-2, we would run out of vertical lines. Hence k≥4 is impossible."
+
+✓ **CORRECT Level 2 Analysis:**
+- **Methods identified:** Case analysis (k≤2 vs k≥4), counting arguments (column point counts, line counting)
+- **Classification:** All methods are VALID (recognized mathematical tools)
+- **Decision:** PASS Level 2 → proceed to Level 3
+
+❌ **WRONG Level 2 Analysis (do NOT do this):**
+- "The claim 'the three rightmost columns already force the use of a vertical line for column n-2' is FALSE for k≥4, because with four sunny lines the column n-2 can be covered entirely by sunny lines."
+- **Why wrong:** This analyzes CLAIM accuracy (whether the statement is true in the k≥4 context), not METHOD validity (whether counting arguments are a valid tool). This type of analysis belongs in Level 3.
+
+**REMINDER - Hierarchical Decision Principle:**
+- Level 1 (answer correctness) and Level 2 (method validity) are **GATE CHECKS**
+- If answer is CORRECT (✓) and methods are VALID (✓) → proof MUST PASS, even if presentation has gaps
+- Imprecise wording, missing intermediate steps, unclear cross-references → Level 3 (Presentation), NEVER grounds for FAIL
+
+**RESPONSE LENGTH TARGET:** Your Level 2 analysis should be <300 words. If significantly longer, you are likely over-analyzing claims instead of identifying methods.
 
 **LEVEL 3 IMPLEMENTATION: Presentation Quality**
 *   Now that answer is correct (Level 1 ✓) and reasoning is valid (Level 2 ✓), examine presentation details.

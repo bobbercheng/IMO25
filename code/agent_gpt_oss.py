@@ -1466,6 +1466,11 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
         response_format=response_format  # Enable structured JSON output
     )
 
+    # BUGFIX (2025-12-25): Add max_tokens limit to prevent runaway generation
+    # Test data showed responses up to 117k lines (176k+ chars) causing JSON corruption
+    # Hierarchical decision tree should not need >8k tokens
+    p2["max_tokens"] = 8192
+
     # BUGFIX (2025-12-25): Disable streaming for structured output to prevent newline bug
     # Accept +3-5s latency to eliminate 20% occurrence rate of newline loop
     res = send_api_request_with_retry(get_api_key(), p2, stream=False, request_label="Verification prompt (structured)")
@@ -1477,7 +1482,8 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 
     # Extract JSON from Harmony format (POC finding: GPT-OSS outputs reasoning before JSON)
     # FIX (2025-12-24): Add schema validation and retry logic
-    max_retries = 1
+    # BUGFIX (2025-12-25): Retry on JSON parse failures, not just schema validation failures
+    max_retries = 2  # Increase to 2 retries for JSON parse errors
     retry_count = 0
     verdict_obj = None
     json_parse_error = None
@@ -1562,9 +1568,46 @@ Return ONLY the JSON, no other text."""
             break
 
         except (ValueError, json.JSONDecodeError) as e:
-            json_parse_error = e
-            # Will handle below after retry loop
-            break
+            # BUGFIX (2025-12-25): Retry on JSON parse failures
+            if retry_count < max_retries:
+                retry_count += 1
+                if verbose:
+                    print(f">>>>>>> [JSON PARSE ERROR] {e}")
+                    print(f">>>>>>> [RETRY] Attempt {retry_count}/{max_retries} - retrying with fresh request")
+
+                # Retry with simpler prompt emphasizing valid JSON
+                retry_prompt = newst + """
+
+**CRITICAL**: Your previous response could not be parsed as valid JSON.
+
+Return your verdict as VALID JSON matching this schema (no extra text, no reasoning prefix):
+{
+  "verdict": "PASS" or "FAIL",
+  "confidence": 0.0 to 1.0,
+  "issues": [],
+  "answer_correctness": "CORRECT" or "INCORRECT" or "INCOMPLETE" or "UNKNOWN",
+  "reasoning": "brief explanation"
+}"""
+
+                p2_retry = build_request_payload(
+                    system_prompt=verification_system_prompt,
+                    question_prompt=retry_prompt,
+                    reasoning_effort=verification_effort,
+                    response_format=VERIFICATION_VERDICT_SCHEMA
+                )
+
+                res = send_api_request_with_retry(get_api_key(), p2_retry, stream=False, request_label=f"Verification JSON retry {retry_count}")
+                raw_content = extract_text_from_response(res)
+
+                if verbose:
+                    print(f">>>>>>> [RETRY] Response (first 500 chars): {raw_content[:500]}")
+
+                # Loop back to try parsing again
+                continue
+            else:
+                # Max retries exceeded, save error and break
+                json_parse_error = e
+                break
 
     # Handle JSON parsing/validation failure
     if verdict_obj is None or json_parse_error is not None:
