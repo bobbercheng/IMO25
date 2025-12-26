@@ -382,47 +382,16 @@ Solution excerpt: "Column x=n-2 has 3 points, so one of the non-sunny lines **mu
 
 **Applying the Decision Rule:**
 1. Check final answer: k∈{0,1,3} ✓ CORRECT
-2. Check constructions: Valid constructions provided for k=0,1,3 ✓ (constructions ARE present in full solution, just not shown in this excerpt)
-3. Check presentation: Imprecise wording "must be vertical" (should be "can be taken as vertical")
-4. Decision: Constructions present + imprecise wording → Classify as **Justification Gap**
+2. Check constructions: Valid constructions provided for k=0,1,3 ✓
+3. Decision: Answer correct → Classify as **Justification Gap**
 
 **Correct Classification:**
 *   **Location:** "one of the non-sunny lines must be vertical"
-    *   **Issue:** Justification Gap - The wording is imprecise; the solution should say "can be taken to be vertical without loss of generality" since non-sunny lines could also be horizontal or slope -1. However, constructions ARE provided in the full solution (k=0: vertical lines x=1,...,x=n; k=1,3: partial detail constructions). The underlying logic is sound, and the final answer k∈{0,1,3} is correct. This is imprecise LANGUAGE, not missing CONSTRUCTIONS.
+    *   **Issue:** Justification Gap - The wording is imprecise; the solution should say "can be taken to be vertical without loss of generality" since non-sunny lines could also be horizontal or slope -1. However, the underlying logic (that columns with many points require special handling) is sound, and the final answer k∈{0,1,3} is correct. This is a presentation issue, not a mathematical error.
 
 **WRONG Classification (don't do this):**
 *   ~~**Location:** "must be vertical"~~
     *   ~~**Issue:** Critical Error - This claim is false because non-sunny lines could be horizontal.~~ ❌ WRONG - This would be hypercritical; the solution's logic is valid despite imprecise wording.
-
----
-
-**Example 1.5: Critical Error (Missing Constructions Despite Correct Answer)**
-*This example shows that zero-detail constructions are CRITICAL_ERROR regardless of answer correctness.*
-
-Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
-
-Solution excerpt: "For k=0, construction exists using vertical lines.
-For k=1, construction exists.
-For k=3, construction exists using three sunny lines.
-Therefore k∈{0,1,3}."
-
-**Applying the Decision Rule:**
-1. Check final answer: k∈{0,1,3} ✓ CORRECT
-2. Check constructions: NO constructions provided - only claims they exist ✗
-3. Apply Construction Completeness Rule (three-level):
-   - "Construction exists" = Level 1 (zero detail)
-   - Level 1 → CRITICAL_ERROR (regardless of answer correctness)
-4. Decision: Missing constructions → Classify as **Critical Error**
-
-**Correct Classification:**
-*   **Location:** "For k=1, construction exists"
-    *   **Issue:** Critical Error (severity 9) - Solution claims construction exists but provides ZERO detail. No strategy, no approach, no equations. Reader cannot understand HOW to construct or WHAT the construction approach is. For FIND problems, constructions MUST be provided, not just claimed.
-
-**CRITICAL DISTINCTION from Example 1:**
-*   **Example 1:** Constructions ARE provided in full solution (Level 2+), issue is imprecise WORDING → JUSTIFICATION_GAP
-*   **Example 1.5:** Constructions are NOT provided, only CLAIMED to exist (Level 1 zero detail) → CRITICAL_ERROR
-*   **Key Precedence Rule:** Within solutions having correct answers and valid methods, construction completeness is evaluated by the three-level rule regardless of answer correctness
-*   **Pattern Matching:** "Construction exists" (no details) → Example 1.5 pattern → CRITICAL_ERROR
 
 ---
 
@@ -472,22 +441,15 @@ Solution excerpt: "If k≤2 then column x=n-2 (which contains three points) cann
 
 **Do NOT override these few-shot examples with your own detailed reasoning.**
 
-When you encounter a pattern matching Example 1, 1.5, 2, or 3 above:
+When you encounter a pattern matching Example 1, 2, or 3 above:
 1. **STOP** - Do not generate 3000+ tokens of detailed analysis explaining why a claim is imprecise
 2. **CHECK** - Is the final answer correct? Are constructions valid? Is the reasoning method valid?
 3. **APPLY** - Use the SAME classification shown in the example (Justification Gap or Critical Error)
 4. **REMEMBER** - Your detailed mathematical reasoning is SECONDARY to the decision rule and few-shot guidance
 5. **DISAMBIGUATE** - Key patterns:
-   - Wrong answer or missing construction = Critical Error (Example 1.5 or Example 2 pattern)
+   - Wrong answer or missing construction = Critical Error (Example 2 pattern)
    - Correct answer with valid methods but imprecise wording = Justification Gap (Example 1 pattern)
    - Example 3: Context-dependent claim (true in relevant case, scope not stated) = Justification Gap (4-5), NOT Critical Error (8-9)
-
-**CRITICAL PRECEDENCE RULE:**
-- **The three-level construction completeness rule is NEVER overridden by answer correctness**
-- Example 1's "Justification Gap" classification requires constructions to be present (Level 2+ detail)
-- Example 1.5 establishes: Zero-detail constructions (Level 1) = CRITICAL_ERROR regardless of answer correctness
-- Pattern matching: "Construction exists" (no details) → Example 1.5 → CRITICAL_ERROR
-- Pattern matching: Constructions present but imprecise wording → Example 1 → JUSTIFICATION_GAP
 
 If you find yourself writing "the claim is false" or "this is mathematically incorrect" about imprecise wording:
 → PAUSE and check: Is the claim FALSE in the case being analyzed, or just lacking explicit scope?
