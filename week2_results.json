@@ -1,38 +1,46 @@
 {
   "total_tests": 6,
   "agreement": {
-    "count": 6,
-    "rate_percent": 100.0,
-    "disagreements": 0
+    "count": 5,
+    "rate_percent": 83.33333333333334,
+    "disagreements": 1
   },
   "baseline": {
-    "correct_count": 5,
-    "accuracy_percent": 83.33333333333334,
+    "correct_count": 4,
+    "accuracy_percent": 66.66666666666666,
     "false_positives": 1,
-    "false_negatives": 0,
+    "false_negatives": 1,
     "fp_rate_percent": 33.33333333333333,
-    "fn_rate_percent": 0.0,
-    "avg_latency_seconds": 244.69129399458566
+    "fn_rate_percent": 33.33333333333333,
+    "avg_latency_seconds": 71.7350371281306
   },
   "optimized": {
     "correct_count": 5,
     "accuracy_percent": 83.33333333333334,
-    "false_positives": 1,
-    "false_negatives": 0,
-    "fp_rate_percent": 33.33333333333333,
-    "fn_rate_percent": 0.0,
-    "avg_latency_seconds": 13.49868400891622
+    "false_positives": 0,
+    "false_negatives": 1,
+    "fp_rate_percent": 0.0,
+    "fn_rate_percent": 33.33333333333333,
+    "avg_latency_seconds": 11.60793379942576
   },
   "performance": {
-    "latency_improvement_percent": 94.48338198366186,
-    "latency_saved_seconds": 231.19260998566943
+    "latency_improvement_percent": 83.81832049700891,
+    "latency_saved_seconds": 60.12710332870484
   },
   "test_distribution": {
     "expected_pass": 3,
     "expected_fail": 3
   },
-  "disagreement_details": [],
-  "timestamp": "2025-12-25T19:25:28.132574",
+  "disagreement_details": [
+    {
+      "test_number": 5,
+      "test_name": "Test 5: Wrong Proof - Incorrect answer (includes k=2)",
+      "expected": "FAIL",
+      "baseline": "yes",
+      "optimized": "no"
+    }
+  ],
+  "timestamp": "2025-12-25T20:34:50.034932",
   "full_results": [
     {
       "test_number": 1,
@@ -41,7 +49,7 @@
       "baseline": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 55.492595911026,
+        "elapsed_seconds": 67.25350880622864,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -50,7 +58,7 @@
       "optimized": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 15.326454877853394,
+        "elapsed_seconds": 10.970868110656738,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -60,8 +68,8 @@
         "verdicts_agree": true,
         "baseline_correct": true,
         "optimized_correct": true,
-        "latency_diff_seconds": -40.16614103317261,
-        "latency_improvement_percent": -72.38108142854401,
+        "latency_diff_seconds": -56.2826406955719,
+        "latency_improvement_percent": -83.68729259574233,
         "token_savings_percent": null
       }
     },
@@ -72,7 +80,7 @@
       "baseline": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 368.76006388664246,
+        "elapsed_seconds": 3.6102309226989746,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -81,7 +89,7 @@
       "optimized": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 27.88906478881836,
+        "elapsed_seconds": 16.21525001525879,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -91,8 +99,8 @@
         "verdicts_agree": true,
         "baseline_correct": true,
         "optimized_correct": true,
-        "latency_diff_seconds": -340.8709990978241,
-        "latency_improvement_percent": -92.43707019277676,
+        "latency_diff_seconds": 12.605019092559814,
+        "latency_improvement_percent": 349.1471698751176,
         "token_savings_percent": null
       }
     },
@@ -103,7 +111,7 @@
       "baseline": {
         "verdict": "no",
         "pass": false,
-        "elapsed_seconds": 147.2042691707611,
+        "elapsed_seconds": 84.09722590446472,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -112,7 +120,7 @@
       "optimized": {
         "verdict": "no",
         "pass": false,
-        "elapsed_seconds": 14.323570251464844,
+        "elapsed_seconds": 1.5255627632141113,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -122,8 +130,8 @@
         "verdicts_agree": true,
         "baseline_correct": true,
         "optimized_correct": true,
-        "latency_diff_seconds": -132.88069891929626,
-        "latency_improvement_percent": -90.26959589409115,
+        "latency_diff_seconds": -82.57166314125061,
+        "latency_improvement_percent": -98.18595352366657,
         "token_savings_percent": null
       }
     },
@@ -132,18 +140,80 @@
       "test_name": "Test 4: Incomplete - Missing explicit constructions",
       "expected_verdict": "FAIL",
       "baseline": {
-        "verdict": "yes",
-        "pass": true,
-        "elapsed_seconds": 267.16108798980713,
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 256.6221628189087,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
         "error": null
       },
       "optimized": {
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 4.0302441120147705,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": true,
+        "baseline_correct": true,
+        "optimized_correct": true,
+        "latency_diff_seconds": -252.59191870689392,
+        "latency_improvement_percent": -98.42950271023209,
+        "token_savings_percent": null
+      }
+    },
+    {
+      "test_number": 5,
+      "test_name": "Test 5: Wrong Proof - Incorrect answer (includes k=2)",
+      "expected_verdict": "FAIL",
+      "baseline": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 3.9172370433807373,
+        "elapsed_seconds": 15.194345235824585,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "optimized": {
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 19.404355764389038,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": false,
+        "baseline_correct": false,
+        "optimized_correct": true,
+        "latency_diff_seconds": 4.210010528564453,
+        "latency_improvement_percent": 27.707745633146917,
+        "token_savings_percent": null
+      }
+    },
+    {
+      "test_number": 6,
+      "test_name": "Test 6: Proof with Justification Gap (correct but not rigorous)",
+      "expected_verdict": "PASS",
+      "baseline": {
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 3.632749080657959,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "optimized": {
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 17.501322031021118,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -153,70 +223,8 @@
         "verdicts_agree": true,
         "baseline_correct": false,
         "optimized_correct": false,
-        "latency_diff_seconds": -263.2438509464264,
-        "latency_improvement_percent": -98.53375464486422,
-        "token_savings_percent": null
-      }
-    },
-    {
-      "test_number": 5,
-      "test_name": "Test 5: Wrong Proof - Incorrect answer (includes k=2)",
-      "expected_verdict": "FAIL",
-      "baseline": {
-        "verdict": "no",
-        "pass": false,
-        "elapsed_seconds": 395.8917531967163,
-        "tokens_input": null,
-        "tokens_output": null,
-        "truncation_retries": 0,
-        "error": null
-      },
-      "optimized": {
-        "verdict": "no",
-        "pass": false,
-        "elapsed_seconds": 4.073976039886475,
-        "tokens_input": null,
-        "tokens_output": null,
-        "truncation_retries": 0,
-        "error": null
-      },
-      "comparison": {
-        "verdicts_agree": true,
-        "baseline_correct": true,
-        "optimized_correct": true,
-        "latency_diff_seconds": -391.81777715682983,
-        "latency_improvement_percent": -98.97093687681286,
-        "token_savings_percent": null
-      }
-    },
-    {
-      "test_number": 6,
-      "test_name": "Test 6: Proof with Justification Gap (correct but not rigorous)",
-      "expected_verdict": "PASS",
-      "baseline": {
-        "verdict": "yes",
-        "pass": true,
-        "elapsed_seconds": 233.63799381256104,
-        "tokens_input": null,
-        "tokens_output": null,
-        "truncation_retries": 0,
-        "error": null
-      },
-      "optimized": {
-        "verdict": "yes",
-        "pass": true,
-        "elapsed_seconds": 15.461801052093506,
-        "tokens_input": null,
-        "tokens_output": null,
-        "truncation_retries": 0,
-        "error": null
-      },
-      "comparison": {
-        "verdicts_agree": true,
-        "baseline_correct": true,
-        "optimized_correct": true,
-        "latency_diff_seconds": -218.17619276046753,
-        "latency_improvement_percent": -93.38215467450986,
+        "latency_diff_seconds": 13.86857295036316,
+        "latency_improvement_percent": 381.765231851667,
         "token_savings_percent": null
       }
     }
