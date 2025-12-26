@@ -1,0 +1,240 @@
+{
+  "total_tests": 6,
+  "agreement": {
+    "count": 4,
+    "rate_percent": 66.66666666666666,
+    "disagreements": 2
+  },
+  "baseline": {
+    "correct_count": 6,
+    "accuracy_percent": 100.0,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "fp_rate_percent": 0.0,
+    "fn_rate_percent": 0.0,
+    "avg_latency_seconds": 671.196470340093
+  },
+  "optimized": {
+    "correct_count": 4,
+    "accuracy_percent": 66.66666666666666,
+    "false_positives": 2,
+    "false_negatives": 0,
+    "fp_rate_percent": 66.66666666666666,
+    "fn_rate_percent": 0.0,
+    "avg_latency_seconds": 14.222578446070353
+  },
+  "performance": {
+    "latency_improvement_percent": 97.8810111383834,
+    "latency_saved_seconds": 656.9738918940227
+  },
+  "test_distribution": {
+    "expected_pass": 3,
+    "expected_fail": 3
+  },
+  "disagreement_details": [
+    {
+      "test_number": 4,
+      "test_name": "Test 4: Incomplete - Missing explicit constructions",
+      "expected": "FAIL",
+      "baseline": "error",
+      "optimized": "yes"
+    },
+    {
+      "test_number": 5,
+      "test_name": "Test 5: Wrong Proof - Incorrect answer (includes k=2)",
+      "expected": "FAIL",
+      "baseline": "error",
+      "optimized": "yes"
+    }
+  ],
+  "timestamp": "2025-12-26T12:34:54.709621",
+  "full_results": [
+    {
+      "test_number": 1,
+      "test_name": "Test 1: Complete Proof (bfs_run2 - Real Success)",
+      "expected_verdict": "PASS",
+      "baseline": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 1562.0032179355621,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "optimized": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 38.23416519165039,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": true,
+        "baseline_correct": true,
+        "optimized_correct": true,
+        "latency_diff_seconds": -1523.7690527439117,
+        "latency_improvement_percent": -97.55223518411293,
+        "token_savings_percent": null
+      }
+    },
+    {
+      "test_number": 2,
+      "test_name": "Test 2: Complete Proof (bfs_run8 - Alternative Success)",
+      "expected_verdict": "PASS",
+      "baseline": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 534.7675819396973,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "optimized": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 22.51891303062439,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": true,
+        "baseline_correct": true,
+        "optimized_correct": true,
+        "latency_diff_seconds": -512.2486689090729,
+        "latency_improvement_percent": -95.78902802055721,
+        "token_savings_percent": null
+      }
+    },
+    {
+      "test_number": 3,
+      "test_name": "Test 3: Incomplete - Missing k=2 impossibility proof",
+      "expected_verdict": "FAIL",
+      "baseline": {
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 262.81707429885864,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "optimized": {
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 6.765337944030762,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": true,
+        "baseline_correct": true,
+        "optimized_correct": true,
+        "latency_diff_seconds": -256.0517363548279,
+        "latency_improvement_percent": -97.42583773825226,
+        "token_savings_percent": null
+      }
+    },
+    {
+      "test_number": 4,
+      "test_name": "Test 4: Incomplete - Missing explicit constructions",
+      "expected_verdict": "FAIL",
+      "baseline": {
+        "verdict": "error",
+        "pass": false,
+        "elapsed_seconds": 690.3877470493317,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": "Response truncated after 2 retries with max_tokens=11192"
+      },
+      "optimized": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 3.633709669113159,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": false,
+        "baseline_correct": true,
+        "optimized_correct": false,
+        "latency_diff_seconds": -686.7540373802185,
+        "latency_improvement_percent": -99.47367118193459,
+        "token_savings_percent": null
+      }
+    },
+    {
+      "test_number": 5,
+      "test_name": "Test 5: Wrong Proof - Incorrect answer (includes k=2)",
+      "expected_verdict": "FAIL",
+      "baseline": {
+        "verdict": "error",
+        "pass": false,
+        "elapsed_seconds": 664.6086759567261,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": "Response truncated after 2 retries with max_tokens=11192"
+      },
+      "optimized": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 8.43860387802124,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": false,
+        "baseline_correct": true,
+        "optimized_correct": false,
+        "latency_diff_seconds": -656.1700720787048,
+        "latency_improvement_percent": -98.73028984072867,
+        "token_savings_percent": null
+      }
+    },
+    {
+      "test_number": 6,
+      "test_name": "Test 6: Proof with Justification Gap (correct but not rigorous)",
+      "expected_verdict": "PASS",
+      "baseline": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 312.5945248603821,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "optimized": {
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 5.744740962982178,
+        "tokens_input": null,
+        "tokens_output": null,
+        "truncation_retries": 0,
+        "error": null
+      },
+      "comparison": {
+        "verdicts_agree": true,
+        "baseline_correct": true,
+        "optimized_correct": true,
+        "latency_diff_seconds": -306.8497838973999,
+        "latency_improvement_percent": -98.16223877703936,
+        "token_savings_percent": null
+      }
+    }
+  ],
+  "validation_decision": "FAIL"
+}
