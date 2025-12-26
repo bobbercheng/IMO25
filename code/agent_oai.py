@@ -493,26 +493,30 @@ def read_file_content(filepath):
         print(f"Error reading file '{filepath}': {e}")
         sys.exit(1)
 
-def build_request_payload(system_prompt, question_prompt, other_prompts=None):
+def build_request_payload(system_prompt, question_prompt, other_prompts=None, max_completion_tokens=8192):
     """
     Builds the JSON payload for the OpenAI o3 API request.
+
+    Args:
+        max_completion_tokens: Maximum output tokens (default 8192 to prevent truncation)
     """
     # Combine all prompts into a single input
     input_text = question_prompt
-    
+
     if system_prompt:
         input_text = f"System: {system_prompt}\n\nUser: {question_prompt}"
-    
+
     if other_prompts:
         for prompt in other_prompts:
             input_text += f"\n\nAdditional instruction: {prompt}"
-    
+
     payload = {
         "model": MODEL_NAME,
         "input": input_text,
         "reasoning": {
             "effort": "high"
-        }
+        },
+        "max_completion_tokens": max_completion_tokens  # Prevent truncation
     }
 
     return payload
@@ -584,7 +588,7 @@ def verify_solution(problem_statement, solution, verbose=True):
 
     dsol = extract_detailed_solution(solution)
 
-    # Verification constraints to prevent truncation and over-analysis
+    # Verification constraints to prevent truncation and over-analysis (Option A)
     verification_constraint = """
 **CRITICAL CONSTRAINTS FOR VERIFICATION:**
 
@@ -608,6 +612,15 @@ def verify_solution(problem_statement, solution, verbose=True):
 6. **Focus on What's Missing, Not Re-Proving What's There:**
    - ✅ CORRECT: "The solution claims k=2 is impossible but provides no proof → CRITICAL_ERROR"
    - ❌ WRONG: "Let me verify k=2 is impossible by testing: ..." → This is re-proving, not evaluating
+
+7. **Construction Verification (for FIND/DETERMINE problems):**
+   - If the problem asks to "find" or "determine" values, and the solution claims "k=X is achievable/possible":
+     - ✅ PASS: Solution provides EXPLICIT construction with specific values/coordinates/equations
+       Example: "For k=3, use lines x=1, y=2, and L: y=x+1 covering points (1,1), (2,2), (2,3)"
+     - ❌ FAIL: Solution only states existence without showing concrete construction
+       Example: "k=3 is possible by case analysis" or "k=3 exists" (no explicit construction shown)
+   - This applies to geometric constructions, combinatorial configurations, or any existence claims
+   - Abstract existence proofs WITHOUT explicit examples should be classified as CRITICAL_ERROR for FIND problems
 
 **Violating these constraints will cause your response to be truncated and discarded.**
 """
