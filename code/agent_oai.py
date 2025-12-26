@@ -296,27 +296,58 @@ Use this format:
     *   Demonstrably wrong intermediate calculations that invalidate logic chain
     *   Circular reasoning or logical fallacies
     *   Construction that produces wrong output when tested
-    *   **IMPORTANT - Missing constructions for FIND problems:** If the problem asks to "determine all k"
-        (or similar FIND-type questions) and the solution claims "construction exists" or "construction can be found"
-        without providing explicit equations or descriptions, this is a CRITICAL_ERROR (not a justification gap).
 
-*   **Construction Completeness Rule for FIND Problems:**
-    For problems asking to find/determine all values, if the solution claims a value works, it MUST provide
-    at least one explicit construction:
+*   **Construction Completeness Rule for FIND Problems (Three-Level Classification):**
 
-    **Examples of CRITICAL_ERROR (missing construction):**
-    - ❌ "Construction exists using vertical lines" → CRITICAL_ERROR (no equations provided)
-    - ❌ "For k=1, construction exists" → CRITICAL_ERROR (no equation for the sunny line)
-    - ❌ "For k=3, construction can be found using three sunny lines" → CRITICAL_ERROR (no equations)
-    - ❌ "Construction is straightforward" → CRITICAL_ERROR (no construction shown)
+    For problems asking to find/determine all values, constructions must be provided.
+    Classify construction completeness using THREE levels:
 
-    **Examples of ACCEPTABLE (construction provided):**
-    - ✅ "Use vertical lines x=1, x=2, ..., x=n" → Acceptable (explicit equations)
-    - ✅ "For k=1, use L: y-1 = 1/(1-n)·(x-n)" → Acceptable (equation provided)
-    - ✅ "For k=3, use L1: y=2x, L2: y=-x+5, L3: y=x-1" → Acceptable (equations provided)
+    **LEVEL 1 - CRITICAL_ERROR (Zero Detail - No Construction Strategy):**
+    The solution claims a construction exists but provides NO strategy, NO approach, NO details.
+    Reader cannot understand HOW to construct or WHAT the construction approach is.
 
-    **Key distinction:** "Construction provided but not verified" = JUSTIFICATION_GAP (acceptable).
-    "Construction not provided at all" = CRITICAL_ERROR (unacceptable).
+    Examples of CRITICAL_ERROR (zero detail):
+    - ❌ "Construction exists" → No details whatsoever
+    - ❌ "Construction can be found" → No strategy mentioned
+    - ❌ "Construction exists using vertical lines" → Which vertical lines? No specification
+    - ❌ "For k=1, construction exists" → No mention of points, lines, or approach
+    - ❌ "For k=3, construction can be found using three sunny lines" → No details about which lines
+    - ❌ "Construction is straightforward" → No construction shown at all
+    - ❌ "Construction works by pigeonhole principle" → No actual construction described
+
+    **LEVEL 2 - JUSTIFICATION_GAP (Partial Detail - Strategy Clear, Equations Missing):**
+    The solution describes a construction STRATEGY or APPROACH with enough detail to understand
+    the construction concept, but does not provide explicit line equations. The construction logic
+    is sound and the reader can conceptually verify the approach works.
+
+    Examples of JUSTIFICATION_GAP (partial detail):
+    - ⚠️ "Vertical lines x=1, ..., x=n-1 plus sunny line through (n,1)" → Strategy clear (which verticals, which point), equation missing
+    - ⚠️ "Three sunny lines cover the 6 rightmost points, verticals cover the rest" → Approach described (3 sunny for 6 points), equations missing
+    - ⚠️ "For k=1, use sunny line through point (n,1)" → Point specified, line equation missing
+    - ⚠️ "Use one sunny line per column for the rightmost k columns" → Strategy clear, specific lines missing
+    - ⚠️ "Construction: sunny line passing through points (a,b) and (c,d)" → Points given, equation missing
+    - ⚠️ "Divide into k regions, use one sunny line per region" → Approach clear, specific lines missing
+
+    **LEVEL 3 - ACCEPTABLE (Full Explicit - Complete Equations Provided):**
+    The solution provides explicit line equations, formulas, or complete specifications that can
+    be directly verified by checking points.
+
+    Examples of ACCEPTABLE (full explicit):
+    - ✅ "Use vertical lines x=1, x=2, ..., x=n" → Complete specification
+    - ✅ "For k=1, use sunny line L: y-1 = 1/(1-n)·(x-n)" → Explicit equation
+    - ✅ "For k=3, use L1: y=2x, L2: y=-x+5, L3: y=x-1" → All equations provided
+    - ✅ "Use horizontal lines y=1, y=2, ..., y=n" → Complete specification
+
+    **Three-Level Decision Rule:**
+    - If construction has ZERO strategy detail (Level 1) → Classify as CRITICAL_ERROR → FAIL
+    - If construction describes PARTIAL strategy (Level 2) → Classify as JUSTIFICATION_GAP → PASS (per policy: accept gaps when answer correct + method valid)
+    - If construction provides FULL equations (Level 3) → Classify as ACCEPTABLE → PASS
+
+    **Key Principle:**
+    The difference between Level 1 and Level 2 is whether the reader can UNDERSTAND THE APPROACH.
+    - Level 1 (zero detail): "Construction exists" - reader has no idea how to proceed
+    - Level 2 (partial detail): "sunny line through (n,1)" - reader understands the approach, can conceptually verify
+    - Level 3 (full explicit): "L: y-1 = 1/(1-n)·(x-n)" - reader can directly verify by calculation
 
 *   **Quality Decision:** Only Justification Gaps → PASS, Any Critical Errors in logic chain → FAIL.
 
