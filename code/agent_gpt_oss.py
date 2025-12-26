@@ -1454,6 +1454,7 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
     dsol = extract_detailed_solution(solution)
 
     # Option A verification constraints (2025-12-26)
+    # UPDATED (2025-12-26): Move construction verification to Level 2 per 4-expert consensus
     verification_constraint = """
 **CRITICAL CONSTRAINTS FOR VERIFICATION:**
 
@@ -1478,14 +1479,31 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
    - ✅ CORRECT: "The solution claims k=2 is impossible but provides no proof → CRITICAL_ERROR"
    - ❌ WRONG: "Let me verify k=2 is impossible by testing: ..." → This is re-proving, not evaluating
 
-7. **Construction Verification (for FIND/DETERMINE problems):**
-   - If the problem asks to "find" or "determine" values, and the solution claims "k=X is achievable/possible":
-     - ✅ PASS: Solution provides EXPLICIT construction with specific values/coordinates/equations
-       Example: "For k=3, use lines x=1, y=2, and L: y=x+1 covering points (1,1), (2,2), (2,3)"
-     - ❌ FAIL: Solution only states existence without showing concrete construction
-       Example: "k=3 is possible by case analysis" or "k=3 exists" (no explicit construction shown)
-   - This applies to geometric constructions, combinatorial configurations, or any existence claims
-   - Abstract existence proofs WITHOUT explicit examples should be classified as CRITICAL_ERROR for FIND problems
+**CRITICAL LEVEL 2 ENHANCEMENT - Justification Completeness (MANDATORY GATE CHECK):**
+
+For FIND/DETERMINE problems, unjustified existence claims are **INVALID METHODS** (Level 2 failure).
+
+**You MUST check during Level 2 (Method Validity):**
+- Does the solution make existence claims without justification?
+- Examples of UNJUSTIFIED CLAIMS (these are INVALID METHODS):
+  ❌ "Construction exists" (zero details)
+  ❌ "k=X works" (no equations, no strategy shown)
+  ❌ "k=X is achievable" (no construction provided)
+  ❌ "Construction can be found using vertical lines" (method named but not executed)
+
+**Classification Rules:**
+- If solution claims "k=X is achievable" WITHOUT providing construction → **INVALID METHOD → FAIL Level 2**
+- If solution provides strategy OR explicit construction → **VALID METHOD → proceed to Level 3**
+
+**Valid justifications** (these are VALID METHODS):
+  ✅ "Use lines x=1, x=2, ..., x=n" (explicit specification)
+  ✅ "L: y = mx + b where..." (explicit equation)
+  ✅ "Line through points (a,b) and (c,d)" (strategy with specific values)
+
+**THIS IS A LEVEL 2 GATE CHECK, NOT LEVEL 3 PRESENTATION:**
+- Unjustified existence = logically incomplete = INVALID METHOD = FAIL Level 2
+- You MUST classify "construction exists" (without details) as INVALID_METHOD
+- This triggers Level 2 FAIL - do NOT proceed to Level 3
 
 **Violating these constraints will cause your response to be truncated and discarded.**
 """
