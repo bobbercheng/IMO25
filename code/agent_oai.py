@@ -584,7 +584,37 @@ def verify_solution(problem_statement, solution, verbose=True):
 
     dsol = extract_detailed_solution(solution)
 
+    # Verification constraints to prevent truncation and over-analysis
+    verification_constraint = """
+**CRITICAL CONSTRAINTS FOR VERIFICATION:**
+
+1. **Output Length Limit:** Your verification reasoning MUST be ≤2000 tokens total.
+
+2. **Evaluate, Don't Re-Prove:** Your task is to EVALUATE the provided solution, NOT to re-prove the problem from scratch.
+   - ❌ WRONG: "Let's verify by manually testing n=3: points are (1,1), (1,2)... now n=4..."
+   - ✅ CORRECT: "The solution tests n=3, n=4, n=5 and identifies the pattern. This method is valid."
+
+3. **No Manual Case Testing:** Do NOT manually enumerate specific values or cases that the solution already covered.
+   - ❌ WRONG: "For k=0, let's check: we need vertical lines covering..."
+   - ✅ CORRECT: "The solution's analysis of k=0 uses valid case-by-case reasoning."
+
+4. **Trust Valid Methods:** If the solution uses valid mathematical methods (case analysis, induction, contradiction, construction) and the answer is correct:
+   - Classify as PASS if presentation is clear
+   - Classify as JUSTIFICATION_GAP if presentation has minor wording issues
+   - Do NOT attempt to independently verify every computation
+
+5. **Early Classification:** Once you determine answer correctness and reasoning validity, immediately classify and stop. Do not continue analyzing.
+
+6. **Focus on What's Missing, Not Re-Proving What's There:**
+   - ✅ CORRECT: "The solution claims k=2 is impossible but provides no proof → CRITICAL_ERROR"
+   - ❌ WRONG: "Let me verify k=2 is impossible by testing: ..." → This is re-proving, not evaluating
+
+**Violating these constraints will cause your response to be truncated and discarded.**
+"""
+
     newst = f"""
+{verification_constraint}
+
 ======================================================================
 ### Problem ###
 
