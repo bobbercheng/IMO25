@@ -1,31 +1,31 @@
 {
   "total_tests": 6,
   "agreement": {
-    "count": 5,
-    "rate_percent": 83.33333333333334,
-    "disagreements": 1
+    "count": 4,
+    "rate_percent": 66.66666666666666,
+    "disagreements": 2
   },
   "baseline": {
+    "correct_count": 5,
+    "accuracy_percent": 83.33333333333334,
+    "false_positives": 0,
+    "false_negatives": 1,
+    "fp_rate_percent": 0.0,
+    "fn_rate_percent": 33.33333333333333,
+    "avg_latency_seconds": 157.38987044493356
+  },
+  "optimized": {
     "correct_count": 5,
     "accuracy_percent": 83.33333333333334,
     "false_positives": 1,
     "false_negatives": 0,
     "fp_rate_percent": 33.33333333333333,
     "fn_rate_percent": 0.0,
-    "avg_latency_seconds": 207.59802357355753
-  },
-  "optimized": {
-    "correct_count": 6,
-    "accuracy_percent": 100.0,
-    "false_positives": 0,
-    "false_negatives": 0,
-    "fp_rate_percent": 0.0,
-    "fn_rate_percent": 0.0,
-    "avg_latency_seconds": 8.716902414957682
+    "avg_latency_seconds": 8.290770451227823
   },
   "performance": {
-    "latency_improvement_percent": 95.8010667611828,
-    "latency_saved_seconds": 198.88112115859985
+    "latency_improvement_percent": 94.73233542426193,
+    "latency_saved_seconds": 149.09909999370575
   },
   "test_distribution": {
     "expected_pass": 3,
@@ -33,23 +33,30 @@
   },
   "disagreement_details": [
     {
+      "test_number": 1,
+      "test_name": "Test 1: Complete Proof (bfs_run2 - Real Success)",
+      "expected": "PASS",
+      "baseline": "no",
+      "optimized": "yes"
+    },
+    {
       "test_number": 4,
       "test_name": "Test 4: Incomplete - Missing explicit constructions",
       "expected": "FAIL",
-      "baseline": "yes",
-      "optimized": "no"
+      "baseline": "no",
+      "optimized": "yes"
     }
   ],
-  "timestamp": "2025-12-25T21:51:46.497027",
+  "timestamp": "2025-12-25T23:29:26.445648",
   "full_results": [
     {
       "test_number": 1,
       "test_name": "Test 1: Complete Proof (bfs_run2 - Real Success)",
       "expected_verdict": "PASS",
       "baseline": {
-        "verdict": "yes",
-        "pass": true,
-        "elapsed_seconds": 4.1624298095703125,
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 426.0141770839691,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -58,18 +65,18 @@
       "optimized": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 7.308381795883179,
+        "elapsed_seconds": 15.212059020996094,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
         "error": null
       },
       "comparison": {
-        "verdicts_agree": true,
-        "baseline_correct": true,
+        "verdicts_agree": false,
+        "baseline_correct": false,
         "optimized_correct": true,
-        "latency_diff_seconds": 3.145951986312866,
-        "latency_improvement_percent": 75.57970056527206,
+        "latency_diff_seconds": -410.802118062973,
+        "latency_improvement_percent": -96.42921296067625,
         "token_savings_percent": null
       }
     },
@@ -80,7 +87,7 @@
       "baseline": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 105.07167887687683,
+        "elapsed_seconds": 149.01252007484436,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -89,7 +96,7 @@
       "optimized": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 11.829651355743408,
+        "elapsed_seconds": 8.8146071434021,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -99,8 +106,8 @@
         "verdicts_agree": true,
         "baseline_correct": true,
         "optimized_correct": true,
-        "latency_diff_seconds": -93.24202752113342,
-        "latency_improvement_percent": -88.74135115933056,
+        "latency_diff_seconds": -140.19791293144226,
+        "latency_improvement_percent": -94.08465333048875,
         "token_savings_percent": null
       }
     },
@@ -111,7 +118,7 @@
       "baseline": {
         "verdict": "no",
         "pass": false,
-        "elapsed_seconds": 42.50152111053467,
+        "elapsed_seconds": 57.44993829727173,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -120,7 +127,7 @@
       "optimized": {
         "verdict": "no",
         "pass": false,
-        "elapsed_seconds": 3.8697071075439453,
+        "elapsed_seconds": 10.517714977264404,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -130,8 +137,8 @@
         "verdicts_agree": true,
         "baseline_correct": true,
         "optimized_correct": true,
-        "latency_diff_seconds": -38.63181400299072,
-        "latency_improvement_percent": -90.89513267659312,
+        "latency_diff_seconds": -46.932223320007324,
+        "latency_improvement_percent": -81.69238246551105,
         "token_savings_percent": null
       }
     },
@@ -140,18 +147,18 @@
       "test_name": "Test 4: Incomplete - Missing explicit constructions",
       "expected_verdict": "FAIL",
       "baseline": {
-        "verdict": "yes",
-        "pass": true,
-        "elapsed_seconds": 340.0705668926239,
+        "verdict": "no",
+        "pass": false,
+        "elapsed_seconds": 87.1298770904541,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
         "error": null
       },
       "optimized": {
-        "verdict": "no",
-        "pass": false,
-        "elapsed_seconds": 14.179121017456055,
+        "verdict": "yes",
+        "pass": true,
+        "elapsed_seconds": 3.2781729698181152,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -159,10 +166,10 @@
       },
       "comparison": {
         "verdicts_agree": false,
-        "baseline_correct": false,
-        "optimized_correct": true,
-        "latency_diff_seconds": -325.89144587516785,
-        "latency_improvement_percent": -95.83053565999052,
+        "baseline_correct": true,
+        "optimized_correct": false,
+        "latency_diff_seconds": -83.85170412063599,
+        "latency_improvement_percent": -96.2376017512169,
         "token_savings_percent": null
       }
     },
@@ -173,7 +180,7 @@
       "baseline": {
         "verdict": "no",
         "pass": false,
-        "elapsed_seconds": 459.03052496910095,
+        "elapsed_seconds": 201.16771411895752,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -182,7 +189,7 @@
       "optimized": {
         "verdict": "no",
         "pass": false,
-        "elapsed_seconds": 6.042691230773926,
+        "elapsed_seconds": 5.221047639846802,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -192,8 +199,8 @@
         "verdicts_agree": true,
         "baseline_correct": true,
         "optimized_correct": true,
-        "latency_diff_seconds": -452.987833738327,
-        "latency_improvement_percent": -98.68359708078658,
+        "latency_diff_seconds": -195.94666647911072,
+        "latency_improvement_percent": -97.40462943434382,
         "token_savings_percent": null
       }
     },
@@ -204,7 +211,7 @@
       "baseline": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 294.75141978263855,
+        "elapsed_seconds": 23.564996004104614,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -213,7 +220,7 @@
       "optimized": {
         "verdict": "yes",
         "pass": true,
-        "elapsed_seconds": 9.071861982345581,
+        "elapsed_seconds": 6.701020956039429,
         "tokens_input": null,
         "tokens_output": null,
         "truncation_retries": 0,
@@ -223,8 +230,8 @@
         "verdicts_agree": true,
         "baseline_correct": true,
         "optimized_correct": true,
-        "latency_diff_seconds": -285.67955780029297,
-        "latency_improvement_percent": -96.92219905538181,
+        "latency_diff_seconds": -16.863975048065186,
+        "latency_improvement_percent": -71.56366606269644,
         "token_savings_percent": null
       }
     }
