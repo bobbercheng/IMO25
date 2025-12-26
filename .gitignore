@@ -217,3 +217,9 @@ poc_output.log
 test_structured_output_validation.log
 test_structured_output_fixed_test.log
 test_structured_output_validation_run*.log
+
+# Shadow mode test outputs
+test*_output.log
+test*_results.json
+shadow_mode_results*.json
+week2_results_fixed.json
