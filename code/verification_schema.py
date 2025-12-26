@@ -171,6 +171,18 @@ def interpret_verdict(verdict_obj: dict) -> tuple[dict, str]:
                 has_critical_error = any(
                     issue["type"] == "CRITICAL_ERROR" for issue in issues
                 )
+
+                # ALTERNATIVE 3: Safety check for high-severity gaps (likely misclassified errors)
+                # Severity 8-10 should be CRITICAL_ERRORs, not JUSTIFICATION_GAPs
+                has_high_severity_gap = any(
+                    issue["type"] == "JUSTIFICATION_GAP" and issue.get("severity", 0) >= 8
+                    for issue in issues
+                )
+
+                if has_high_severity_gap:
+                    print("[POLICY SAFETY] High-severity gap (≥8) detected - likely misclassified error, blocking override")
+                    return verdict_obj, "no"
+
                 if not has_critical_error:
                     # All issues are gaps, answer is correct/incomplete → PASS
                     print("[VERDICT OVERRIDE] Answer correct/incomplete with only justification gaps → PASS")

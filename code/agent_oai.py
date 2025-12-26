@@ -296,6 +296,27 @@ Use this format:
     *   Demonstrably wrong intermediate calculations that invalidate logic chain
     *   Circular reasoning or logical fallacies
     *   Construction that produces wrong output when tested
+    *   **IMPORTANT - Missing constructions for FIND problems:** If the problem asks to "determine all k"
+        (or similar FIND-type questions) and the solution claims "construction exists" or "construction can be found"
+        without providing explicit equations or descriptions, this is a CRITICAL_ERROR (not a justification gap).
+
+*   **Construction Completeness Rule for FIND Problems:**
+    For problems asking to find/determine all values, if the solution claims a value works, it MUST provide
+    at least one explicit construction:
+
+    **Examples of CRITICAL_ERROR (missing construction):**
+    - ❌ "Construction exists using vertical lines" → CRITICAL_ERROR (no equations provided)
+    - ❌ "For k=1, construction exists" → CRITICAL_ERROR (no equation for the sunny line)
+    - ❌ "For k=3, construction can be found using three sunny lines" → CRITICAL_ERROR (no equations)
+    - ❌ "Construction is straightforward" → CRITICAL_ERROR (no construction shown)
+
+    **Examples of ACCEPTABLE (construction provided):**
+    - ✅ "Use vertical lines x=1, x=2, ..., x=n" → Acceptable (explicit equations)
+    - ✅ "For k=1, use L: y-1 = 1/(1-n)·(x-n)" → Acceptable (equation provided)
+    - ✅ "For k=3, use L1: y=2x, L2: y=-x+5, L3: y=x-1" → Acceptable (equations provided)
+
+    **Key distinction:** "Construction provided but not verified" = JUSTIFICATION_GAP (acceptable).
+    "Construction not provided at all" = CRITICAL_ERROR (unacceptable).
 
 *   **Quality Decision:** Only Justification Gaps → PASS, Any Critical Errors in logic chain → FAIL.
 
