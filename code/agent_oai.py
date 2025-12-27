@@ -499,6 +499,8 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, ma
 
     Args:
         max_completion_tokens: Maximum output tokens (default 8192 to prevent truncation)
+                               Note: Parameter name kept for backward compatibility,
+                               but maps to max_output_tokens for Responses API
     """
     # Combine all prompts into a single input
     input_text = question_prompt
@@ -516,7 +518,7 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, ma
         "reasoning": {
             "effort": "high"
         },
-        "max_completion_tokens": max_completion_tokens  # Prevent truncation
+        "max_output_tokens": max_completion_tokens  # Responses API uses max_output_tokens (not max_completion_tokens)
     }
 
     return payload
