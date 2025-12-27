@@ -1,0 +1,44 @@
+{
+  "baseline": {
+    "n": 180,
+    "successes": 154,
+    "accuracy": 0.8555555555555555,
+    "ci_95": {
+      "lower": 0.7967697562121162,
+      "upper": 0.8994823341547366
+    }
+  },
+  "option_a": {
+    "n": 6,
+    "successes": 4,
+    "accuracy": 0.6666666666666666,
+    "ci_95": {
+      "lower": 0.299993315138392,
+      "upper": 0.9032285888942195
+    }
+  },
+  "statistical_tests": {
+    "z_test": {
+      "z_score": -1.2728206207987678,
+      "p_value": 0.10154085105305832
+    },
+    "binomial_test": {
+      "p_value": 0.21053975072491593
+    },
+    "significant_at_0.05": false
+  },
+  "bayesian": {
+    "posterior_mean": 0.8457446808510638,
+    "posterior_ci_95": {
+      "lower": 0.7909160207038262,
+      "upper": 0.8936138351178066
+    },
+    "p_regression": 0.6300019580385212
+  },
+  "sample_size": {
+    "detect_current_diff": 62,
+    "detect_10pp_diff": 193
+  },
+  "recommendation": "Fix issues if identifiable, then run n=30 validation",
+  "verdict": "INSUFFICIENT_DATA"
+}
