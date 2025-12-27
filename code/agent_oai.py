@@ -518,7 +518,7 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, ma
         "reasoning": {
             "effort": "high"
         },
-        "max_output_tokens": max_completion_tokens  # Responses API uses max_output_tokens (not max_completion_tokens)
+        "max_completion_tokens": max_completion_tokens  # BUGFIX (2025-12-27): OpenAI o3 Responses API uses max_completion_tokens
     }
 
     return payload
@@ -576,11 +576,21 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     """
     Extracts the text after '### Detailed Solution ###' from the solution string.
     Returns the substring after the marker, stripped of leading/trailing whitespace.
-    If the marker is not found, returns an empty string.
+    If the marker is not found, returns the full solution as fallback (BUGFIX).
+
+    BUGFIX (2025-12-27): Previously returned empty string if marker not found,
+    causing GPT-5 verification failures on solutions without standard formatting.
+    Now returns full solution if marker not found (matching agent_gpt_oss.py behavior).
+    This fixes "Please provide the statement to evaluate." errors on Tests 3,4,5,6.
     """
     idx = solution.find(marker)
     if idx == -1:
-        return ''
+        # BUGFIX: Return full solution instead of empty string
+        # This handles solutions with alternative formatting (e.g., "### Summary ###" only)
+        if len(solution) > 100:  # Sanity check: valid solution should be >100 chars
+            return solution
+        else:
+            return ''  # Truly empty/invalid solution
     if(after):
         return solution[idx + len(marker):].strip()
     else:
