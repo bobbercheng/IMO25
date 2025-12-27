@@ -1503,31 +1503,77 @@ For EACH construction claim found in Step 1, classify it into ONE of three categ
 **Category C - Explicit Specification (VALID METHOD → Proceed to Level 3):**
   ✅ "Use lines x=1, x=2, ..., x=n" (explicit enumeration provided)
   ✅ "L: y-1 = -2(x-(n-1))" (explicit equation provided)
-  ✅ "Line through (a,b) and (c,d)" (explicit points provided)
+  ✅ "Line through (a,b) and (c,d)" (explicit two points provided)
+  ✅ "Sunny line through (n,1)" (explicit one point - partial specification, but concrete)
+  ✅ "Three sunny lines cover the 6 rightmost points" (strategy with count and target specified)
+  ✅ "Verticals x=1,...,x=n-1 plus sunny line through point P" (enumeration + point)
   ✅ "k=3 works: use L₁: y=2x+1, L₂: y=3x-1, L₃: x=5" (claim followed by equations)
 
 **STEP 3: Apply Level 2/3 Boundary Rule**
 
-**CRITICAL DISTINCTION (prevents Test 1 over-rejection):**
+**CRITICAL BOUNDARY RULE:**
+  - **Zero concrete details** (just type/method name) → Category B (INVALID METHOD)
+  - **One or more concrete details** (points/equations/enumeration/count+target) → Category C (VALID METHOD)
+  - Partial specification (e.g., one point instead of two, count without equations) → **Category C at Level 2**
+    → Proceed to Level 3 where it may receive JUSTIFICATION_GAP (which is ACCEPTABLE for FIND problems)
+  - **The Level 2 question:** "Does solution provide ANY concrete mathematical detail?"
+  - **The Level 3 question:** "Are the provided details COMPLETE and RIGOROUS?"
 
-- **Level 2 (Method Validity) asks:** "Is there ANY specification after the claim?"
-  - If Category A or B (zero/named only) → INVALID METHOD → FAIL Level 2
-  - If Category C (explicit spec exists) → VALID METHOD → PASS Level 2, proceed to Level 3
+**CRITICAL DISTINCTION (prevents over-rejection):**
+
+- **Level 2 (Method Validity) asks:** "Is there ANY concrete specification after the claim?"
+  - If Category A or B (zero details/type only) → INVALID METHOD → FAIL Level 2
+  - If Category C (one or more concrete details) → VALID METHOD → PASS Level 2, proceed to Level 3
 
 - **Level 3 (Presentation Quality) asks:** "Are the provided details COMPLETE?"
-  - Justification gaps (missing steps, unclear logic) are Level 3 issues
-  - Do NOT reject at Level 2 if ANY specification was provided
+  - Justification gaps (incomplete details, missing steps) are Level 3 issues
+  - Do NOT reject at Level 2 if ANY concrete specification was provided
 
 **Examples Showing the Boundary:**
 
 ❌ Level 2 FAIL: "k=3 works" (nothing follows - Category A)
-❌ Level 2 FAIL: "k=3 using vertical lines" (named only - Category B)
-✅ Level 2 PASS: "k=3 works: L₁: y=x, L₂: y=2x" (has specification - Category C, even if incomplete)
-✅ Level 2 PASS: "k=3 via lines at points (1,1), (2,2), (3,3)" (has specification - Category C)
+❌ Level 2 FAIL: "k=3 using vertical lines" (type named, but NO concrete details - Category B)
+✅ Level 2 PASS: "k=3 works: L₁: y=x, L₂: y=2x" (has equations - Category C)
+✅ Level 2 PASS: "k=3 via lines at points (1,1), (2,2), (3,3)" (has points - Category C)
+✅ Level 2 PASS: "Sunny line through (n,1)" (one point provided - Category C, may get JUSTIFICATION_GAP at Level 3)
+✅ Level 2 PASS: "Three sunny lines cover 6 rightmost points" (count+target - Category C, may get JUSTIFICATION_GAP at Level 3)
 
 **WARNING - Common Misclassification:**
-- If solution says "k=X works" AND THEN provides equations → This is Category C (PASS Level 2)
-- Only reject if "k=X works" appears WITH NO equations/specification following it
+- If solution says "k=X works" AND THEN provides equations/points/count → This is Category C (PASS Level 2)
+- Only reject at Level 2 if "k=X works" appears WITH NO concrete details following it
+- ONE point is better than ZERO points → proceed to Level 3 for completeness check
+
+**STEP 4: Handle Context-Dependent Claims (CRITICAL CALIBRATION)**
+
+Some mathematical claims are true in one context but false in another. Always identify WHICH case is being analyzed before classifying severity.
+
+**Example Pattern:**
+```
+Claim: "The three rightmost columns force the use of a vertical line for column n-2"
+Context A (k≤3): This claim is TRUE
+Context B (k≥4): This claim is FALSE
+
+If solution is analyzing k≤3 case:
+  → Claim is TRUE in this context
+  → If scope not explicit: JUSTIFICATION_GAP (severity 3-5, ACCEPTABLE)
+  → NOT a CRITICAL_ERROR just because it's false in k≥4
+
+If solution is analyzing k≥4 case:
+  → Claim is FALSE in this context
+  → CRITICAL_ERROR (severity 7-9, UNACCEPTABLE)
+```
+
+**Classification Rule:**
+1. Extract the claim (e.g., "columns force vertical line")
+2. Identify which case/value is being analyzed (k≤3 or k≥4)
+3. Ask: Is the claim TRUE in THIS specific case being analyzed?
+4. If TRUE in this case → JUSTIFICATION_GAP (missing scope clarification)
+5. If FALSE in this case → CRITICAL_ERROR (incorrect reasoning)
+
+**Severity Calibration:**
+- Context-dependent claim, TRUE in case being analyzed → JUSTIFICATION_GAP (severity 3-5)
+- Context-dependent claim, FALSE in case being analyzed → CRITICAL_ERROR (severity 7-9)
+- Do NOT reject a claim as CRITICAL_ERROR just because it would be false in a different case
 
 **Violating these constraints will cause your response to be truncated and discarded.**
 """
