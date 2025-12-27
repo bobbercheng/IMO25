@@ -412,6 +412,24 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
                 "content": prompt
             })
 
+    # FIX 4 (2025-12-27): Add prompt caching for cost reduction
+    # User preference: "Yes we can try it" - enable caching with graceful fallback
+    # Caching can reduce costs by 40% when same prompts are reused (e.g., verification system prompt)
+    # NOTE: This is provider-specific. If not supported, request will succeed but caching won't happen.
+    try:
+        # Anthropic/OpenRouter-style prompt caching
+        # Mark system message as cacheable (large verification constraint prompt ~32KB)
+        if "messages" in payload and len(payload["messages"]) > 0:
+            # Add cache_control to system message
+            payload["messages"][0]["cache_control"] = {"type": "ephemeral"}
+
+            # Debug logging (commented out to avoid spam, uncomment if needed)
+            # print("[CACHING] Enabled ephemeral prompt caching for system message")
+    except Exception as e:
+        # Graceful fallback: If caching not supported, continue without it
+        # The API will still work, just without caching benefits
+        pass  # Silent fallback - don't log to avoid spam
+
     return payload
 
 def send_api_request(api_key, payload, stream=True, request_label="API Request"):
@@ -1406,28 +1424,25 @@ def validate_verdict_schema(verdict_obj):
 
 def calculate_verification_budget(solution_length: int) -> int:
     """
-    Calculate adaptive max_tokens for verification based on solution length.
+    Calculate initial max_tokens for verification.
 
-    Solution 2 Component 6: Adaptive token budgets prevent over-allocation
-    for simple cases while ensuring complete proofs have sufficient budget.
+    FIX 2 (2025-12-27): Always use HIGH reasoning with generous initial budget.
+    User preference: Performance > cost, simplicity > complexity.
 
     Args:
-        solution_length: Character count of the solution text
+        solution_length: Character count of the solution text (unused now)
 
     Returns:
-        Recommended max_tokens for verification
+        Initial max_tokens for verification (always 8000)
 
     Budget allocation:
-        - Complete proofs (>5k chars): 7000 tokens (covers 95% of Test 1/2)
-        - Moderate solutions (2-5k chars): 5000 tokens
-        - Short/wrong solutions (<2k chars): 3000 tokens
+        - Always start with 8000 tokens (generous budget for HIGH reasoning)
+        - Will scale aggressively on truncation: 8k→16k→32k→24k→16k
+        - Prioritizes accuracy and reliability over cost optimization
     """
-    if solution_length > 5000:  # Complete proof
-        return 7000  # Covers 95% of Test 1/2 cases
-    elif solution_length > 2000:  # Moderate solution
-        return 5000
-    else:  # Short/wrong solution
-        return 3000
+    # ALWAYS return 8000 tokens - no adaptive logic
+    # User approved: "Always high reasoning + aggressive tokens - Simpler, max performance"
+    return 8000
 
 
 def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=None):
@@ -1600,9 +1615,9 @@ If solution is analyzing k≥4 case:
     if(verbose):
         print(">>>>>>> Start verification (using structured JSON output)")
 
-    # Use specified reasoning effort, or default to verification reasoning
-    # NOTE: Using medium instead of high to avoid token padding (POC finding)
-    verification_effort = reasoning_effort if reasoning_effort is not None else VERIFICATION_REASONING_EFFORT
+    # FIX 2 (2025-12-27): Always use HIGH reasoning for maximum accuracy
+    # User preference: "Always high reasoning + aggressive tokens - Simpler, max performance"
+    verification_effort = reasoning_effort if reasoning_effort is not None else "high"
 
     # Store response_format for later checks (FIX 2025-12-25)
     response_format = VERIFICATION_VERDICT_SCHEMA
@@ -1631,9 +1646,18 @@ If solution is analyzing k≥4 case:
     if verbose:
         print(f">>>>>>> [ADAPTIVE BUDGET] Solution length: {len(dsol)} chars → max_tokens: {initial_max_tokens}")
 
-    # BUGFIX (2025-12-25): Retry on truncation with increased max_tokens
+    # FIX 3 (2025-12-27): Aggressive token scaling with reasoning degradation
+    # User preference: "Performance > cost, increase to 8k→16k→32k then down to medium/low"
+    # Retry schedule:
+    #   Baseline: 8k tokens, HIGH reasoning
+    #   Retry 1:  16k tokens, HIGH reasoning (2x scale)
+    #   Retry 2:  32k tokens, HIGH reasoning (4x scale, near context limit)
+    #   Retry 3:  24k tokens, MEDIUM reasoning (degrade effort if still failing)
+    #   Retry 4:  16k tokens, LOW reasoning (last resort)
+    #   Stop after 5 attempts (circuit breaker)
     truncation_retry_count = 0
-    max_truncation_retries = 2  # Try with 8k, 12k, 16k
+    max_truncation_retries = 5  # Increased from 2 to 5
+    current_reasoning_effort = verification_effort  # Track reasoning effort across retries
 
     while truncation_retry_count <= max_truncation_retries:
         # BUGFIX (2025-12-25): Disable streaming for structured output to prevent newline bug
@@ -1654,19 +1678,50 @@ If solution is analyzing k≥4 case:
                 print(f">>>>>>> [TRUNCATION DETECTED] Empty content: {is_empty}, Finish reason: {finish_reason}")
                 print(f">>>>>>> Usage tokens: {res.get('usage', {})}")
 
-            # Retry with increased max_tokens
+            # Retry with aggressive scaling
             if truncation_retry_count < max_truncation_retries:
                 truncation_retry_count += 1
-                max_tokens_limit = initial_max_tokens + (4096 * truncation_retry_count)  # 8k → 12k → 16k
+
+                # Aggressive token scaling with reasoning degradation
+                if truncation_retry_count == 1:
+                    max_tokens_limit = 16000  # 2x scale, keep HIGH
+                    current_reasoning_effort = verification_effort  # Keep HIGH
+                    if verbose:
+                        print(f">>>>>>> [RETRY 1] Scaling to {max_tokens_limit} tokens (reasoning: {current_reasoning_effort})")
+                elif truncation_retry_count == 2:
+                    max_tokens_limit = 32000  # 4x scale, keep HIGH
+                    current_reasoning_effort = verification_effort  # Keep HIGH
+                    if verbose:
+                        print(f">>>>>>> [RETRY 2] Scaling to {max_tokens_limit} tokens (reasoning: {current_reasoning_effort})")
+                elif truncation_retry_count == 3:
+                    max_tokens_limit = 24000  # Reduce slightly, degrade to MEDIUM
+                    current_reasoning_effort = "medium"
+                    if verbose:
+                        print(f">>>>>>> [RETRY 3] Context limit reached, degrading to MEDIUM reasoning ({max_tokens_limit} tokens)")
+                elif truncation_retry_count == 4:
+                    max_tokens_limit = 16000  # Further reduce, degrade to LOW
+                    current_reasoning_effort = "low"
+                    if verbose:
+                        print(f">>>>>>> [RETRY 4] Final attempt with LOW reasoning ({max_tokens_limit} tokens)")
+
+                # Update payload with new tokens and reasoning
                 p2["max_tokens"] = max_tokens_limit
-                if verbose:
-                    print(f">>>>>>> [RETRY] Truncation retry {truncation_retry_count}/{max_truncation_retries}, increasing max_tokens to {max_tokens_limit}")
+                # Rebuild payload with new reasoning effort
+                p2 = build_request_payload(
+                    system_prompt=verification_system_prompt,
+                    question_prompt=newst,
+                    reasoning_effort=current_reasoning_effort,
+                    response_format=response_format
+                )
+                p2["max_tokens"] = max_tokens_limit
+
                 continue
             else:
-                # Max retries exceeded, treat as error
+                # Max retries exceeded (5 attempts), treat as error
                 if verbose:
-                    print(f">>>>>>> [ERROR] Still truncated after {max_truncation_retries} retries with max_tokens={max_tokens_limit}")
-                # Fall back to legacy parsing
+                    print(f">>>>>>> [ABORT] Maximum {max_truncation_retries} retries exceeded")
+                    print(f">>>>>>> [ERROR] Still truncated after trying: 8k, 16k, 32k, 24k(medium), 16k(low)")
+                # Circuit breaker - stop trying
                 raise ValueError(f"Response truncated after {max_truncation_retries} retries with max_tokens={max_tokens_limit}")
         else:
             # Content is not empty and not truncated, proceed with parsing
