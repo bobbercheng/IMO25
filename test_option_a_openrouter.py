@@ -32,8 +32,8 @@ def configure_openrouter_env():
 
     # Set GPT_OSS configuration for OpenRouter
     os.environ["GPT_OSS_API_KEY"] = api_key
-    os.environ["GPT_OSS_API_URL"] = "https://openrouter.ai/api/v1/chat/completions"
-    os.environ["GPT_OSS_MODEL_NAME"] = "openrouter/openai/gpt-oss-120b"
+    os.environ["GPT_OSS_API_URL"] = os.getenv("GPT_OSS_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+    os.environ["GPT_OSS_MODEL_NAME"] = os.getenv("GPT_OSS_MODEL_NAME", "openrouter/openai/gpt-oss-120b")
 
     return api_key
 
@@ -137,7 +137,7 @@ def test_with_constraints(test_number: int, test_case: Dict, reasoning_effort: s
         }
 
 
-def run_all_tests(reasoning_effort: str = "high"):
+def run_all_tests(reasoning_effort: str = "high", output_file: str = None):
     """Run all test cases with Option A constraints"""
     print("="*80)
     print("OPTION A CONSTRAINT TESTING WITH OPENROUTER")
@@ -221,7 +221,8 @@ def run_all_tests(reasoning_effort: str = "high"):
         print(f"  False Positive rate: {100*fp_rate:.1f}%")
 
     # Save results
-    output_file = f"optionA_openrouter_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    if output_file is None:
+        output_file = f"optionA_openrouter_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(output_file, 'w') as f:
         json.dump({
             'timestamp': datetime.now().isoformat(),
@@ -252,6 +253,7 @@ if __name__ == "__main__":
     parser.add_argument('--reasoning', default='high', choices=['low', 'medium', 'high'],
                        help='Reasoning effort level (default: high to match Option A)')
     parser.add_argument('--test', type=int, help='Run single test number only')
+    parser.add_argument('--output', type=str, help='Output filename for results JSON')
 
     args = parser.parse_args()
 
@@ -269,5 +271,5 @@ if __name__ == "__main__":
             sys.exit(1)
     else:
         # Run all tests
-        results = run_all_tests(args.reasoning)
+        results = run_all_tests(args.reasoning, args.output)
         sys.exit(0)

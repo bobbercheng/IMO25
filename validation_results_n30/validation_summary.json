@@ -1,0 +1,78 @@
+{
+  "timestamp": "2025-12-26T22:37:13.426430",
+  "iterations": 30,
+  "completed": 30,
+  "total_tests": 180,
+  "total_matches": 154,
+  "accuracy": 0.8555555555555555,
+  "confidence_interval_95": {
+    "lower": 0.7967685455528166,
+    "upper": 0.899483010134253,
+    "margin": 0.0513572322907182
+  },
+  "per_test_stats": {
+    "test_1": {
+      "pass": 17,
+      "fail": 13,
+      "error": 0
+    },
+    "test_2": {
+      "pass": 28,
+      "fail": 2,
+      "error": 0
+    },
+    "test_3": {
+      "pass": 29,
+      "fail": 1,
+      "error": 0
+    },
+    "test_4": {
+      "pass": 26,
+      "fail": 4,
+      "error": 0
+    },
+    "test_5": {
+      "pass": 30,
+      "fail": 0,
+      "error": 0
+    },
+    "test_6": {
+      "pass": 24,
+      "fail": 6,
+      "error": 0
+    }
+  },
+  "deployment_ready": false,
+  "results_files": [
+    "validation_results_n30/iteration_01.json",
+    "validation_results_n30/iteration_02.json",
+    "validation_results_n30/iteration_03.json",
+    "validation_results_n30/iteration_04.json",
+    "validation_results_n30/iteration_05.json",
+    "validation_results_n30/iteration_06.json",
+    "validation_results_n30/iteration_07.json",
+    "validation_results_n30/iteration_08.json",
+    "validation_results_n30/iteration_09.json",
+    "validation_results_n30/iteration_10.json",
+    "validation_results_n30/iteration_11.json",
+    "validation_results_n30/iteration_12.json",
+    "validation_results_n30/iteration_13.json",
+    "validation_results_n30/iteration_14.json",
+    "validation_results_n30/iteration_15.json",
+    "validation_results_n30/iteration_16.json",
+    "validation_results_n30/iteration_17.json",
+    "validation_results_n30/iteration_18.json",
+    "validation_results_n30/iteration_19.json",
+    "validation_results_n30/iteration_20.json",
+    "validation_results_n30/iteration_21.json",
+    "validation_results_n30/iteration_22.json",
+    "validation_results_n30/iteration_23.json",
+    "validation_results_n30/iteration_24.json",
+    "validation_results_n30/iteration_25.json",
+    "validation_results_n30/iteration_26.json",
+    "validation_results_n30/iteration_27.json",
+    "validation_results_n30/iteration_28.json",
+    "validation_results_n30/iteration_29.json",
+    "validation_results_n30/iteration_30.json"
+  ]
+}
