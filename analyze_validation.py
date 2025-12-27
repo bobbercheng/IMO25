@@ -12,7 +12,7 @@ def load_validation_results():
     """Load all 20 validation JSON files."""
     results = []
     for i in range(1, 21):
-        path = f"/home/user/IMO25/week2_results/validation_r{i}.json"
+        path = f"week2_results/validation_r{i}.json"
         with open(path) as f:
             data = json.load(f)
             data['round'] = i
