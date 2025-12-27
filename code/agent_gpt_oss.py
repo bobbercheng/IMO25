@@ -1481,29 +1481,53 @@ def verify_solution(problem_statement, solution, verbose=True, reasoning_effort=
 
 **CRITICAL LEVEL 2 ENHANCEMENT - Justification Completeness (MANDATORY GATE CHECK):**
 
-For FIND/DETERMINE problems, unjustified existence claims are **INVALID METHODS** (Level 2 failure).
+For FIND/DETERMINE problems, use this structured evaluation to check if constructions are justified.
 
-**You MUST check during Level 2 (Method Validity):**
-- Does the solution make existence claims without justification?
-- Examples of UNJUSTIFIED CLAIMS (these are INVALID METHODS):
-  ❌ "Construction exists" (zero details)
-  ❌ "k=X works" (no equations, no strategy shown)
-  ❌ "k=X is achievable" (no construction provided)
-  ❌ "Construction can be found using vertical lines" (method named but not executed)
+**STEP 1: Identify Construction Claims**
+- Look for statements claiming a construction exists (e.g., "k=X is achievable", "construction works", etc.)
 
-**Classification Rules:**
-- If solution claims "k=X is achievable" WITHOUT providing construction → **INVALID METHOD → FAIL Level 2**
-- If solution provides strategy OR explicit construction → **VALID METHOD → proceed to Level 3**
+**STEP 2: Classify Specification Level**
 
-**Valid justifications** (these are VALID METHODS):
-  ✅ "Use lines x=1, x=2, ..., x=n" (explicit specification)
-  ✅ "L: y = mx + b where..." (explicit equation)
-  ✅ "Line through points (a,b) and (c,d)" (strategy with specific values)
+For EACH construction claim found in Step 1, classify it into ONE of three categories:
 
-**THIS IS A LEVEL 2 GATE CHECK, NOT LEVEL 3 PRESENTATION:**
-- Unjustified existence = logically incomplete = INVALID METHOD = FAIL Level 2
-- You MUST classify "construction exists" (without details) as INVALID_METHOD
-- This triggers Level 2 FAIL - do NOT proceed to Level 3
+**Category A - Zero Specification (INVALID METHOD → Level 2 FAIL):**
+  ❌ "Construction exists" (literally nothing provided)
+  ❌ "k=X is achievable" (claim only, zero details follow)
+  ❌ "k=X can be found" (no construction follows)
+
+**Category B - Method Named Only (INVALID METHOD → Level 2 FAIL):**
+  ❌ "Construction exists using vertical lines" (type mentioned, but NO specification)
+  ❌ "k=X works using some configuration" (method type named, but NO details)
+  ❌ "Use Turán-like approach" (method name only, NO construction follows)
+
+**Category C - Explicit Specification (VALID METHOD → Proceed to Level 3):**
+  ✅ "Use lines x=1, x=2, ..., x=n" (explicit enumeration provided)
+  ✅ "L: y-1 = -2(x-(n-1))" (explicit equation provided)
+  ✅ "Line through (a,b) and (c,d)" (explicit points provided)
+  ✅ "k=3 works: use L₁: y=2x+1, L₂: y=3x-1, L₃: x=5" (claim followed by equations)
+
+**STEP 3: Apply Level 2/3 Boundary Rule**
+
+**CRITICAL DISTINCTION (prevents Test 1 over-rejection):**
+
+- **Level 2 (Method Validity) asks:** "Is there ANY specification after the claim?"
+  - If Category A or B (zero/named only) → INVALID METHOD → FAIL Level 2
+  - If Category C (explicit spec exists) → VALID METHOD → PASS Level 2, proceed to Level 3
+
+- **Level 3 (Presentation Quality) asks:** "Are the provided details COMPLETE?"
+  - Justification gaps (missing steps, unclear logic) are Level 3 issues
+  - Do NOT reject at Level 2 if ANY specification was provided
+
+**Examples Showing the Boundary:**
+
+❌ Level 2 FAIL: "k=3 works" (nothing follows - Category A)
+❌ Level 2 FAIL: "k=3 using vertical lines" (named only - Category B)
+✅ Level 2 PASS: "k=3 works: L₁: y=x, L₂: y=2x" (has specification - Category C, even if incomplete)
+✅ Level 2 PASS: "k=3 via lines at points (1,1), (2,2), (3,3)" (has specification - Category C)
+
+**WARNING - Common Misclassification:**
+- If solution says "k=X works" AND THEN provides equations → This is Category C (PASS Level 2)
+- Only reject if "k=X works" appears WITH NO equations/specification following it
 
 **Violating these constraints will cause your response to be truncated and discarded.**
 """
