@@ -38,6 +38,10 @@ MODEL_NAME = "gpt-5"
 # Use OpenAI API endpoint for o3 model
 API_URL = "https://api.openai.com/v1/responses"
 
+# Verification examples configuration (2025-12-28)
+VERIFICATION_EXAMPLES_VERSION = "2025-12-28-generic"
+USE_GENERIC_EXAMPLES = True  # Default: use generic examples without Problem 5 data leakage
+
 # Global variables for logging
 _log_file = None
 original_print = print
@@ -111,19 +115,19 @@ step1_prompt = """
     *   **Do NOT claim** "the construction works" without explicit point-by-point verification
 
 *   **Impossibility Proof Requirements** (2025-12-22 Retest Analysis):
-    *   If you claim k=X is impossible, you must use one of these rigorous proof strategies:
-        *   **Counting Argument**: "We need to cover N points, but n lines with k sunny can cover at most M < N points"
+    *   If you claim a specific value is impossible, you must use one of these rigorous proof strategies:
+        *   **Counting Argument**: "We need to satisfy N constraints, but the available resources can satisfy at most M < N constraints"
         *   **Pigeonhole Principle**: "We have N constraints but only M degrees of freedom (N > M)"
-        *   **Proof by Contradiction**: "Assume k=X works. Then [derive contradiction]. Therefore k=X is impossible."
-    *   **Do NOT simply state** "k=X doesn't work" or "I couldn't find a construction" - this is NOT a proof of impossibility
+        *   **Proof by Contradiction**: "Assume X works. Then [derive contradiction]. Therefore X is impossible."
+    *   **Do NOT simply state** "X doesn't work" or "I couldn't find a construction" - this is NOT a proof of impossibility
 
 *   **Construction Sanity Checks** (2025-12-22 Retest Analysis):
-    *   Before claiming "k=X is achievable", ask yourself:
-        *   **How many points** need covering? (For n=3: |T_3| = 6 points)
-        *   **How many lines** are available? (Exactly n lines total)
-        *   **Typical coverage**: Each sunny line covers ~1-2 points, each non-sunny diagonal covers ~(k-1) points
-        *   **Is k=X feasible?** If k sunny lines + (n-k) diagonals can't cover enough points, k=X is likely impossible
-    *   **Example for n=3, k=3**: Need 6 points, have 3 sunny lines covering ~3 points total → Need special construction!
+    *   Before claiming a construction works, verify systematically:
+        *   **What needs to be satisfied?** List all required properties/constraints explicitly
+        *   **What resources are available?** Count available objects/degrees of freedom
+        *   **Does the proposed construction work?** Verify each constraint is satisfied
+        *   **Is the claim feasible?** If resources cannot satisfy constraints, the construction is impossible
+    *   **General principle**: Verify constructions explicitly rather than relying on intuition
 
 ### Output Format ###
 
@@ -229,7 +233,7 @@ Ask yourself: "Am I about to evaluate whether a specific CLAIM is true/false?"
 **Step 1: Identify Methods Used**
 List the mathematical methods/tools employed in the proof:
 - [ ] Case analysis ("If k≤2, then... If k≥4, then...")
-- [ ] Counting arguments ("Column x has h points, so...")
+- [ ] Counting arguments ("We have N objects with property P, so...")
 - [ ] Pigeonhole principle
 - [ ] Proof by contradiction
 - [ ] Explicit construction with verification
@@ -259,16 +263,16 @@ You are NOT checking:
 
 **Example: Correct Level 2 Analysis**
 
-*Proof excerpt:* "If k≤2, then column x=n-2 forces a vertical line for column n-2. Now consider k≥4: having k≥4 would force at least four columns to rely on sunny lines. Because the three rightmost columns already force the use of a vertical line for column n-2, we would run out of vertical lines. Hence k≥4 is impossible."
+*Proof excerpt:* "For n≤5, direct computation shows the property holds. For n≥6, we use a counting argument: each element can contribute at most C resources, and we need at least D total. Since nC < D for n≥6, the property cannot hold. Therefore the answer is n∈{1,2,3,4,5}."
 
 ✓ **CORRECT Level 2 Analysis:**
-- **Methods identified:** Case analysis (k≤2 vs k≥4), counting arguments (column point counts, line counting)
+- **Methods identified:** Case analysis (n≤5 vs n≥6), counting arguments (resource bounds)
 - **Classification:** All methods are VALID (recognized mathematical tools)
 - **Decision:** PASS Level 2 → proceed to Level 3
 
 ❌ **WRONG Level 2 Analysis (do NOT do this):**
-- "The claim 'the three rightmost columns already force the use of a vertical line for column n-2' is FALSE for k≥4, because with four sunny lines the column n-2 can be covered entirely by sunny lines."
-- **Why wrong:** This analyzes CLAIM accuracy (whether the statement is true in the k≥4 context), not METHOD validity (whether counting arguments are a valid tool). This type of analysis belongs in Level 3.
+- "The claim 'each element can contribute at most C resources' is FALSE for n≥6, because elements could contribute more resources with different configurations."
+- **Why wrong:** This analyzes CLAIM accuracy (whether the specific bound is correct), not METHOD validity (whether counting arguments are a valid tool). This type of analysis belongs in Level 3.
 
 **REMINDER - Hierarchical Decision Principle:**
 - Level 1 (answer correctness) and Level 2 (method validity) are **GATE CHECKS**
@@ -309,45 +313,45 @@ Use this format:
     Examples of CRITICAL_ERROR (zero detail):
     - ❌ "Construction exists" → No details whatsoever
     - ❌ "Construction can be found" → No strategy mentioned
-    - ❌ "Construction exists using vertical lines" → Which vertical lines? No specification
-    - ❌ "For k=1, construction exists" → No mention of points, lines, or approach
-    - ❌ "For k=3, construction can be found using three sunny lines" → No details about which lines
+    - ❌ "Construction exists using specific values" → Which values? No specification
+    - ❌ "For case A, construction exists" → No mention of approach or method
+    - ❌ "Construction can be found using standard techniques" → No details about which techniques
     - ❌ "Construction is straightforward" → No construction shown at all
-    - ❌ "Construction works by pigeonhole principle" → No actual construction described
+    - ❌ "Construction works by combinatorial argument" → No actual construction described
 
-    **LEVEL 2 - JUSTIFICATION_GAP (Partial Detail - Strategy Clear, Equations Missing):**
+    **LEVEL 2 - JUSTIFICATION_GAP (Partial Detail - Strategy Clear, Formula Missing):**
     The solution describes a construction STRATEGY or APPROACH with enough detail to understand
-    the construction concept, but does not provide explicit line equations. The construction logic
+    the construction concept, but does not provide explicit formulas/equations. The construction logic
     is sound and the reader can conceptually verify the approach works.
 
     Examples of JUSTIFICATION_GAP (partial detail):
-    - ⚠️ "Vertical lines x=1, ..., x=n-1 plus sunny line through (n,1)" → Strategy clear (which verticals, which point), equation missing
-    - ⚠️ "Three sunny lines cover the 6 rightmost points, verticals cover the rest" → Approach described (3 sunny for 6 points), equations missing
-    - ⚠️ "For k=1, use sunny line through point (n,1)" → Point specified, line equation missing
-    - ⚠️ "Use one sunny line per column for the rightmost k columns" → Strategy clear, specific lines missing
-    - ⚠️ "Construction: sunny line passing through points (a,b) and (c,d)" → Points given, equation missing
-    - ⚠️ "Divide into k regions, use one sunny line per region" → Approach clear, specific lines missing
+    - ⚠️ "Use sequence a_i = first i primes" → Strategy clear (which sequence), formula missing
+    - ⚠️ "Partition into three disjoint sets covering all elements" → Approach described, specific partition missing
+    - ⚠️ "For n=5, use configuration with elements at positions 1,2,4" → Positions given, full construction missing
+    - ⚠️ "Assign each element to its corresponding group" → Strategy clear, specific assignment missing
+    - ⚠️ "Construction: function passing through points (a,f(a)) and (b,f(b))" → Points given, equation missing
+    - ⚠️ "Divide into k regions using standard partitioning" → Approach clear, specific partition missing
 
-    **LEVEL 3 - ACCEPTABLE (Full Explicit - Complete Equations Provided):**
-    The solution provides explicit line equations, formulas, or complete specifications that can
-    be directly verified by checking points.
+    **LEVEL 3 - ACCEPTABLE (Full Explicit - Complete Formulas Provided):**
+    The solution provides explicit formulas, equations, or complete specifications that can
+    be directly verified by computation.
 
     Examples of ACCEPTABLE (full explicit):
-    - ✅ "Use vertical lines x=1, x=2, ..., x=n" → Complete specification
-    - ✅ "For k=1, use sunny line L: y-1 = 1/(1-n)·(x-n)" → Explicit equation
-    - ✅ "For k=3, use L1: y=2x, L2: y=-x+5, L3: y=x-1" → All equations provided
-    - ✅ "Use horizontal lines y=1, y=2, ..., y=n" → Complete specification
+    - ✅ "Use sequence a_i = 2^i for i=1,2,...,n" → Complete specification
+    - ✅ "For n=5, use f(x) = x² - 3x + 2" → Explicit formula
+    - ✅ "Partition: S1={1,3,5}, S2={2,4}, S3={6,7,8}" → All sets specified
+    - ✅ "Define g(n) = ⌊n/2⌋ + 1" → Complete formula
 
     **Three-Level Decision Rule:**
     - If construction has ZERO strategy detail (Level 1) → Classify as CRITICAL_ERROR → FAIL
     - If construction describes PARTIAL strategy (Level 2) → Classify as JUSTIFICATION_GAP → PASS (per policy: accept gaps when answer correct + method valid)
-    - If construction provides FULL equations (Level 3) → Classify as ACCEPTABLE → PASS
+    - If construction provides FULL formulas (Level 3) → Classify as ACCEPTABLE → PASS
 
     **Key Principle:**
     The difference between Level 1 and Level 2 is whether the reader can UNDERSTAND THE APPROACH.
     - Level 1 (zero detail): "Construction exists" - reader has no idea how to proceed
-    - Level 2 (partial detail): "sunny line through (n,1)" - reader understands the approach, can conceptually verify
-    - Level 3 (full explicit): "L: y-1 = 1/(1-n)·(x-n)" - reader can directly verify by calculation
+    - Level 2 (partial detail): "use first i primes" - reader understands the approach, can conceptually verify
+    - Level 3 (full explicit): "a_i = p_i where p_i is the i-th prime" - reader can directly verify by computation
 
 *   **Quality Decision:** Only Justification Gaps → PASS, Any Critical Errors in logic chain → FAIL.
 
@@ -369,71 +373,57 @@ verification_examples = """
 
 ---
 
-## CRITICAL: Few-Shot Calibration Examples (2025-12-24 Phase 2)
+## CRITICAL: Few-Shot Calibration Examples (2025-12-28 Data Leakage Fix)
 
 **These examples show you how to apply the decision rule above. Study them carefully before verifying the solution.**
 
 **Example 1: Justification Gap (NOT Critical Error)**
 *This example shows presentation issues that should be classified as Justification Gaps.*
 
-Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
+Problem: "Find all prime numbers p such that p² + 2 is also prime."
 
-Solution excerpt: "Column x=n-2 has 3 points, so one of the non-sunny lines **must be vertical**. Therefore k=2 is impossible. Final answer: k∈{0,1,3}."
+Solution excerpt: "For p=3, we have 3²+2=11 which is prime. For p>3, we have p≡1 or 2 (mod 3), so p²≡1 (mod 3), thus p²+2≡0 (mod 3). Since p²+2 is divisible by 3 and p²+2>3 for p>3, it must be composite. Final answer: p=3."
 
 **Applying the Decision Rule:**
-1. Check final answer: k∈{0,1,3} ✓ CORRECT
-2. Check constructions: Valid constructions provided for k=0,1,3 ✓
+1. Check final answer: p=3 ✓ CORRECT
+2. Check constructions: Explicit verification for p=3 provided ✓
 3. Decision: Answer correct → Classify as **Justification Gap**
 
 **Correct Classification:**
-*   **Location:** "one of the non-sunny lines must be vertical"
-    *   **Issue:** Justification Gap - The wording is imprecise; the solution should say "can be taken to be vertical without loss of generality" since non-sunny lines could also be horizontal or slope -1. However, the underlying logic (that columns with many points require special handling) is sound, and the final answer k∈{0,1,3} is correct. This is a presentation issue, not a mathematical error.
+*   **Location:** "For p>3, we have p≡1 or 2 (mod 3)"
+    *   **Issue:** Justification Gap - The solution should explicitly state "since p>3 is prime, it's not divisible by 3, so p≡1 or 2 (mod 3)" for complete rigor. The claim is mathematically correct and the reasoning is sound, but lacks an explicit justification step. This is a presentation issue, not a mathematical error.
 
 **WRONG Classification (don't do this):**
-*   ~~**Location:** "must be vertical"~~
-    *   ~~**Issue:** Critical Error - This claim is false because non-sunny lines could be horizontal.~~ ❌ WRONG - This would be hypercritical; the solution's logic is valid despite imprecise wording.
+*   ~~**Location:** "p≡1 or 2 (mod 3)"~~
+    *   ~~**Issue:** Critical Error - This claim needs proof.~~ ❌ WRONG - This would be hypercritical; the claim is a standard fact about primes and the overall logic is valid.
 
 ---
 
 **Example 2: Critical Error (truly invalid)**
 *This example shows a fundamental mathematical error.*
 
-Problem: "Determine all k..."
+Problem: "Prove that √2 is irrational."
 
-Solution excerpt: "For k=2, I tried many constructions and couldn't find one. Therefore k=2 doesn't work. Final answer: k∈{0,1,3}."
+Solution excerpt: "I tried to express √2 as a fraction p/q for many different integers p and q, but I couldn't find any that work. After testing hundreds of fractions, I conclude that √2 cannot be expressed as a fraction. Therefore √2 is irrational."
 
 **Applying the Decision Rule:**
-1. Check final answer: k∈{0,1,3} ✓ CORRECT
-2. Check impossibility reasoning: "I tried and failed" ✗ INVALID (falls under EXCEPTION)
+1. Check final answer: √2 is irrational ✓ CORRECT
+2. Check reasoning method: "I tried many cases and failed" ✗ INVALID (falls under EXCEPTION)
 3. Decision: Invalid reasoning → Classify as **Critical Error**
 
 **Correct Classification:**
-*   **Location:** "I tried many constructions and couldn't find one"
-    *   **Issue:** Critical Error - Failure to find a construction is not a proof of impossibility. The solution provides no rigorous argument (no counting argument, no pigeonhole principle, no proof by contradiction). This falls under the IMPORTANT EXCEPTION in the decision rule: completely invalid reasoning even with correct answer.
+*   **Location:** "I tried to express √2 as a fraction p/q for many different integers p and q, but I couldn't find any"
+    *   **Issue:** Critical Error - Failure to find a counterexample is not a proof of a universal statement. The solution provides no rigorous argument (no proof by contradiction, no algebraic reasoning, no number theory). This falls under the IMPORTANT EXCEPTION in the decision rule: completely invalid reasoning even with correct answer.
 
 ---
 
 **Example 3: Context-Dependent Claim (Justification Gap, NOT Critical Error)**
-*This example shows a claim that is TRUE in context but lacks explicit scope.*
-
-Problem: "Determine all k such that n lines with exactly k sunny lines cover all required points."
-
-Solution excerpt: "If k≤2 then column x=n-2 (which contains three points) cannot be covered solely by sunny lines; consequently one of the non-sunny lines must be vertical and must be the line x=n-2. Now consider k≥4: Since a sunny line can meet each column in at most one point, having k≥4 would force at least four columns to rely on sunny lines. Because the three rightmost columns already force the use of a vertical line for column n-2, we would run out of vertical lines. Final answer: k∈{0,1,3}."
-
-**Applying the Decision Rule:**
-1. Check final answer: k∈{0,1,3} ✓ CORRECT
-2. Check reasoning method: Case analysis (k≤2 vs k≥4), counting arguments ✓ VALID mathematical tools
-3. Check context-dependent claim: "columns force vertical line" is TRUE for k≤2 case but stated without explicit scope in k≥4 analysis
-
-**Correct Classification:**
-*   **Location:** "Because the three rightmost columns already force the use of a vertical line for column n-2"
-    *   **Issue:** Justification Gap (severity 4-5) - The claim that "columns force vertical line for n-2" is TRUE in the k≤2 case (which was analyzed earlier) but is context-dependent - it would be FALSE for k≥4 if analyzed in isolation. The proof doesn't explicitly state "as established for k≤2" or similar scope qualifier. However, this is a **missing quantifier scope**, not a provably false claim. The reasoning in context is sound; it just lacks explicit cross-reference.
-
-**WRONG Classification (do NOT do this):**
-*   ~~**Location:** "columns force the use of a vertical line for column n-2"~~
-    *   ~~**Issue:** Critical Error (severity 9) - This claim is FALSE for k≥4 because with four sunny lines, column n-2 (3 points) can be covered entirely by sunny lines. The argument for k≥4 impossibility is invalid.~~ ❌ WRONG - This treats a context-dependent claim (true for k≤2, the case being referenced) as if it were a universal claim. The proof is analyzing k≥4 by referencing earlier k≤2 results. Missing explicit scope is a JUSTIFICATION_GAP (severity 4-5), NOT a CRITICAL_ERROR (severity 8-9).
-
-**CRITICAL RULE:** Context-dependent claims that are **TRUE in the relevant case** (even if false in other cases) are **JUSTIFICATION_GAP** when scope is not explicit. Only classify as **CRITICAL_ERROR** if the claim is **provably false in the case being analyzed** or makes an **explicit universal claim** (e.g., "for all k").
+Problem: "Prove that if n is an even integer, then n² is divisible by 4."
+Solution excerpt: "Let n=2k. Then n²=4k². Now for k even: n²=16m² since k is an integer from the first case."
+**Applying the Decision Rule:** 1. Answer: n² divisible by 4 ✓ CORRECT | 2. Method: Algebraic manipulation ✓ VALID | 3. Claim: "k is integer from first case" - TRUE from setup, but reference unclear
+**Correct Classification:** "k is integer from first case" → Justification Gap (4-5) - Claim IS TRUE (follows from n=2k), but "first case" reference imprecise. Missing cross-reference clarity, NOT provably false claim.
+**WRONG:** ~~Critical Error - claim FALSE~~ ❌ WRONG - "k is integer" IS TRUE (from n=2k with n∈ℤ), just reference imprecise. Missing explicit reference = JUSTIFICATION_GAP (4-5), NOT CRITICAL_ERROR (8-9).
+**CRITICAL RULE:** Context-dependent claims that are TRUE in context (even if reference imprecise) are JUSTIFICATION_GAP. Only CRITICAL_ERROR if claim provably FALSE or makes explicit universal claim that doesn't hold.
 
 ---
 
@@ -447,14 +437,14 @@ When you encounter a pattern matching Example 1, 2, or 3 above:
 3. **APPLY** - Use the SAME classification shown in the example (Justification Gap or Critical Error)
 4. **REMEMBER** - Your detailed mathematical reasoning is SECONDARY to the decision rule and few-shot guidance
 5. **DISAMBIGUATE** - Key patterns:
-   - Wrong answer or missing construction = Critical Error (Example 2 pattern)
+   - Wrong answer or completely missing construction = Critical Error (Example 2 pattern)
    - Correct answer with valid methods but imprecise wording = Justification Gap (Example 1 pattern)
-   - Example 3: Context-dependent claim (true in relevant case, scope not stated) = Justification Gap (4-5), NOT Critical Error (8-9)
+   - Example 3: Context-dependent claim (true in context, reference not explicit) = Justification Gap (4-5), NOT Critical Error (8-9)
 
 If you find yourself writing "the claim is false" or "this is mathematically incorrect" about imprecise wording:
-→ PAUSE and check: Is the claim FALSE in the case being analyzed, or just lacking explicit scope?
-→ If claim is TRUE in context but scope not stated: Justification Gap (severity 4-5)
-→ If claim is FALSE in the case being analyzed: Critical Error (severity 8-9)
+→ PAUSE and check: Is the claim FALSE in the mathematical context, or just lacking explicit justification/reference?
+→ If claim is TRUE in context but reference not explicit: Justification Gap (severity 4-5)
+→ If claim is FALSE in the mathematical context: Critical Error (severity 8-9)
 → Only classify as Critical Error if the final answer is WRONG or reasoning uses completely invalid principles
 
 """
