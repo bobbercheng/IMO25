@@ -427,11 +427,47 @@ Solution excerpt: "Let n=2k. Then n²=4k². Now for k even: n²=16m² since k is
 
 ---
 
+**Example 4: Count+Target Specification (Justification Gap, NOT Critical Error)**
+*This example shows how to classify construction claims with count and target.*
+
+Problem: "Determine all nonnegative integers k such that there exist n distinct lines covering required points with exactly k sunny lines."
+
+Solution excerpt (k=3 construction): "**k=3:** Three sunny lines cover the 6 rightmost points, verticals cover the rest."
+
+**Applying the Decision Rule:**
+1. Check final answer: k∈{0,1,3} ✓ CORRECT
+2. Check construction claim: "Three sunny lines cover the 6 rightmost points" → Has COUNT (three lines) and TARGET (six points)
+3. Classify specification level: Count+target is a CONCRETE DETAIL → Category C (VALID METHOD)
+4. Level 2 decision: Category C → PASS Level 2, proceed to Level 3
+5. Level 3 decision: Missing explicit line equations → JUSTIFICATION_GAP (acceptable for FIND problems)
+
+**Correct Classification:**
+*   **Location:** "Three sunny lines cover the 6 rightmost points, verticals cover the rest."
+    *   **Type:** JUSTIFICATION_GAP (NOT CRITICAL_ERROR)
+    *   **Severity:** 4-5 (presentation issue, not method invalidity)
+    *   **Issue:** Justification Gap - The solution specifies count (three lines) and target (six points), which is a valid construction STRATEGY per Category C. However, explicit line equations are missing. This is a presentation gap at Level 3, NOT a method invalidity at Level 2. The final answer is correct and the approach is sound.
+
+**WRONG Classification (don't do this):**
+*   ~~**Location:** "Three sunny lines cover the 6 rightmost points"~~
+    *   ~~**Type:** CRITICAL_ERROR~~
+    *   ~~**Issue:** Critical Error - No concrete specification provided, invalid method at Level 2.~~ ❌ WRONG - Count+target IS a concrete detail (Category C). The phrase "three sunny lines cover the 6 rightmost points" provides two concrete mathematical details: (1) quantity = 3 lines, (2) target = 6 specific points. This is sufficient to be Category C per the boundary rule: "count+target → Category C". Missing equations is a Level 3 presentation gap, NOT a Level 2 method invalidity.
+
+**CRITICAL BOUNDARY RULE APPLICATION:**
+- "k=3 works" → Category A (zero details) → CRITICAL_ERROR at Level 2
+- "k=3 using sunny lines" → Category B (method name only) → CRITICAL_ERROR at Level 2
+- "Three sunny lines cover 6 rightmost points" → Category C (count+target specified) → PASS Level 2, JUSTIFICATION_GAP at Level 3
+- "k=3: L₁: y=x, L₂: y=2x, L₃: y=-x" → Category C (explicit equations) → PASS Level 2, PASS Level 3
+
+**The Level 2 question:** "Does solution provide ANY concrete mathematical detail?" → YES (three lines + six points) → Category C
+**The Level 3 question:** "Are the provided details COMPLETE?" → NO (equations missing) → JUSTIFICATION_GAP
+
+---
+
 **CRITICAL META-INSTRUCTION:**
 
 **Do NOT override these few-shot examples with your own detailed reasoning.**
 
-When you encounter a pattern matching Example 1, 2, or 3 above:
+When you encounter a pattern matching Example 1, 2, 3, or 4 above:
 1. **STOP** - Do not generate 3000+ tokens of detailed analysis explaining why a claim is imprecise
 2. **CHECK** - Is the final answer correct? Are constructions valid? Is the reasoning method valid?
 3. **APPLY** - Use the SAME classification shown in the example (Justification Gap or Critical Error)
@@ -440,6 +476,7 @@ When you encounter a pattern matching Example 1, 2, or 3 above:
    - Wrong answer or completely missing construction = Critical Error (Example 2 pattern)
    - Correct answer with valid methods but imprecise wording = Justification Gap (Example 1 pattern)
    - Example 3: Context-dependent claim (true in context, reference not explicit) = Justification Gap (4-5), NOT Critical Error (8-9)
+   - Example 4: Count+target specification without equations = Justification Gap (4-5), NOT Critical Error (8-9)
 
 If you find yourself writing "the claim is false" or "this is mathematically incorrect" about imprecise wording:
 → PAUSE and check: Is the claim FALSE in the mathematical context, or just lacking explicit justification/reference?
