@@ -430,36 +430,36 @@ Solution excerpt: "Let n=2k. Then n²=4k². Now for k even: n²=16m² since k is
 **Example 4: Count+Target Specification (Justification Gap, NOT Critical Error)**
 *This example shows how to classify construction claims with count and target.*
 
-Problem: "Determine all nonnegative integers k such that there exist n distinct lines covering required points with exactly k sunny lines."
+Problem: "Determine all positive integers n such that there exists a partition of the set {1,2,...,2n} into n pairs where each pair sums to a perfect square."
 
-Solution excerpt (k=3 construction): "**k=3:** Three sunny lines cover the 6 rightmost points, verticals cover the rest."
+Solution excerpt (n=4 construction): "**n=4:** Four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}."
 
 **Applying the Decision Rule:**
-1. Check final answer: k∈{0,1,3} ✓ CORRECT
-2. Check construction claim: "Three sunny lines cover the 6 rightmost points" → Has COUNT (three lines) and TARGET (six points)
+1. Check final answer: n∈{1,2,4} ✓ CORRECT
+2. Check construction claim: "Four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}" → Has COUNT (four pairs) and TARGET (squares {4,9,16,25})
 3. Classify specification level: Count+target is a CONCRETE DETAIL → Category C (VALID METHOD)
 4. Level 2 decision: Category C → PASS Level 2, proceed to Level 3
-5. Level 3 decision: Missing explicit line equations → JUSTIFICATION_GAP (acceptable for FIND problems)
+5. Level 3 decision: Missing explicit pair specifications → JUSTIFICATION_GAP (acceptable for FIND problems)
 
 **Correct Classification:**
-*   **Location:** "Three sunny lines cover the 6 rightmost points, verticals cover the rest."
+*   **Location:** "Four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}."
     *   **Type:** JUSTIFICATION_GAP (NOT CRITICAL_ERROR)
     *   **Severity:** 4-5 (presentation issue, not method invalidity)
-    *   **Issue:** Justification Gap - The solution specifies count (three lines) and target (six points), which is a valid construction STRATEGY per Category C. However, explicit line equations are missing. This is a presentation gap at Level 3, NOT a method invalidity at Level 2. The final answer is correct and the approach is sound.
+    *   **Issue:** Justification Gap - The solution specifies count (four pairs) and target (squares {4,9,16,25}), which is a valid construction STRATEGY per Category C. However, explicit pair assignments (e.g., {1,3}, {2,7}, etc.) are missing. This is a presentation gap at Level 3, NOT a method invalidity at Level 2. The final answer is correct and the approach is sound.
 
 **WRONG Classification (don't do this):**
-*   ~~**Location:** "Three sunny lines cover the 6 rightmost points"~~
+*   ~~**Location:** "Four pairs cover the 8 elements"~~
     *   ~~**Type:** CRITICAL_ERROR~~
-    *   ~~**Issue:** Critical Error - No concrete specification provided, invalid method at Level 2.~~ ❌ WRONG - Count+target IS a concrete detail (Category C). The phrase "three sunny lines cover the 6 rightmost points" provides two concrete mathematical details: (1) quantity = 3 lines, (2) target = 6 specific points. This is sufficient to be Category C per the boundary rule: "count+target → Category C". Missing equations is a Level 3 presentation gap, NOT a Level 2 method invalidity.
+    *   ~~**Issue:** Critical Error - No concrete specification provided, invalid method at Level 2.~~ ❌ WRONG - Count+target IS a concrete detail (Category C). The phrase "four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}" provides two concrete mathematical details: (1) quantity = 4 pairs, (2) target = specific squares {4,9,16,25}. This is sufficient to be Category C per the boundary rule: "count+target → Category C". Missing explicit pairs is a Level 3 presentation gap, NOT a Level 2 method invalidity.
 
 **CRITICAL BOUNDARY RULE APPLICATION:**
-- "k=3 works" → Category A (zero details) → CRITICAL_ERROR at Level 2
-- "k=3 using sunny lines" → Category B (method name only) → CRITICAL_ERROR at Level 2
-- "Three sunny lines cover 6 rightmost points" → Category C (count+target specified) → PASS Level 2, JUSTIFICATION_GAP at Level 3
-- "k=3: L₁: y=x, L₂: y=2x, L₃: y=-x" → Category C (explicit equations) → PASS Level 2, PASS Level 3
+- "n=4 works" → Category A (zero details) → CRITICAL_ERROR at Level 2
+- "n=4 using pair partition" → Category B (method name only) → CRITICAL_ERROR at Level 2
+- "Four pairs sum to squares {4,9,16,25}" → Category C (count+target specified) → PASS Level 2, JUSTIFICATION_GAP at Level 3
+- "n=4: {1,3}, {2,7}, {4,5}, {6,8}" → Category C (explicit pairs) → PASS Level 2, PASS Level 3
 
-**The Level 2 question:** "Does solution provide ANY concrete mathematical detail?" → YES (three lines + six points) → Category C
-**The Level 3 question:** "Are the provided details COMPLETE?" → NO (equations missing) → JUSTIFICATION_GAP
+**The Level 2 question:** "Does solution provide ANY concrete mathematical detail?" → YES (four pairs + target squares) → Category C
+**The Level 3 question:** "Are the provided details COMPLETE?" → NO (explicit pairs missing) → JUSTIFICATION_GAP
 
 ---
 
