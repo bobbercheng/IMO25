@@ -90,6 +90,12 @@ python code/agent_gpt_oss.py problems/imo01.txt \
 - `RLAC_VERIFY_START_ROUND` - Start verification from round N (default: 0)
 - `RLAC_DISABLE_INLINE_VERIFICATION` - Disable in-RLAC verification (default: false)
 
+**P0 Ablation Environment Variables (2025-12-28):**
+- `RLAC_DISABLE_P0_FORMAT_VALIDATION` - Disable format validation (default: false)
+- `RLAC_DISABLE_P0_NEAR_SUCCESS_PROTECTION` - Disable near-success protection (default: false)
+- `RLAC_DISABLE_P0_ANSWER_LOCK` - Disable answer lock mechanism (default: false)
+- `RLAC_DISABLE_ADAPTIVE_TEMPERATURE` - Disable adaptive temperature (default: false, always true for ablation tests)
+
 **In-RLAC Verification (2025-12-07):**
 - **FEATURE:** Cooperative verification now runs DURING RLAC rounds (not just after)
 - Catches critical errors early (e.g., wrong constructions in FIND problems)
@@ -104,6 +110,13 @@ python code/agent_gpt_oss.py problems/imo01.txt \
 - **BUGFIX:** Counterexample truncation increased from 400 to 2000 chars (geometry problems need full specifications)
 - Answer lock properly disabled during P5/P5.1 reconsideration
 - Architecture consolidated: all RLAC code in agent_gpt_oss.py
+
+**P0 Ablation Testing (2025-12-28):**
+- **FRAMEWORK:** Systematic ablation testing of P0 features with temperature=0
+- **Scripts:** `test_p0_ablation.sh` (full test), `test_p0_ablation_quick.sh` (3 rounds)
+- **Features tested:** Format validation, near-success protection, answer lock, adaptive temperature
+- **Purpose:** Identify which P0 features are critical vs. efficiency improvements
+- **Documentation:** See `docs/P0_ABLATION_GUIDE.md` for detailed guide
 
 ## Common Commands
 
@@ -234,6 +247,26 @@ python code/agent_gpt_oss.py problems/imo01.txt \
   --solution-reasoning low \
   --verification-reasoning high \
   --log asymmetric_fresh.log
+```
+
+### P0 Ablation Testing
+```bash
+# Full ablation test (10 rounds, all P0 feature combinations)
+./test_p0_ablation.sh problems/imo01.txt 10
+
+# Quick validation test (3 rounds for fast testing)
+./test_p0_ablation_quick.sh problems/imo01.txt
+
+# Test specific P0 feature disable
+RLAC_DISABLE_P0_NEAR_SUCCESS_PROTECTION=true ./test_rlac.sh problems/imo01.txt
+
+# Results include:
+# - Individual test logs for each configuration
+# - Summary files with key metrics
+# - Markdown report with comparative analysis
+
+# View results
+cat ablation_results_*/ablation_report.md
 ```
 
 ## Key Architectural Patterns

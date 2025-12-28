@@ -1123,22 +1123,27 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
 
     # P0 FIX: Format validation - catch extraction bugs before calling verifier
     # This prevents silent failures where empty solutions are sent to verifier
-    extracted_solution = extract_detailed_solution(solution)
+    # ABLATION: Can be disabled with RLAC_DISABLE_P0_FORMAT_VALIDATION=true
+    import os as _format_os
+    disable_p0_format_validation = _format_os.getenv('RLAC_DISABLE_P0_FORMAT_VALIDATION', 'false').lower() == 'true'
 
-    if len(extracted_solution) < 100:
-        error_msg = (
-            f"[VERIFICATION BUG] Format extraction failed!\n"
-            f"  Input solution length: {len(solution)} chars\n"
-            f"  Extracted solution length: {len(extracted_solution)} chars\n"
-            f"  This indicates a format mismatch between generator and verifier.\n"
-            f"  Original solution preview: {solution[:200]}...\n"
-        )
-        if verbose:
-            print(f"\n{'='*80}")
-            print(error_msg)
-            print(f"{'='*80}\n")
-        # Return error result instead of calling verifier with invalid input
-        return error_msg, "no"
+    if not disable_p0_format_validation:
+        extracted_solution = extract_detailed_solution(solution)
+
+        if len(extracted_solution) < 100:
+            error_msg = (
+                f"[VERIFICATION BUG] Format extraction failed!\n"
+                f"  Input solution length: {len(solution)} chars\n"
+                f"  Extracted solution length: {len(extracted_solution)} chars\n"
+                f"  This indicates a format mismatch between generator and verifier.\n"
+                f"  Original solution preview: {solution[:200]}...\n"
+            )
+            if verbose:
+                print(f"\n{'='*80}")
+                print(error_msg)
+                print(f"{'='*80}\n")
+            # Return error result instead of calling verifier with invalid input
+            return error_msg, "no"
 
     # Use global defaults if not specified
     if max_attempts is None:
@@ -3927,6 +3932,17 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     sus_lookback = int(_os.getenv('RLAC_SUSPICIOUS_LOOKBACK', '4'))  # P0-4: Changed default from 6 to 4
     print(f">>>>>>> [RLAC CONFIG] SUSPICIOUS convergence: {accept_sus_threshold} consecutive with {sus_lookback} rounds since BROKEN")
 
+    # P0 ABLATION: Log P0 feature configuration
+    p0_format_validation = _os.getenv('RLAC_DISABLE_P0_FORMAT_VALIDATION', 'false').lower() != 'true'
+    p0_near_success_protection = _os.getenv('RLAC_DISABLE_P0_NEAR_SUCCESS_PROTECTION', 'false').lower() != 'true'
+    p0_answer_lock = _os.getenv('RLAC_DISABLE_P0_ANSWER_LOCK', 'false').lower() != 'true'
+    p0_adaptive_temp = _os.getenv('RLAC_DISABLE_ADAPTIVE_TEMPERATURE', 'false').lower() != 'true'
+    print(f"\n>>>>>>> [P0 ABLATION] Format validation: {p0_format_validation}")
+    print(f">>>>>>> [P0 ABLATION] Near-success protection: {p0_near_success_protection}")
+    print(f">>>>>>> [P0 ABLATION] Answer lock: {p0_answer_lock}")
+    print(f">>>>>>> [P0 ABLATION] Adaptive temperature: {p0_adaptive_temp}")
+    print(f">>>>>>> [P0 ABLATION] Base temperature: 0.0 (deterministic)")
+
     print("="*80 + "\n")
 
     # Import adversarial critic
@@ -4892,7 +4908,10 @@ Start completely fresh with a different mathematical approach.
 
             # P2 FIX: Answer lock mechanism - lock answer after near-success
             # P0 FIX: This will re-engage automatically after P5 if new answer gets ROBUST
-            if consecutive_robust >= lock_threshold and not answer_locked:
+            # ABLATION: Can be disabled with RLAC_DISABLE_P0_ANSWER_LOCK=true
+            disable_p0_answer_lock = os.getenv('RLAC_DISABLE_P0_ANSWER_LOCK', 'false').lower() == 'true'
+
+            if not disable_p0_answer_lock and consecutive_robust >= lock_threshold and not answer_locked:
                 current_answer_result = enhanced_session.extract_answer(solution)
                 if current_answer_result.success:
                     locked_answer = current_answer_result.normalized
@@ -5238,26 +5257,32 @@ Start completely fresh with a different mathematical approach.
         elif verdict == "BROKEN" or verdict == "SUSPICIOUS":
             # P0-v2 FIX: Enhanced near-success protection with lower threshold and history awareness
             # Changed from threshold=2 to threshold=1 + consider total_robust_count
-            if consecutive_robust >= 2:
-                # At 2/3 ROBUST, give grace failure - decrement instead of reset
-                old_robust = consecutive_robust
-                consecutive_robust -= 1
-                print(f"\n>>>>>>> [RLAC P0-v2] High protection activated!")
-                print(f">>>>>>> [RLAC P0-v2] {old_robust}/3 -> {consecutive_robust}/3 (grace failure)")
-            elif consecutive_robust >= 1 and total_robust_count >= 2:
-                # P0-v2 NEW: At 1/3 ROBUST with history of robustness - give grace failure
-                old_robust = consecutive_robust
-                consecutive_robust = max(0, consecutive_robust - 1)
-                print(f"\n>>>>>>> [RLAC P0-v2] History-aware protection activated!")
-                print(f">>>>>>> [RLAC P0-v2] {old_robust}/3 -> {consecutive_robust}/3")
-                print(f">>>>>>> [RLAC P0-v2] Total ROBUST history: {total_robust_count}")
-            elif total_robust_count >= 3:
-                # P0-v2 NEW: Strong ROBUST history - partial protection even at 0 consecutive
-                print(f"\n>>>>>>> [RLAC P0-v2] Strong history protection (total_robust={total_robust_count})")
-                print(f">>>>>>> [RLAC P0-v2] Not resetting consecutive_robust due to strong history")
-                # Don't reset - keep whatever consecutive_robust we have
+            # ABLATION: Can be disabled with RLAC_DISABLE_P0_NEAR_SUCCESS_PROTECTION=true
+            disable_p0_protection = os.getenv('RLAC_DISABLE_P0_NEAR_SUCCESS_PROTECTION', 'false').lower() == 'true'
+
+            if not disable_p0_protection:
+                if consecutive_robust >= 2:
+                    # At 2/3 ROBUST, give grace failure - decrement instead of reset
+                    old_robust = consecutive_robust
+                    consecutive_robust -= 1
+                    print(f"\n>>>>>>> [RLAC P0-v2] High protection activated!")
+                    print(f">>>>>>> [RLAC P0-v2] {old_robust}/3 -> {consecutive_robust}/3 (grace failure)")
+                elif consecutive_robust >= 1 and total_robust_count >= 2:
+                    # P0-v2 NEW: At 1/3 ROBUST with history of robustness - give grace failure
+                    old_robust = consecutive_robust
+                    consecutive_robust = max(0, consecutive_robust - 1)
+                    print(f"\n>>>>>>> [RLAC P0-v2] History-aware protection activated!")
+                    print(f">>>>>>> [RLAC P0-v2] {old_robust}/3 -> {consecutive_robust}/3")
+                    print(f">>>>>>> [RLAC P0-v2] Total ROBUST history: {total_robust_count}")
+                elif total_robust_count >= 3:
+                    # P0-v2 NEW: Strong ROBUST history - partial protection even at 0 consecutive
+                    print(f"\n>>>>>>> [RLAC P0-v2] Strong history protection (total_robust={total_robust_count})")
+                    print(f">>>>>>> [RLAC P0-v2] Not resetting consecutive_robust due to strong history")
+                    # Don't reset - keep whatever consecutive_robust we have
+                else:
+                    consecutive_robust = 0  # Full reset when no history
             else:
-                consecutive_robust = 0  # Full reset when no history
+                consecutive_robust = 0  # Full reset when protection disabled
             consecutive_broken += 1  # Track consecutive broken verdicts
             total_broken_in_session += 1  # Proposal A: Track total BROKEN (never reset on ROBUST)
 
@@ -7000,13 +7025,18 @@ Do not simply rephrase or polish the previous approach - create something new.
                         p1["messages"].append({"role": "assistant", "content": solution})
                         p1["messages"].append({"role": "user", "content": correction_prompt + "\n\n" + verify})
 
-                        # Use higher temperature for exploration (override default 0.1)
-                        if "temperature" not in p1:
-                            p1["temperature"] = 0.7
-                        else:
-                            p1["temperature"] = max(p1["temperature"], 0.7)
+                        # Use higher temperature for exploration (override default 0.0)
+                        # P0 ABLATION: Can be disabled with RLAC_DISABLE_ADAPTIVE_TEMPERATURE=true
+                        disable_adaptive_temp = os.getenv('RLAC_DISABLE_ADAPTIVE_TEMPERATURE', 'false').lower() == 'true'
 
-                        print(f">>>>>>> [ADAPTIVE TEMP] Temperature set to {p1['temperature']} for next generation")
+                        if not disable_adaptive_temp:
+                            if "temperature" not in p1:
+                                p1["temperature"] = 0.7
+                            else:
+                                p1["temperature"] = max(p1["temperature"], 0.7)
+                            print(f">>>>>>> [ADAPTIVE TEMP] Temperature set to {p1['temperature']} for next generation")
+                        else:
+                            print(f">>>>>>> [ADAPTIVE TEMP] Disabled (maintaining temperature={p1.get('temperature', 0.0)})")
 
                         # Regenerate with exploration
                         response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Diverse exploration")
