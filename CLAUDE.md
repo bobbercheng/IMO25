@@ -249,25 +249,43 @@ python code/agent_gpt_oss.py problems/imo01.txt \
   --log asymmetric_fresh.log
 ```
 
-### P0 Ablation Testing
+### P0 Ablation Testing (BFS-based)
 ```bash
-# Full ablation test (10 rounds, all P0 feature combinations)
-./test_p0_ablation.sh problems/imo01.txt 10
+# Full ablation test (N=12 runs per config, all P0 feature combinations)
+./test_p0_ablation.sh problems/imo01.txt 12
 
-# Quick validation test (3 rounds for fast testing)
+# Quick validation test (N=3 runs for fast testing)
 ./test_p0_ablation_quick.sh problems/imo01.txt
 
-# Test specific P0 feature disable
-RLAC_DISABLE_P0_NEAR_SUCCESS_PROTECTION=true ./test_rlac.sh problems/imo01.txt
+# Custom number of runs
+./test_p0_ablation.sh problems/imo01.txt 30  # For final validation
 
 # Results include:
-# - Individual test logs for each configuration
-# - Summary files with key metrics
-# - Markdown report with comparative analysis
+# - Individual BFS run logs for each configuration
+# - Success rates, avg iterations, avg duration per config
+# - Markdown report with statistical comparison
+# - Identifies which P0 features help/hurt BFS performance
 
 # View results
 cat ablation_results_*/ablation_report.md
+
+# Compare success rates across configs
+for dir in ablation_results_*/*/; do
+  echo "$dir: $(grep -l 'Correct solution found' $dir/*.log | wc -l)/12"
+done
+
+# Analyze feature impact
+# - ≥20% difference = MAJOR impact
+# - 10-20% difference = MODERATE impact
+# - <10% difference = MINIMAL impact
 ```
+
+**Expected Results:**
+- **Format validation**: Should help BFS (catches extraction bugs)
+- **Near-success protection**: Neutral for BFS (RLAC-specific)
+- **Answer lock**: May hurt BFS (prevents exploration)
+- **N=12 recommended**: Detects 15%+ differences with 80% power
+- **N=30 for validation**: Detects 8%+ differences with 90% power
 
 ## Key Architectural Patterns
 
