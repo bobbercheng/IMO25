@@ -1,44 +1,44 @@
 {
-  "timestamp": "2025-12-28T10:50:49.491625",
+  "timestamp": "2025-12-28T13:58:36.054647",
   "iterations": 30,
   "completed": 30,
   "total_tests": 180,
-  "total_matches": 158,
-  "accuracy": 0.8777777777777778,
+  "total_matches": 155,
+  "accuracy": 0.8611111111111112,
   "confidence_interval_95": {
-    "lower": 0.8218820800159556,
-    "upper": 0.9178851979015561,
-    "margin": 0.048001558942800227
+    "lower": 0.8030072981112379,
+    "upper": 0.9041231881334424,
+    "margin": 0.05055794501110222
   },
   "per_test_stats": {
     "test_1": {
-      "pass": 18,
-      "fail": 12,
+      "pass": 17,
+      "fail": 13,
       "error": 0
     },
     "test_2": {
-      "pass": 30,
-      "fail": 0,
+      "pass": 27,
+      "fail": 3,
       "error": 0
     },
     "test_3": {
-      "pass": 29,
-      "fail": 1,
-      "error": 0
-    },
-    "test_4": {
-      "pass": 22,
-      "fail": 8,
-      "error": 0
-    },
-    "test_5": {
       "pass": 30,
       "fail": 0,
       "error": 0
     },
+    "test_4": {
+      "pass": 26,
+      "fail": 4,
+      "error": 0
+    },
+    "test_5": {
+      "pass": 28,
+      "fail": 2,
+      "error": 0
+    },
     "test_6": {
-      "pass": 29,
-      "fail": 1,
+      "pass": 27,
+      "fail": 3,
       "error": 0
     }
   },
