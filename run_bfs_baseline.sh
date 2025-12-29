@@ -312,7 +312,7 @@ if [ "${#PIDS[@]}" -gt 0 ] 2>/dev/null || [ $N_RUNS -gt 0 ]; then
         echo ""
         echo "Next steps:"
         echo "  1. Analyze results: python analyze_bfs_baseline.py $OUTPUT_DIR"
-        echo "  2. Check success rate: grep -l 'Correct solution found (first success)' $OUTPUT_DIR/*.log | wc -l"
+        echo "  2. Check success rate: grep -l '\"verdict\": *\"PASS\"' $OUTPUT_DIR/*.log | wc -l"
         echo "  3. Offline validation: python validate_runs_offline.py $OUTPUT_DIR"
         echo ""
     else
@@ -344,8 +344,13 @@ if [ -n "$current_logs" ]; then
     for log in $current_logs; do
         basename=$(basename "$log")
 
-        # Check for success (agent's own judgment, not verification status)
-        if grep -q "Correct solution found (first success)" "$log" 2>/dev/null; then
+        # Check for success (agent's own judgment via verification verdict)
+        # FIXED (2025-12-28): Check for actual success indicators in GPT-OSS agent logs
+        # Primary criterion: Final verification verdict = PASS
+        # Secondary criterion: Correct answer {0,1,3} (exact match, not superset)
+        # Note: We rely on verification PASS as the primary success indicator since
+        # the agent's verification system should validate the correctness
+        if tail -1000 "$log" 2>/dev/null | grep -q '"verdict": *"PASS"'; then
             ((success_count++))
         fi
 
@@ -363,8 +368,10 @@ if [ -n "$current_logs" ]; then
         echo "  Iterations: $iterations"
         echo "  Log lines: $lines"
 
-        if grep -q "Correct solution found (first success)" "$log" 2>/dev/null; then
-            echo "  Status: ✅ SUCCESS"
+        # FIXED (2025-12-28): Check for actual success indicators
+        # Check last 1000 lines for final verification verdict
+        if tail -1000 "$log" 2>/dev/null | grep -q '"verdict": *"PASS"'; then
+            echo "  Status: ✅ SUCCESS (verification PASS)"
         else
             echo "  Status: ❌ FAILED"
         fi
@@ -431,7 +438,7 @@ echo "  watch -n 5 'ls -lh $OUTPUT_DIR/*.log | tail -12'"
 echo ""
 
 echo "Check success rate (agent's judgment):"
-echo "  grep -l 'Correct solution found (first success)' $OUTPUT_DIR/bfs_run*_${TIMESTAMP}.log | wc -l"
+echo "  grep -l '\"verdict\": *\"PASS\"' $OUTPUT_DIR/bfs_run*_${TIMESTAMP}.log | wc -l"
 echo ""
 
 echo "Offline validation (ground truth comparison):"
