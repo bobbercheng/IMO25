@@ -1155,7 +1155,8 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
     if not VERIFICATION_SAFEGUARDS_ENABLED:
         if verbose:
             print(f">>>>>>> [VERIFICATION SAFEGUARD] Safeguards disabled, using direct verification")
-        return verify_solution(problem_statement, solution, verbose, reasoning_effort)
+        bug_report, good_verify, _, _ = verify_solution(problem_statement, solution, verbose, reasoning_effort)
+        return bug_report, good_verify
 
     current_reasoning = reasoning_effort if reasoning_effort is not None else VERIFICATION_REASONING_EFFORT
 
@@ -1181,7 +1182,7 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
 
             try:
                 # Attempt verification
-                bug_report, good_verify = verify_solution(
+                bug_report, good_verify, _, _ = verify_solution(
                     problem_statement, solution, verbose, current_reasoning
                 )
 
@@ -1969,7 +1970,9 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
     # ANSWER VALIDATION (2025-12-23 FIX):
     # Run validation for MEASUREMENT ONLY - DO NOT feed results back to LLM
     # This prevents ground truth leakage while still allowing offline success measurement
+    # BUG FIX (2025-12-29): Initialize before try block to avoid NameError in exception cases
     answer_is_correct = False  # Track for "Correct solution found" marker only
+    problem_id = None  # Default if validation fails or is skipped
     try:
         from answer_validator import AnswerValidator, extract_final_answer
 
@@ -1980,7 +1983,6 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
 
         # Determine problem ID from problem statement
         # FIX (2025-12-23): Support multiple IMO problems, not just P1
-        problem_id = None
         problem_lower = problem_statement.lower()
 
         if "sunny" in problem_lower and "line" in problem_lower:
@@ -2066,7 +2068,8 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
         if verbose:
             print(">>>>>>> [PRESCRIPTIVE FEEDBACK] Disabled for A/B testing (DISABLE_PRESCRIPTIVE_FEEDBACK=1)")
 
-    return bug_report, o
+    # BUG FIX (2025-12-29): Return answer_is_correct and problem_id for success detection
+    return bug_report, o, answer_is_correct, problem_id
 
 def translate_verification_feedback(bug_report, problem_statement, solution,
                                    translation_reasoning="medium", verbose=True):
@@ -2494,7 +2497,7 @@ Please revise the proof outline to fix these structural issues while keeping the
 
     # Phase 4: Verify mathematics
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Phase 4: Verifying mathematics")
-    verify_result, good_verify = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
+    verify_result, good_verify, _, _ = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
 
     success = "yes" in good_verify.lower()
 
@@ -2885,7 +2888,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     print(json.dumps(solution, indent=4))
 
     print(f">>>>>>> Verify the solution.")
-    verify, good_verify = verify_solution(problem_statement, solution, verbose, verification_reasoning)
+    verify, good_verify, _, _ = verify_solution(problem_statement, solution, verbose, verification_reasoning)
 
     print(f">>>>>>> Initial verification:")
     print(json.dumps(verify, indent=4))
@@ -6831,7 +6834,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         if improved_solution:
                             # Re-verify improved solution
                             print(f">>>>>>> [SMALL-CASE] Verifying improved solution...")
-                            improved_verify, improved_good_verify = verify_solution(
+                            improved_verify, improved_good_verify, _, _ = verify_solution(
                                 problem_statement, improved_solution,
                                 True, ver_reasoning
                             )
@@ -6862,7 +6865,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort
-        _, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+        _, good_verify, _, _ = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
 
     error_count = 0
     correct_count = 1
@@ -7056,7 +7059,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                     print(f">>>>>>> [DEDUP] Total unique solutions: {len(solution_history) + 1}")
 
             print(f">>>>>>> Verify the solution.")
-            verify, good_verify = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+            verify, good_verify, answer_is_correct, problem_id = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
 
             # PHASE 1 QUICK WIN: Add solution to history and cache verification result
             if not is_duplicate_solution(solution, solution_history):
