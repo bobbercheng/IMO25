@@ -34,8 +34,7 @@ GROUND_TRUTH = {
             "k=2: IMPOSSIBLE - geometric constraints prevent coverage",
             "k=3: Novel construction with 3 specific sunny lines",
             "k≥4: IMPOSSIBLE - upper bound proof (boundary point argument)"
-        ],
-        "confidence": "DEFINITIVE"
+        ]
     },
     # Alias for convenience
     "imo01": {"$ref": "imo2025_p1"},
@@ -293,8 +292,7 @@ def validate_against_ground_truth(problem_id: str, claimed_answer: str) -> Optio
             "verdict": "WRONG",
             "reason": f"Answer claims k ∈ {{0,...,{bound}}} (interval) but correct is discrete set {truth_answer}",
             "correct_answer": truth_answer,
-            "source": truth_entry["source"],
-            "confidence": truth_entry["confidence"]
+            "source": truth_entry["source"]
         }
 
     # Exact match
@@ -302,8 +300,7 @@ def validate_against_ground_truth(problem_id: str, claimed_answer: str) -> Optio
         return {
             "verdict": "CORRECT",
             "answer": truth_answer,
-            "source": truth_entry["source"],
-            "confidence": truth_entry["confidence"]
+            "source": truth_entry["source"]
         }
 
     # Subset (incomplete)
@@ -314,8 +311,7 @@ def validate_against_ground_truth(problem_id: str, claimed_answer: str) -> Optio
             "claimed": claimed_set,
             "correct": truth_answer,
             "missing": missing,
-            "source": truth_entry["source"],
-            "confidence": truth_entry["confidence"]
+            "source": truth_entry["source"]
         }
 
     # Superset (overgeneralized)
@@ -327,8 +323,7 @@ def validate_against_ground_truth(problem_id: str, claimed_answer: str) -> Optio
             "correct": truth_answer,
             "extra": extra,
             "reason": f"Answer includes impossible values: {extra}",
-            "source": truth_entry["source"],
-            "confidence": truth_entry["confidence"]
+            "source": truth_entry["source"]
         }
 
     # Completely different
@@ -336,8 +331,7 @@ def validate_against_ground_truth(problem_id: str, claimed_answer: str) -> Optio
         "verdict": "WRONG",
         "claimed": claimed_set,
         "correct": truth_answer,
-        "source": truth_entry["source"],
-        "confidence": truth_entry["confidence"]
+        "source": truth_entry["source"]
     }
 
 
@@ -363,46 +357,41 @@ class AnswerValidator:
         Returns:
             {
                 "verdict": "CORRECT" | "PLAUSIBLE" | "SUSPICIOUS" | "WRONG" | "INCOMPLETE" | "OVERGENERALIZED",
-                "confidence": float,
                 "details": {...}
             }
         """
         results = {}
 
-        # Method 1: Ground truth check (highest confidence)
+        # Method 1: Ground truth check
         if self.ground_truth:
             results["ground_truth"] = validate_against_ground_truth(self.problem_id, claimed_answer)
             if results["ground_truth"]["verdict"] in ["CORRECT", "WRONG", "INCOMPLETE", "OVERGENERALIZED"]:
                 # Definitive verdict from ground truth
                 return {
                     "verdict": results["ground_truth"]["verdict"],
-                    "confidence": 1.0,
                     "details": results["ground_truth"]
                 }
 
-        # Method 2: Small-case testing (medium confidence)
+        # Method 2: Small-case testing
         if self.problem_id in ["imo2025_p1", "imo01", "problems/imo01.txt"]:
             results["small_cases"] = test_imo_p1_small_cases(claimed_answer)
             if results["small_cases"]["verdict"] == "SUSPICIOUS":
                 return {
                     "verdict": "SUSPICIOUS",
-                    "confidence": 0.7,
                     "details": results["small_cases"]
                 }
 
-        # Method 3: Plausibility (low confidence)
+        # Method 3: Plausibility
         results["plausibility"] = check_plausibility(claimed_answer, self.problem_id or "")
         if results["plausibility"]["verdict"] == "NEEDS_REVIEW":
             return {
                 "verdict": "NEEDS_REVIEW",
-                "confidence": 0.5,
                 "details": results["plausibility"]
             }
 
         # Default: Plausible
         return {
             "verdict": "PLAUSIBLE",
-            "confidence": 0.6,
             "details": {
                 "message": "Answer passed plausibility checks but no ground truth available",
                 "checks_run": list(results.keys())

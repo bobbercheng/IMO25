@@ -1978,66 +1978,76 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
     # BUG FIX (2025-12-29): Initialize before try block to avoid NameError in exception cases
     answer_is_correct = False  # Track for "Correct solution found" marker only
     problem_id = None  # Default if validation fails or is skipped
-    try:
-        from answer_validator import AnswerValidator, extract_final_answer
 
+    # Check if answer validation is enabled via environment variable
+    import os as _ans_os
+    answer_validation_enabled = _ans_os.getenv('ENABLE_ANSWER_VALIDATION', '0') == '1'
+
+    if not answer_validation_enabled:
         if verbose:
             print("\n" + "="*80)
-            print(">>>>>>> [ANSWER VALIDATION] Checking answer correctness (for measurement only)")
+            print(">>>>>>> [ANSWER VALIDATION] Skipped (disabled - set ENABLE_ANSWER_VALIDATION=1 to enable)")
             print("="*80)
-
-        # Determine problem ID from problem statement
-        # FIX (2025-12-23): Support multiple IMO problems, not just P1
-        problem_lower = problem_statement.lower()
-
-        if "sunny" in problem_lower and "line" in problem_lower:
-            problem_id = "imo2025_p1"  # FIND problem with ground truth {0,1,3}
-        elif "prove that" in problem_lower and ("circumcircle" in problem_lower or "tangent" in problem_lower):
-            problem_id = "imo2025_p2"  # PROVE problem (geometry, no ground truth)
-        # Add more problems as needed
-        # elif "....." in problem_lower:
-        #     problem_id = "imo2025_p3"
-        else:
-            problem_id = None  # Unknown problem, skip answer validation
-
-        validator = AnswerValidator(problem_id)
-        claimed_answer = extract_final_answer(solution)
-
-        if claimed_answer:
-            answer_result = validator.validate(claimed_answer, solution)
+    else:
+        try:
+            from answer_validator import AnswerValidator, extract_final_answer
 
             if verbose:
-                verdict = answer_result["verdict"]
-                confidence = answer_result["confidence"]
-                print(f">>>>>>> [ANSWER VALIDATION] Verdict: {verdict} (confidence: {confidence:.1%})")
-                if answer_result.get("details"):
-                    print(f">>>>>>> [ANSWER VALIDATION] Details: {str(answer_result['details'])[:200]}...")
+                print("\n" + "="*80)
+                print(">>>>>>> [ANSWER VALIDATION] Checking answer correctness (for measurement only)")
+                print("="*80)
 
-            # CRITICAL: Only use for internal tracking, NOT for bug_report feedback
-            # This prevents ground truth leakage to the LLM
-            if answer_result["verdict"] == "CORRECT":
-                answer_is_correct = True
-                if verbose:
-                    print(f">>>>>>> [ANSWER VALIDATION] ✅ CORRECT - Answer matches ground truth")
+            # Determine problem ID from problem statement
+            # FIX (2025-12-23): Support multiple IMO problems, not just P1
+            problem_lower = problem_statement.lower()
+
+            if "sunny" in problem_lower and "line" in problem_lower:
+                problem_id = "imo2025_p1"  # FIND problem with ground truth {0,1,3}
+            elif "prove that" in problem_lower and ("circumcircle" in problem_lower or "tangent" in problem_lower):
+                problem_id = "imo2025_p2"  # PROVE problem (geometry, no ground truth)
+            # Add more problems as needed
+            # elif "....." in problem_lower:
+            #     problem_id = "imo2025_p3"
             else:
-                answer_is_correct = False
+                problem_id = None  # Unknown problem, skip answer validation
+
+            validator = AnswerValidator(problem_id)
+            claimed_answer = extract_final_answer(solution)
+
+            if claimed_answer:
+                answer_result = validator.validate(claimed_answer, solution)
+
                 if verbose:
-                    print(f">>>>>>> [ANSWER VALIDATION] ❌ Not correct: {verdict}")
+                    verdict = answer_result["verdict"]
+                    print(f">>>>>>> [ANSWER VALIDATION] Verdict: {verdict}")
+                    if answer_result.get("details"):
+                        print(f">>>>>>> [ANSWER VALIDATION] Details: {str(answer_result['details'])[:200]}...")
 
-            # DO NOT modify bug_report based on answer validation
-            # DO NOT override verification verdict (o) based on answer
-            # Let the LLM self-discover the answer without hints
+                # CRITICAL: Only use for internal tracking, NOT for bug_report feedback
+                # This prevents ground truth leakage to the LLM
+                if answer_result["verdict"] == "CORRECT":
+                    answer_is_correct = True
+                    if verbose:
+                        print(f">>>>>>> [ANSWER VALIDATION] ✅ CORRECT - Answer matches ground truth")
+                else:
+                    answer_is_correct = False
+                    if verbose:
+                        print(f">>>>>>> [ANSWER VALIDATION] ❌ Not correct: {verdict}")
 
-        else:
+                # DO NOT modify bug_report based on answer validation
+                # DO NOT override verification verdict (o) based on answer
+                # Let the LLM self-discover the answer without hints
+
+            else:
+                if verbose:
+                    print(f">>>>>>> [ANSWER VALIDATION] Could not extract answer from solution")
+
+        except ImportError:
             if verbose:
-                print(f">>>>>>> [ANSWER VALIDATION] Could not extract answer from solution")
-
-    except ImportError:
-        if verbose:
-            print(">>>>>>> [ANSWER VALIDATION] Module not available, skipping")
-    except Exception as e:
-        if verbose:
-            print(f">>>>>>> [ANSWER VALIDATION] Validation failed: {e}")
+                print(">>>>>>> [ANSWER VALIDATION] Module not available, skipping")
+        except Exception as e:
+            if verbose:
+                print(f">>>>>>> [ANSWER VALIDATION] Validation failed: {e}")
 
     # PRE-VERIFICATION ENFORCEMENT (2025-12-23 - DISABLED):
     # REMOVED: This section was leaking ground truth ("Your answer is CORRECT!")
@@ -3950,6 +3960,10 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     print(f">>>>>>> [P0 ABLATION] Answer lock: {p0_answer_lock}")
     print(f">>>>>>> [P0 ABLATION] Adaptive temperature: {p0_adaptive_temp}")
     print(f">>>>>>> [P0 ABLATION] Base temperature: 0.35 (balanced exploration/determinism)")
+
+    # ANSWER VALIDATION CONFIG: Enable with ENABLE_ANSWER_VALIDATION=1
+    answer_validation_enabled = _os.getenv('ENABLE_ANSWER_VALIDATION', '0') == '1'
+    print(f"\n>>>>>>> [RLAC CONFIG] Answer validation: {answer_validation_enabled}")
 
     print("="*80 + "\n")
 
@@ -6166,12 +6180,13 @@ Provide a corrected solution that passes validation for all small cases.
                             'answer_text': new_answer[:200] if new_answer else ""
                         })
 
-                    # Validate answer change
-                    answer_validation = validate_answer_change(
-                        previous_solution, solution, round_num, verbose=verbose
-                    )
-                    if answer_validation['narrowed']:
-                        print(f">>>>>>> [RLAC GENERATOR] ⚠️  Answer narrowing detected")
+                    # Validate answer change (if enabled)
+                    if answer_validation_enabled:
+                        answer_validation = validate_answer_change(
+                            previous_solution, solution, round_num, verbose=verbose
+                        )
+                        if answer_validation['narrowed']:
+                            print(f">>>>>>> [RLAC GENERATOR] ⚠️  Answer narrowing detected")
 
                     previous_solution = solution
 
@@ -6967,8 +6982,10 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 print(">>>>>>> Corrected solution:")
                 print(json.dumps(solution, indent=4))
 
-                # Validate answer change if solution was corrected
-                if previous_solution:
+                # Validate answer change if solution was corrected (and if enabled)
+                import os as _agent_ans_os
+                answer_validation_enabled = _agent_ans_os.getenv('ENABLE_ANSWER_VALIDATION', '0') == '1'
+                if previous_solution and answer_validation_enabled:
                     answer_validation = validate_answer_change(previous_solution, solution, i, verbose=True)
                     if answer_validation['narrowed']:
                         print(f">>>>>>> [ANSWER VALIDATION] ⚠️  Answer narrowing detected - extra scrutiny required")
