@@ -105,7 +105,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}==========================================${NC}"
-echo -e "${BLUE}BFS Baseline Test (N=12)${NC}"
+echo -e "${BLUE}BFS Baseline Test (N=$N_RUNS)${NC}"
 echo -e "${BLUE}==========================================${NC}"
 echo "Problem: $PROBLEM"
 echo "Output directory: $OUTPUT_DIR"
@@ -307,8 +307,8 @@ if [ "${#PIDS[@]}" -gt 0 ] 2>/dev/null || [ $N_RUNS -gt 0 ]; then
     echo "Total runs: $run_count"
     echo ""
 
-    if [ $run_count -ge 12 ]; then
-        echo -e "${GREEN}✓ All 12 baseline runs completed${NC}"
+    if [ $run_count -ge $N_RUNS ]; then
+        echo -e "${GREEN}✓ All $N_RUNS baseline runs completed${NC}"
         echo ""
         echo "Next steps:"
         echo "  1. Analyze results: python analyze_bfs_baseline.py $OUTPUT_DIR"
@@ -316,7 +316,7 @@ if [ "${#PIDS[@]}" -gt 0 ] 2>/dev/null || [ $N_RUNS -gt 0 ]; then
         echo "  3. Offline validation: python validate_runs_offline.py $OUTPUT_DIR"
         echo ""
     else
-        echo -e "${YELLOW}⚠️  Only $run_count runs completed (expected 12)${NC}"
+        echo -e "${YELLOW}⚠️  Only $run_count runs completed (expected $N_RUNS)${NC}"
         echo "  Check for errors in log files"
     fi
 else
@@ -387,7 +387,7 @@ if [ -n "$current_logs" ]; then
         success_rate=$((success_count * 100 / run_count))
 
         echo -e "${GREEN}=== SUMMARY ===${NC}"
-        echo "Runs completed: $run_count/12"
+        echo "Runs completed: $run_count/$N_RUNS"
         echo "Success rate: $success_count/$run_count ($success_rate%)"
         echo "Average iterations: $avg_iterations"
         echo ""
