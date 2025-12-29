@@ -2,6 +2,7 @@
 # P0 Ablation Test Script
 # Tests the impact of individual P0 features on BFS performance
 # Usage: ./test_p0_ablation.sh <problem_file> [num_runs]
+#        ./test_p0_ablation.sh --analyze-only <results_dir>
 
 set -e
 
@@ -12,10 +13,29 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-PROBLEM_FILE="${1:-problems/imo01.txt}"
-NUM_RUNS="${2:-12}"  # Number of BFS runs per configuration
-OUTPUT_DIR="ablation_results_$(date +%Y%m%d_%H%M%S)"
+# Check for analyze-only mode
+ANALYZE_ONLY=false
+if [ "$1" = "--analyze-only" ]; then
+    ANALYZE_ONLY=true
+    if [ -z "$2" ]; then
+        echo -e "${RED}Error: --analyze-only requires a results directory${NC}"
+        echo "Usage: ./test_p0_ablation.sh --analyze-only <results_dir>"
+        exit 1
+    fi
+    OUTPUT_DIR="$2"
+    if [ ! -d "$OUTPUT_DIR" ]; then
+        echo -e "${RED}Error: Directory '$OUTPUT_DIR' does not exist${NC}"
+        exit 1
+    fi
+    # Extract problem file and num runs from existing summary if possible
+    PROBLEM_FILE="(from existing results)"
+    NUM_RUNS="(from existing results)"
+else
+    # Configuration for running tests
+    PROBLEM_FILE="${1:-problems/imo01.txt}"
+    NUM_RUNS="${2:-12}"  # Number of BFS runs per configuration
+    OUTPUT_DIR="ablation_results_$(date +%Y%m%d_%H%M%S)"
+fi
 
 # BFS configuration
 SOLUTION_REASONING="medium"
@@ -25,17 +45,25 @@ NUM_INITIAL_ATTEMPTS=3
 MAX_RUNS=15
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}P0 ABLATION TEST SUITE (BFS)${NC}"
+if [ "$ANALYZE_ONLY" = true ]; then
+    echo -e "${BLUE}P0 ABLATION ANALYSIS (from existing results)${NC}"
+else
+    echo -e "${BLUE}P0 ABLATION TEST SUITE (BFS)${NC}"
+fi
 echo -e "${BLUE}========================================${NC}"
 echo -e "Problem: ${PROBLEM_FILE}"
 echo -e "Runs per config: ${NUM_RUNS}"
 echo -e "Output directory: ${OUTPUT_DIR}"
-echo -e "Strategy: BFS with ${NUM_INITIAL_ATTEMPTS} initial attempts"
-echo -e "Max iterations: ${MAX_RUNS}"
+if [ "$ANALYZE_ONLY" = false ]; then
+    echo -e "Strategy: BFS with ${NUM_INITIAL_ATTEMPTS} initial attempts"
+    echo -e "Max iterations: ${MAX_RUNS}"
+fi
 echo -e "${BLUE}========================================${NC}\n"
 
-# Create output directory
-mkdir -p "${OUTPUT_DIR}"
+# Create output directory (only needed when running tests)
+if [ "$ANALYZE_ONLY" = false ]; then
+    mkdir -p "${OUTPUT_DIR}"
+fi
 
 # Test configurations
 # Format: "test_name|description|env_vars"
@@ -168,17 +196,32 @@ EOF
     fi
 }
 
-# Run all tests
-test_count=0
-for test_config in "${TESTS[@]}"; do
-    IFS='|' read -r test_name description env_vars <<< "$test_config"
-    run_test "$test_name" "$description" "$env_vars"
-    test_count=$((test_count + 1))
+# Run all tests (skip if analyze-only mode)
+if [ "$ANALYZE_ONLY" = false ]; then
+    test_count=0
+    for test_config in "${TESTS[@]}"; do
+        IFS='|' read -r test_name description env_vars <<< "$test_config"
+        run_test "$test_name" "$description" "$env_vars"
+        test_count=$((test_count + 1))
 
-    # Brief pause between tests
-    echo -e "\nPausing 3s before next test...\n"
-    sleep 3
-done
+        # Brief pause between tests
+        echo -e "\nPausing 3s before next test...\n"
+        sleep 3
+    done
+else
+    echo -e "${YELLOW}Analyze-only mode: Skipping test execution${NC}"
+    echo -e "Reading results from: ${OUTPUT_DIR}\n"
+    
+    # List available summary files
+    echo -e "${BLUE}Found summary files:${NC}"
+    for summary in "${OUTPUT_DIR}"/*_summary.txt; do
+        if [ -f "$summary" ]; then
+            test_name=$(basename "$summary" _summary.txt)
+            echo -e "  - ${test_name}"
+        fi
+    done
+    echo ""
+fi
 
 # Generate comparison report
 echo -e "\n${BLUE}========================================${NC}"
@@ -227,9 +270,9 @@ This report analyzes the impact of individual P0 features on BFS performance.
 
 EOF
 
-# Replace placeholders
-sed -i "s|PROBLEM_FILE_PLACEHOLDER|${PROBLEM_FILE}|g" "${REPORT_FILE}"
-sed -i "s|NUM_RUNS_PLACEHOLDER|${NUM_RUNS}|g" "${REPORT_FILE}"
+# Replace placeholders (use sed -i '' for macOS compatibility)
+sed -i '' "s|PROBLEM_FILE_PLACEHOLDER|${PROBLEM_FILE}|g" "${REPORT_FILE}"
+sed -i '' "s|NUM_RUNS_PLACEHOLDER|${NUM_RUNS}|g" "${REPORT_FILE}"
 
 # Add individual test results
 for test_config in "${TESTS[@]}"; do
@@ -267,16 +310,52 @@ for test_config in "${TESTS[@]}"; do
     IFS='|' read -r test_name description env_vars <<< "$test_config"
 
     if [ -f "${OUTPUT_DIR}/${test_name}_summary.txt" ]; then
-        success_rate=$(grep "Success rate:" "${OUTPUT_DIR}/${test_name}_summary.txt" | sed -n 's/.*Success rate: \([0-9]*\)%.*/\1/p' || echo "N/A")
-        avg_iterations=$(grep "Average iterations:" "${OUTPUT_DIR}/${test_name}_summary.txt" | sed -n 's/.*Average iterations: \([0-9]*\).*/\1/p' || echo "N/A")
-        avg_duration=$(grep "Average duration:" "${OUTPUT_DIR}/${test_name}_summary.txt" | sed -n 's/.*Average duration: \([0-9]*\)s.*/\1/p' || echo "N/A")
+        # Try to get structured data from summary first
+        success_rate=$(grep "Success rate:" "${OUTPUT_DIR}/${test_name}_summary.txt" | sed -n 's/.*Success rate: \([0-9]*\)%.*/\1/p')
+        avg_iterations=$(grep "Average iterations:" "${OUTPUT_DIR}/${test_name}_summary.txt" | sed -n 's/.*Average iterations: \([0-9]*\).*/\1/p')
+        avg_duration=$(grep "Average duration:" "${OUTPUT_DIR}/${test_name}_summary.txt" | sed -n 's/.*Average duration: \([0-9]*\)s.*/\1/p')
+        
+        # Fallback: extract from log file if summary doesn't have structured data
+        if [ -z "$success_rate" ] && [ -f "${OUTPUT_DIR}/${test_name}.log" ]; then
+            # Check if log indicates success (multiple patterns for different test types)
+            # BFS: "Correct solution found"
+            # RLAC: "[RLAC FINAL]" without "[RLAC TIMEOUT]" at end
+            if grep -q "Correct solution found" "${OUTPUT_DIR}/${test_name}.log" 2>/dev/null; then
+                success_rate="100"
+            elif grep -q "\[RLAC FINAL\]" "${OUTPUT_DIR}/${test_name}.log" 2>/dev/null && \
+                 ! tail -20 "${OUTPUT_DIR}/${test_name}.log" | grep -q "\[RLAC TIMEOUT\]" 2>/dev/null; then
+                success_rate="100"
+            else
+                success_rate="0"
+            fi
+        fi
+        
+        # Fallback: get duration from summary if not in structured format
+        if [ -z "$avg_duration" ]; then
+            avg_duration=$(grep "Duration:" "${OUTPUT_DIR}/${test_name}_summary.txt" | sed -n 's/.*Duration: \([0-9]*\)s.*/\1/p')
+        fi
+        
+        # Fallback: extract iteration count from log file
+        if [ -z "$avg_iterations" ] && [ -f "${OUTPUT_DIR}/${test_name}.log" ]; then
+            # Try BFS Iteration pattern first
+            avg_iterations=$(grep -o "Iteration [0-9]*" "${OUTPUT_DIR}/${test_name}.log" | tail -1 | sed 's/Iteration //')
+            # Try RLAC Round pattern if no BFS iterations found
+            if [ -z "$avg_iterations" ]; then
+                avg_iterations=$(grep -o "RLAC Round [0-9]* of [0-9]*" "${OUTPUT_DIR}/${test_name}.log" | tail -1 | sed 's/RLAC Round \([0-9]*\) of.*/\1/')
+            fi
+        fi
+        
+        # Default to N/A if still empty
+        [ -z "$success_rate" ] && success_rate="N/A"
+        [ -z "$avg_iterations" ] && avg_iterations="N/A"
+        [ -z "$avg_duration" ] && avg_duration="N/A"
 
         # Add checkmark/cross for success rate
-        if [ "$success_rate" != "N/A" ] && [ "$success_rate" -ge 70 ]; then
+        if [ "$success_rate" != "N/A" ] && [ "$success_rate" -ge 70 ] 2>/dev/null; then
             display_rate="✅ ${success_rate}%"
-        elif [ "$success_rate" != "N/A" ] && [ "$success_rate" -ge 40 ]; then
+        elif [ "$success_rate" != "N/A" ] && [ "$success_rate" -ge 40 ] 2>/dev/null; then
             display_rate="⚠️ ${success_rate}%"
-        elif [ "$success_rate" != "N/A" ]; then
+        elif [ "$success_rate" != "N/A" ] && [ "$success_rate" -ge 0 ] 2>/dev/null; then
             display_rate="❌ ${success_rate}%"
         else
             display_rate="N/A"
@@ -334,14 +413,22 @@ EOF
 
 echo -e "${GREEN}Report generated: ${REPORT_FILE}${NC}\n"
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}ABLATION TEST COMPLETE${NC}"
+if [ "$ANALYZE_ONLY" = true ]; then
+    echo -e "${BLUE}ABLATION ANALYSIS COMPLETE${NC}"
+else
+    echo -e "${BLUE}ABLATION TEST COMPLETE${NC}"
+fi
 echo -e "${BLUE}========================================${NC}\n"
 echo -e "Results directory: ${OUTPUT_DIR}"
 echo -e "Report: ${REPORT_FILE}"
 echo -e "\nTo view the report:"
 echo -e "  cat ${REPORT_FILE}"
-echo -e "\nTo analyze logs:"
-echo -e "  grep 'Correct solution found' ${OUTPUT_DIR}/*/*.log | wc -l"
-echo -e "  grep 'Iteration' ${OUTPUT_DIR}/*/*.log | tail -20"
-echo -e "\nTo compare success rates:"
-echo -e "  for dir in ${OUTPUT_DIR}/*/; do echo \"\$dir: \$(grep -l 'Correct solution found' \$dir/*.log | wc -l)/${NUM_RUNS}\"; done"
+if [ "$ANALYZE_ONLY" = false ]; then
+    echo -e "\nTo analyze logs:"
+    echo -e "  grep 'Correct solution found' ${OUTPUT_DIR}/*/*.log | wc -l"
+    echo -e "  grep 'Iteration' ${OUTPUT_DIR}/*/*.log | tail -20"
+    echo -e "\nTo compare success rates:"
+    echo -e "  for dir in ${OUTPUT_DIR}/*/; do echo \"\$dir: \$(grep -l 'Correct solution found' \$dir/*.log | wc -l)/${NUM_RUNS}\"; done"
+fi
+echo -e "\nTo re-analyze these results later:"
+echo -e "  ./test_p0_ablation.sh --analyze-only ${OUTPUT_DIR}"
