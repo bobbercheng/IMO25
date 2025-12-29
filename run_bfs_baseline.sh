@@ -75,8 +75,9 @@ remove_pid_from_tracking() {
             new_job_nums+=("${JOB_NUMS[$i]}")
         fi
     done
-    PIDS=("${new_pids[@]}")
-    JOB_NUMS=("${new_job_nums[@]}")
+    # Use ${arr[@]+"${arr[@]}"} to handle empty arrays with set -u
+    PIDS=(${new_pids[@]+"${new_pids[@]}"})
+    JOB_NUMS=(${new_job_nums[@]+"${new_job_nums[@]}"})
 }
 
 # Create output directory
