@@ -134,6 +134,10 @@ VERIFICATION_TIMEOUT = 600  # 10 minutes default
 VERIFICATION_MAX_ATTEMPTS = 3  # Max attempts before fallback
 VERIFICATION_SAFEGUARDS_ENABLED = True  # Enable by default to prevent hangs
 
+# BFS iteration limits (2025-12-29)
+MAX_ITERATIONS = 30  # Maximum iterations in main BFS loop
+MAX_ERROR_THRESHOLD = 20  # Maximum consecutive errors before giving up
+
 def log_print(*args, **kwargs):
     """
     Custom print function that writes to both stdout and log file.
@@ -371,9 +375,10 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
             }
         ],
         "model": MODEL_NAME,
-        # CRITICAL FIX (2025-12-24): Enforce full determinism to prevent hallucinations
-        # Expert panel (Google Scientist + Nvidia Engineer + Netflix Data Scientist) unanimous recommendation
-        "temperature": 0.0,  # Changed from 0.1 (fully deterministic sampling)
+        # BALANCED SAMPLING (2025-12-29): Prevent deterministic loops while maintaining rigor
+        # 0.35 balances exploration (avoid infinite loops) with determinism (reduce hallucinations)
+        # Previous 0.0 caused infinite loops in BFS baseline (runs got stuck in same patterns)
+        "temperature": 0.35,  # Changed from 0.0 (was too deterministic, caused loops)
         "top_p": 1.0,  # Don't truncate probability distribution
         "frequency_penalty": 0.0,  # No repetition penalty (math proofs naturally repeat terms)
         "presence_penalty": 0.0,  # No diversity penalty
@@ -3944,7 +3949,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
     print(f">>>>>>> [P0 ABLATION] Near-success protection: {p0_near_success_protection}")
     print(f">>>>>>> [P0 ABLATION] Answer lock: {p0_answer_lock}")
     print(f">>>>>>> [P0 ABLATION] Adaptive temperature: {p0_adaptive_temp}")
-    print(f">>>>>>> [P0 ABLATION] Base temperature: 0.0 (deterministic)")
+    print(f">>>>>>> [P0 ABLATION] Base temperature: 0.35 (balanced exploration/determinism)")
 
     print("="*80 + "\n")
 
@@ -6892,7 +6897,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     score_history.append(initial_score)
     print(f">>>>>>> [SCORE] Initial solution score: {initial_score:.2f}")
 
-    for i in range(current_iteration, 30):
+    for i in range(current_iteration, MAX_ITERATIONS):
         print(f"\n{'='*80}")
         print(f">>>>>>> Iteration {i}: corrects={correct_count}, errors={error_count}")
         # SIMPLIFIED (2025-12-21): Removed score delta tracking
@@ -6997,9 +7002,18 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         print(f"{'!'*80}\n")
                         break
 
-                    # PHASE 1 QUICK WIN: Adaptive temperature when stuck
+                    # PHASE 1 QUICK WIN: Adaptive temperature and reasoning when stuck
                     if stuck_pattern_counter >= 3:
-                        print(f">>>>>>> [ADAPTIVE TEMP] Stuck pattern detected (3+ duplicates)")
+                        print(f">>>>>>> [ADAPTIVE MODE] Stuck pattern detected (3+ duplicates)")
+                        print(f">>>>>>> [ADAPTIVE MODE] Escalating both temperature and reasoning effort")
+
+                        # ADAPTIVE REASONING (2025-12-29): Escalate verification reasoning to HIGH
+                        if ver_reasoning != "high":
+                            previous_reasoning = ver_reasoning
+                            ver_reasoning = "high"
+                            print(f">>>>>>> [ADAPTIVE REASONING] Escalating verification: {previous_reasoning} → {ver_reasoning}")
+                            print(f">>>>>>> [ADAPTIVE REASONING] This enables more rigorous error detection")
+
                         print(f">>>>>>> [ADAPTIVE TEMP] Increasing temperature to enable exploration")
                         print(f">>>>>>> [ADAPTIVE TEMP] This will generate structurally different solutions")
 
@@ -7073,7 +7087,7 @@ Do not simply rephrase or polish the previous approach - create something new.
             print(f">>>>>>> [SCORE] Iteration {i} score: {current_score:.2f}")
 
             if("yes" in good_verify.lower()):
-                print(">>>>>>> Solution is good, verifying again ...")
+                print(">>>>>>> Solution verification PASSED")
                 correct_count += 1
                 error_count = 0
             else:
@@ -7084,17 +7098,22 @@ Do not simply rephrase or polish the previous approach - create something new.
             correct_history.append(correct_count)
             error_history.append(error_count)
 
+            # ADAPTIVE REASONING (2025-12-29): Escalate when stuck with errors
+            if error_count >= 3 and ver_reasoning != "high":
+                previous_reasoning = ver_reasoning
+                ver_reasoning = "high"
+                print(f">>>>>>> [ADAPTIVE REASONING] {error_count} consecutive errors detected")
+                print(f">>>>>>> [ADAPTIVE REASONING] Escalating verification: {previous_reasoning} → {ver_reasoning}")
+                print(f">>>>>>> [ADAPTIVE REASONING] More rigorous verification may catch subtle issues")
+
             # NOTE: Stuck detection is now handled by RLAC mode (critic.detect_stuck_pattern)
             # Legacy standalone stuck detection has been removed
 
             # Update previous solution for next iteration
             previous_solution = solution
 
-            # Save memory every iteration
-            if memory_file:
-                save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
-                           sol_reasoning, self_imp_reasoning, ver_reasoning)
-
+            # EARLY STOPPING (2025-12-29): Check success immediately after verification
+            # This saves unnecessary iterations after finding a correct solution
             # SUCCESS DETECTION (2025-12-23): Option B - Full Solution Validation
             # Strategy: Accept solution if verification passes (complete rigorous proof)
             # Ground truth provides confidence level, not primary validation
@@ -7108,6 +7127,10 @@ Do not simply rephrase or polish the previous approach - create something new.
                 # Determine confidence based on answer validation
                 if answer_is_correct:
                     # BEST CASE: Verification passed + answer matches ground truth
+                    # Save final state before returning
+                    if memory_file:
+                        save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
+                                   sol_reasoning, self_imp_reasoning, ver_reasoning)
                     print(">>>>>>> ✅ CORRECT SOLUTION FOUND (HIGH CONFIDENCE)")
                     print(f"    Verification: PASSED (iteration {i})")
                     print(f"    Answer: CORRECT (matches ground truth)")
@@ -7127,6 +7150,10 @@ Do not simply rephrase or polish the previous approach - create something new.
                 else:
                     # NO GROUND TRUTH: Accept based on verification alone
                     # This is the "Option B" path - trust the proof is complete
+                    # Save final state before returning
+                    if memory_file:
+                        save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
+                                   sol_reasoning, self_imp_reasoning, ver_reasoning)
                     print(">>>>>>> ✅ VERIFICATION PASSED (NO GROUND TRUTH)")
                     print(f"    Verification: PASSED (iteration {i})")
                     print(f"    Answer: Not validated (no ground truth available)")
@@ -7134,14 +7161,19 @@ Do not simply rephrase or polish the previous approach - create something new.
                     print(json.dumps(solution, indent=4))
                     return solution
 
-            # SIMPLIFIED (2025-12-21): Increased error threshold from 10 to 20
-            # Rationale: Give more chances before giving up (saves 80-160 min by reducing premature failures)
-            # With new "Justification Gap" acceptance, solutions may pass on later iterations
-            elif(error_count >= 20):
-                print(">>>>>>> Failed in finding a correct solution (20 consecutive errors).")
+            # Save memory for ongoing iterations (non-success cases)
+            if memory_file:
+                save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
+                           sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+            # ERROR THRESHOLD: Stop if too many consecutive errors accumulate
+            # (2025-12-21): Increased from 10 to 20 to give more chances
+            # (2025-12-29): Now uses named constant MAX_ERROR_THRESHOLD for clarity
+            elif(error_count >= MAX_ERROR_THRESHOLD):
+                print(f">>>>>>> Failed in finding a correct solution ({MAX_ERROR_THRESHOLD} consecutive errors).")
                 # Save final state before returning
                 if memory_file:
-                    save_memory(memory_file, problem_statement, other_prompts, i, 30, solution, verify,
+                    save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
                                sol_reasoning, self_imp_reasoning, ver_reasoning)
                 return None
 
@@ -7150,10 +7182,10 @@ Do not simply rephrase or polish the previous approach - create something new.
             continue
 
     if(not success):
-        print(">>>>>>> Failed in finding a correct solution.")
+        print(f">>>>>>> Failed in finding a correct solution after {MAX_ITERATIONS} iterations.")
         # Save final state before returning
         if memory_file:
-            save_memory(memory_file, problem_statement, other_prompts, 30, 30, solution, verify,
+            save_memory(memory_file, problem_statement, other_prompts, MAX_ITERATIONS, MAX_ITERATIONS, solution, verify,
                        sol_reasoning, self_imp_reasoning, ver_reasoning)
         return None
 
@@ -7344,7 +7376,7 @@ if __name__ == "__main__":
             print(f">>>>>>> Found a correct solution.")
             print(json.dumps(sol, indent=4))
         else:
-            print(f">>>>>>> No solution found after 30 iterations (error_count reached 20).")
+            print(f">>>>>>> No solution found after {MAX_ITERATIONS} iterations (error_count reached {MAX_ERROR_THRESHOLD}).")
     except Exception as e:
         print(f">>>>>>> Error during agent execution: {e}")
         import traceback
