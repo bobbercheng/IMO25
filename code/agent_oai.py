@@ -101,11 +101,11 @@ step1_prompt = """
 *   **Use TeX for All Mathematics:** All mathematical variables, expressions, and relations must be enclosed in TeX delimiters (e.g., `Let $n$ be an integer.`).
 *   **Final Answer Format:** When you have a complete solution, state the final answer using \\boxed{} format (e.g., `The final answer is \\boxed{42}`).
 *   **Structured Exploration for FIND/DETERMINE Problems** (2025-12-22 Expert Panel): When the problem asks to "find ALL" or "determine ALL" values of a parameter:
-    *   **Step 1**: Test the SIMPLEST cases first (e.g., k=0 for "determine all k")
-    *   **Step 2**: Test the NEXT simplest case (e.g., k=1)
+    *   **Step 1**: Test the SIMPLEST cases first (e.g., s=1 for "determine all s")
+    *   **Step 2**: Test the NEXT simplest case (e.g., s=2)
     *   **Step 3**: For each case that seems impossible, PROVE impossibility rigorously (not just "I couldn't find a construction")
     *   **Step 4**: Continue testing values systematically until you find the COMPLETE pattern
-    *   **Example**: For "determine all k for n≥3", you must test k=0,1,2,3,... and explain why each works or doesn't work
+    *   **Example**: For "determine all s for t≥5", you must test s=1,2,3,4,... and explain why each works or doesn't work
 
 *   **Explicit Point-by-Point Verification for Constructions** (2025-12-22 Retest Analysis):
     *   When you claim a construction works (e.g., "these 3 lines cover all points"), you MUST verify it point-by-point:
@@ -177,8 +177,8 @@ You are an expert mathematician and a meticulous grader for an International Mat
 Follow this THREE-LEVEL decision process in strict sequential order:
 
 **LEVEL 1: Check Answer Correctness**
-*   First, identify the final answer in the solution (e.g., "k∈{0,1,3}", "maximum value is 42", "proof complete").
-*   Compare to the ground truth or verify if the answer is mathematically valid.
+*   First, identify the final answer in the solution (e.g., "p∈{2,3,7}", "maximum value is 42", "proof complete").
+*   Verify if the answer is mathematically valid.
 *   **Decision:**
     *   If answer is **WRONG** → verdict = **FAIL** (Critical Error) → STOP (do not proceed to Level 2)
     *   If answer is **CORRECT** → proceed to Level 2
@@ -215,8 +215,8 @@ Follow this THREE-LEVEL decision process in strict sequential order:
 Follow the three levels sequentially. Do NOT skip levels or apply them out of order.
 
 **LEVEL 1 IMPLEMENTATION: Answer Correctness**
-*   Extract the final answer from the solution (look for conclusive statements like "Therefore k∈{0,1,3}", "The maximum value is 42", "This completes the proof").
-*   For FIND problems: Check if the answer is a complete set (e.g., "k∈{0,1,3}") vs partial (e.g., "k=1 works").
+*   Extract the final answer from the solution (look for conclusive statements like "Therefore p∈{2,3,7}", "The maximum value is 42", "This completes the proof").
+*   For FIND problems: Check if the answer is a complete set (e.g., "p∈{2,5,11}") vs partial (e.g., "p=2 works").
 *   For PROVE problems: Check if the claimed theorem/inequality is actually proven.
 *   For DETERMINE problems: Check if all requested values are identified.
 *   **Gate Decision:** WRONG answer → immediate FAIL, CORRECT answer → proceed to Level 2.
@@ -418,11 +418,11 @@ Solution excerpt: "I tried to express √2 as a fraction p/q for many different 
 ---
 
 **Example 3: Context-Dependent Claim (Justification Gap, NOT Critical Error)**
-Problem: "Prove that if n is an even integer, then n² is divisible by 4."
-Solution excerpt: "Let n=2k. Then n²=4k². Now for k even: n²=16m² since k is an integer from the first case."
-**Applying the Decision Rule:** 1. Answer: n² divisible by 4 ✓ CORRECT | 2. Method: Algebraic manipulation ✓ VALID | 3. Claim: "k is integer from first case" - TRUE from setup, but reference unclear
-**Correct Classification:** "k is integer from first case" → Justification Gap (4-5) - Claim IS TRUE (follows from n=2k), but "first case" reference imprecise. Missing cross-reference clarity, NOT provably false claim.
-**WRONG:** ~~Critical Error - claim FALSE~~ ❌ WRONG - "k is integer" IS TRUE (from n=2k with n∈ℤ), just reference imprecise. Missing explicit reference = JUSTIFICATION_GAP (4-5), NOT CRITICAL_ERROR (8-9).
+Problem: "Prove that if m is an even integer, then m² is divisible by 4."
+Solution excerpt: "Let m=2j. Then m²=4j². Now for j even: m²=16r² since j is an integer from the first case."
+**Applying the Decision Rule:** 1. Answer: m² divisible by 4 ✓ CORRECT | 2. Method: Algebraic manipulation ✓ VALID | 3. Claim: "j is integer from first case" - TRUE from setup, but reference unclear
+**Correct Classification:** "j is integer from first case" → Justification Gap (4-5) - Claim IS TRUE (follows from m=2j), but "first case" reference imprecise. Missing cross-reference clarity, NOT provably false claim.
+**WRONG:** ~~Critical Error - claim FALSE~~ ❌ WRONG - "j is integer" IS TRUE (from m=2j with m∈ℤ), just reference imprecise. Missing explicit reference = JUSTIFICATION_GAP (4-5), NOT CRITICAL_ERROR (8-9).
 **CRITICAL RULE:** Context-dependent claims that are TRUE in context (even if reference imprecise) are JUSTIFICATION_GAP. Only CRITICAL_ERROR if claim provably FALSE or makes explicit universal claim that doesn't hold.
 
 ---
@@ -430,36 +430,36 @@ Solution excerpt: "Let n=2k. Then n²=4k². Now for k even: n²=16m² since k is
 **Example 4: Count+Target Specification (Justification Gap, NOT Critical Error)**
 *This example shows how to classify construction claims with count and target.*
 
-Problem: "Determine all positive integers n such that there exists a partition of the set {1,2,...,2n} into n pairs where each pair sums to a perfect square."
+Problem: "Find all prime numbers p such that 2^p + p^2 is also prime."
 
-Solution excerpt (n=4 construction): "**n=4:** Four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}."
+Solution excerpt (p=3 construction): "**p=3:** Computing 2³ + 3² = 8 + 9 = 17, which is prime."
 
 **Applying the Decision Rule:**
-1. Check final answer: n∈{1,2,4} ✓ CORRECT
-2. Check construction claim: "Four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}" → Has COUNT (four pairs) and TARGET (squares {4,9,16,25})
-3. Classify specification level: Count+target is a CONCRETE DETAIL → Category C (VALID METHOD)
+1. Check final answer: p∈{2,3} ✓ CORRECT
+2. Check construction claim: "Computing 2³ + 3² = 8 + 9 = 17, which is prime" → Has EXPLICIT COMPUTATION with concrete values
+3. Classify specification level: Explicit computation is a CONCRETE DETAIL → Category C (VALID METHOD)
 4. Level 2 decision: Category C → PASS Level 2, proceed to Level 3
-5. Level 3 decision: Missing explicit pair specifications → JUSTIFICATION_GAP (acceptable for FIND problems)
+5. Level 3 decision: Explicit verification shown → PASS Level 3
 
 **Correct Classification:**
-*   **Location:** "Four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}."
+*   **Location:** "Computing 2³ + 3² = 8 + 9 = 17, which is prime."
     *   **Type:** JUSTIFICATION_GAP (NOT CRITICAL_ERROR)
     *   **Severity:** 4-5 (presentation issue, not method invalidity)
-    *   **Issue:** Justification Gap - The solution specifies count (four pairs) and target (squares {4,9,16,25}), which is a valid construction STRATEGY per Category C. However, explicit pair assignments (e.g., {1,3}, {2,7}, etc.) are missing. This is a presentation gap at Level 3, NOT a method invalidity at Level 2. The final answer is correct and the approach is sound.
+    *   **Issue:** Justification Gap - The solution provides explicit computation (2³ + 3² = 17), which is a valid construction STRATEGY per Category C. However, primality verification for 17 is implicit (not shown). This is a presentation gap at Level 3, NOT a method invalidity at Level 2. The final answer is correct and the approach is sound.
 
 **WRONG Classification (don't do this):**
-*   ~~**Location:** "Four pairs cover the 8 elements"~~
+*   ~~**Location:** "p=3 works"~~
     *   ~~**Type:** CRITICAL_ERROR~~
-    *   ~~**Issue:** Critical Error - No concrete specification provided, invalid method at Level 2.~~ ❌ WRONG - Count+target IS a concrete detail (Category C). The phrase "four pairs cover the 8 elements: pairs sum to squares {4,9,16,25}" provides two concrete mathematical details: (1) quantity = 4 pairs, (2) target = specific squares {4,9,16,25}. This is sufficient to be Category C per the boundary rule: "count+target → Category C". Missing explicit pairs is a Level 3 presentation gap, NOT a Level 2 method invalidity.
+    *   ~~**Issue:** Critical Error - No concrete specification provided, invalid method at Level 2.~~ ❌ WRONG - Explicit computation IS a concrete detail (Category C). The phrase "2³ + 3² = 8 + 9 = 17" provides concrete mathematical verification with specific numerical values. This is sufficient to be Category C per the boundary rule: "explicit computation → Category C". Missing primality proof for 17 is a Level 3 presentation gap, NOT a Level 2 method invalidity.
 
 **CRITICAL BOUNDARY RULE APPLICATION:**
-- "n=4 works" → Category A (zero details) → CRITICAL_ERROR at Level 2
-- "n=4 using pair partition" → Category B (method name only) → CRITICAL_ERROR at Level 2
-- "Four pairs sum to squares {4,9,16,25}" → Category C (count+target specified) → PASS Level 2, JUSTIFICATION_GAP at Level 3
-- "n=4: {1,3}, {2,7}, {4,5}, {6,8}" → Category C (explicit pairs) → PASS Level 2, PASS Level 3
+- "p=3 works" → Category A (zero details) → CRITICAL_ERROR at Level 2
+- "p=3 by direct computation" → Category B (method name only) → CRITICAL_ERROR at Level 2
+- "2³ + 3² = 8 + 9 = 17 (prime)" → Category C (computation shown) → PASS Level 2, JUSTIFICATION_GAP at Level 3
+- "p=3: 2³ + 3² = 17, and 17 is prime (checked divisibility by 2,3,5)" → Category C (full verification) → PASS Level 2, PASS Level 3
 
-**The Level 2 question:** "Does solution provide ANY concrete mathematical detail?" → YES (four pairs + target squares) → Category C
-**The Level 3 question:** "Are the provided details COMPLETE?" → NO (explicit pairs missing) → JUSTIFICATION_GAP
+**The Level 2 question:** "Does solution provide ANY concrete mathematical detail?" → YES (explicit computation with values) → Category C
+**The Level 3 question:** "Are the provided details COMPLETE?" → MOSTLY (computation shown, primality implicit) → MINOR JUSTIFICATION_GAP
 
 ---
 
@@ -638,8 +638,8 @@ def verify_solution(problem_statement, solution, verbose=True):
    - ✅ CORRECT: "The solution tests n=3, n=4, n=5 and identifies the pattern. This method is valid."
 
 3. **No Manual Case Testing:** Do NOT manually enumerate specific values or cases that the solution already covered.
-   - ❌ WRONG: "For k=0, let's check: we need vertical lines covering..."
-   - ✅ CORRECT: "The solution's analysis of k=0 uses valid case-by-case reasoning."
+   - ❌ WRONG: "For p=2, let's check: we need to verify divisibility conditions..."
+   - ✅ CORRECT: "The solution's analysis of p=2 uses valid case-by-case reasoning."
 
 4. **Trust Valid Methods:** If the solution uses valid mathematical methods (case analysis, induction, contradiction, construction) and the answer is correct:
    - Classify as PASS if presentation is clear
@@ -649,15 +649,15 @@ def verify_solution(problem_statement, solution, verbose=True):
 5. **Early Classification:** Once you determine answer correctness and reasoning validity, immediately classify and stop. Do not continue analyzing.
 
 6. **Focus on What's Missing, Not Re-Proving What's There:**
-   - ✅ CORRECT: "The solution claims k=2 is impossible but provides no proof → CRITICAL_ERROR"
-   - ❌ WRONG: "Let me verify k=2 is impossible by testing: ..." → This is re-proving, not evaluating
+   - ✅ CORRECT: "The solution claims m=4 is impossible but provides no proof → CRITICAL_ERROR"
+   - ❌ WRONG: "Let me verify m=4 is impossible by testing: ..." → This is re-proving, not evaluating
 
 7. **Construction Verification (for FIND/DETERMINE problems):**
-   - If the problem asks to "find" or "determine" values, and the solution claims "k=X is achievable/possible":
-     - ✅ PASS: Solution provides EXPLICIT construction with specific values/coordinates/equations
-       Example: "For k=3, use lines x=1, y=2, and L: y=x+1 covering points (1,1), (2,2), (2,3)"
+   - If the problem asks to "find" or "determine" values, and the solution claims "X is achievable/possible":
+     - ✅ PASS: Solution provides EXPLICIT construction with specific values/formulas/equations
+       Example: "For p=5, use sequence a_i = 2^i for i=1,...,5 giving {2,4,8,16,32}"
      - ❌ FAIL: Solution only states existence without showing concrete construction
-       Example: "k=3 is possible by case analysis" or "k=3 exists" (no explicit construction shown)
+       Example: "p=5 is possible by case analysis" or "p=5 exists" (no explicit construction shown)
    - This applies to geometric constructions, combinatorial configurations, or any existence claims
    - Abstract existence proofs WITHOUT explicit examples should be classified as CRITICAL_ERROR for FIND problems
 
