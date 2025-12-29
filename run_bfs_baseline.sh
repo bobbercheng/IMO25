@@ -48,7 +48,36 @@ NUM_INITIAL_ATTEMPTS=3            # Generate 3 initial solution attempts (BFS ex
 MAX_RUNS=15
 
 PIDS=()  # Array to track background job PIDs
-declare -A PID_TO_JOB  # Maps PID to job number for completion reporting
+JOB_NUMS=()  # Parallel array: JOB_NUMS[i] corresponds to PIDS[i]
+
+# Helper function to get job number for a PID (bash 3.x compatible)
+get_job_num_for_pid() {
+    local target_pid=$1
+    local i
+    for i in "${!PIDS[@]}"; do
+        if [ "${PIDS[$i]}" = "$target_pid" ]; then
+            echo "${JOB_NUMS[$i]}"
+            return 0
+        fi
+    done
+    echo "unknown"
+}
+
+# Helper function to remove PID from tracking arrays
+remove_pid_from_tracking() {
+    local target_pid=$1
+    local new_pids=()
+    local new_job_nums=()
+    local i
+    for i in "${!PIDS[@]}"; do
+        if [ "${PIDS[$i]}" != "$target_pid" ]; then
+            new_pids+=("${PIDS[$i]}")
+            new_job_nums+=("${JOB_NUMS[$i]}")
+        fi
+    done
+    PIDS=("${new_pids[@]}")
+    JOB_NUMS=("${new_job_nums[@]}")
+}
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
@@ -99,7 +128,7 @@ echo ""
 # Function to report job completion
 report_job_completion() {
     local pid=$1
-    local job_num=${PID_TO_JOB[$pid]:-unknown}
+    local job_num=$(get_job_num_for_pid $pid)
     local progress_file="$OUTPUT_DIR/.bfs_run${job_num}.progress"
 
     if [ -f "$progress_file" ]; then
@@ -116,7 +145,7 @@ report_job_completion() {
     fi
 
     # Clean up the mapping
-    unset PID_TO_JOB[$pid]
+    remove_pid_from_tracking $pid
 }
 
 # Function to wait for a job slot to become available
@@ -181,7 +210,7 @@ run_bfs_async() {
 
     local new_pid=$!
     PIDS+=($new_pid)
-    PID_TO_JOB[$new_pid]=$run_num  # Map PID to job number for completion reporting
+    JOB_NUMS+=($run_num)  # Map PID to job number for completion reporting (parallel array)
     echo -e "${GREEN}[STARTED]${NC} BFS Run $run_num - PID: $new_pid - Slot: ${#PIDS[@]}/$MAX_PARALLEL - Log: $log_file"
 }
 
