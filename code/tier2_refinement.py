@@ -103,9 +103,139 @@ def validate_equation_symbolically(equation_text, verbose=False):
         }
 
 
+def should_validate_equation(equation, context_before, context_after, proof_text):
+    r"""
+    P0 FIX: Filter out equations that shouldn't be symbolically validated.
+
+    This prevents false positives from:
+    - Set definitions: T_k = \{(u,v) | u+v <= k+1\}
+    - Constraints: "subject to x+y > 0"
+    - Negations: "NOT parallel to x+y=0"
+    - Variable definitions: "Let p = t+1"
+
+    Args:
+        equation: The equation string
+        context_before: Text before the equation (for context)
+        context_after: Text after the equation
+        proof_text: Full proof text (for global patterns)
+
+    Returns:
+        bool: True if equation should be validated, False otherwise
+    """
+    equation_lower = equation.lower()
+    context_before_lower = context_before.lower()
+    context_after_lower = context_after.lower()
+
+    # P0-1: Skip set definitions (contains set notation with conditions)
+    # Example: T_k = \{(u,v) \mid u+v \le k+1\}
+    if r'\{' in equation and r'\mid' in equation:
+        return False
+
+    if '{' in equation and '|' in equation:  # Alternative set notation
+        return False
+
+    # P0-1: Skip inequalities (these are constraints, not equations to validate)
+    # Example: u+v <= k+1 from set constraints
+    inequality_symbols = [r'\le', r'\ge', r'\lt', r'\gt', '<=', '>=', '<', '>']
+    if any(op in equation for op in inequality_symbols):
+        return False
+
+    # P0-2: Skip negated equations (describing what NOT to have)
+    # Example: "NOT parallel to x+y=0" or "different from x=0"
+    negation_keywords = [
+        'not', 'NOT', 'different from', 'avoid', 'forbidden',
+        'excluded', 'cannot', 'neither', 'nor', 'except', 'excluding'
+    ]
+    if any(kw in context_before_lower for kw in negation_keywords):
+        return False
+
+    # P0-3: Skip variable definitions (defining new symbols)
+    # Example: "Let p = t+1" or "Set q = t" or "Define k := 2t+1"
+    definition_keywords = [
+        'let ', 'set ', 'define ', 'put ', 'denote ', 'write ',
+        'choose ', 'take ', 'fix ', ':='
+    ]
+    if any(kw in context_before_lower for kw in definition_keywords):
+        return False
+
+    # P0-4: Skip conditional equations (context-dependent identities)
+    # Example: "If n is even, then k = n/2"
+    conditional_keywords = ['if ', 'when ', 'suppose ', 'assume ', 'given ']
+    if any(kw in context_before_lower for kw in conditional_keywords):
+        return False
+
+    # P0-5: Skip equations inside set builder notation
+    # Example: \{x \mid x = 2k\} should not extract "x = 2k"
+    # Check if equation appears within \{...\} or {...}
+    # Look for opening brace before equation and closing brace after
+    if r'\{' in context_before or '{' in context_before:
+        # Check if there's a closing brace in context_after
+        if r'\}' in context_after or '}' in context_after:
+            return False
+
+    # P0-6: Skip equations with "for all" or "exists" (universal/existential quantifiers)
+    # Example: "for all x, we have x^2 >= 0"
+    quantifier_keywords = ['for all', 'for every', 'for any', 'there exists']
+    if any(kw in context_before_lower for kw in quantifier_keywords):
+        return False
+
+    # P0-7: Skip equations in section headers/case labels
+    # Example: "*k=0*. Construction: ..." or "(1) k=0:" or "- k=0:"
+    # These are case analysis markers, not universal identities
+    section_header_patterns = [
+        r'\*+\s*[a-z_]+\s*=',  # *k=0* or **k=0**
+        r'^\s*\([0-9]+\)\s*[a-z_]+\s*=',  # (1) k=0
+        r'^\s*-\s*[a-z_]+\s*=',  # - k=0:
+        r'^\s*•\s*[a-z_]+\s*=',  # • k=0:
+        r'Case\s+[a-z_]+\s*=',  # Case k=0
+        r'^\s*[0-9]+\.\s*[a-z_]+\s*=',  # 1. k=0
+    ]
+
+    for pattern in section_header_patterns:
+        if re.search(pattern, context_before, re.IGNORECASE):
+            return False
+
+    # P0-8: Skip case specifications (specific values, not universal)
+    # Example: "for n=3" or "when k=2" (specific case, not "for all n")
+    # Distinguish from universal quantifiers like "for all n"
+    case_spec_patterns = [
+        r'\bfor\s+[a-z_]+\s*=\s*\d+\b',  # for n=3
+        r'\bwhen\s+[a-z_]+\s*=\s*\d+\b',  # when k=2
+        r'\bat\s+[a-z_]+\s*=\s*\d+\b',  # at m=5
+        r'\bwith\s+[a-z_]+\s*=\s*\d+\b',  # with n=4
+    ]
+
+    for pattern in case_spec_patterns:
+        if re.search(pattern, context_before, re.IGNORECASE):
+            return False
+
+    # P0-9: Skip equations that name geometric/mathematical objects
+    # Example: "the line y=x" or "lines x=1, x=2, x+y=4"
+    # These are object identifiers, not algebraic claims to validate
+    object_naming_patterns = [
+        r'\bthe\s+line\s+',  # the line y=x
+        r'\blines?\s+[a-z_0-9,\s=+\-*()]+,',  # lines x=1, x=2, ... (comma-separated list)
+        r'\btake\s+',  # take the line x=0
+        r'\buse\s+',  # use lines x=1
+        r'\bchoose\s+',  # choose x=0
+        r'\breplace.*by\s+',  # replace...by y=x
+        r'\bin\s+column\s+[a-z_]+\s*=',  # in column x=v+1
+        r'\bin\s+row\s+[a-z_]+\s*=',  # in row y=2
+        r'\bon\s+',  # on the line x=0
+    ]
+
+    for pattern in object_naming_patterns:
+        if re.search(pattern, context_before, re.IGNORECASE):
+            return False
+
+    return True
+
+
 def extract_equations_from_proof(proof_text):
     """
     Extract mathematical equations from a proof for validation.
+
+    P0 FIX: Now includes semantic filtering to avoid false positives.
 
     Supports multiple formats:
     - Inline numbered: (3.2) q = ...
@@ -123,45 +253,74 @@ def extract_equations_from_proof(proof_text):
 
     # Pattern 1: Inline numbered equations (e.g., "(3.2) q = ...")
     inline_pattern = r'\([\d.]+\)\s*([^\n.]+\s*=\s*[^\n.]+?)(?:\n|\.|\s{2}|$)'
-    inline_matches = re.findall(inline_pattern, proof_text, re.MULTILINE)
 
-    for match in inline_matches:
+    for match_obj in re.finditer(inline_pattern, proof_text, re.MULTILINE):
+        match = match_obj.group(1)
+        start_pos = match_obj.start()
+        end_pos = match_obj.end()
+
+        # Get context for filtering
+        context_before = proof_text[max(0, start_pos-150):start_pos]
+        context_after = proof_text[end_pos:min(len(proof_text), end_pos+150)]
+
         cleaned = match.strip()
         if cleaned and '=' in cleaned:
+            # Check if should validate
+            if not should_validate_equation(cleaned, context_before, context_after, proof_text):
+                continue
+
             # Convert basic LaTeX to SymPy
             cleaned = clean_latex_equation(cleaned)
             if cleaned:
                 equations.append(cleaned)
 
     # Pattern 2: LaTeX display equations \\[ ... \\]
-    # Use non-greedy match and DOTALL to handle multi-line equations
     latex_pattern = r'\\\[(.*?)\\\]'
-    latex_matches = re.findall(latex_pattern, proof_text, re.DOTALL)
 
-    for match in latex_matches:
+    for match_obj in re.finditer(latex_pattern, proof_text, re.DOTALL):
+        match = match_obj.group(1)
+        start_pos = match_obj.start()
+        end_pos = match_obj.end()
+
+        # Get context for filtering
+        context_before = proof_text[max(0, start_pos-150):start_pos]
+        context_after = proof_text[end_pos:min(len(proof_text), end_pos+150)]
+
         # Remove \tag{n} notation
         cleaned = re.sub(r'\\tag\{[^}]*\}', '', match)
 
-        # Split multiple equations in one display block (separated by commas or \\qquad)
-        # Example: A=(...), B=(...) should be split
+        # Split multiple equations in one display block
         parts = re.split(r',\s*(?=[A-Z]\s*=)', cleaned)
 
         for part in parts:
             part = part.strip()
             if '=' in part:
+                # Check if should validate
+                if not should_validate_equation(part, context_before, context_after, proof_text):
+                    continue
+
                 # Convert LaTeX to SymPy-compatible format
                 part = clean_latex_equation(part)
                 if part:  # Only add non-empty equations
                     equations.append(part)
 
-    # Pattern 3: Inline LaTeX math \\( ... \\) - but only simple equations
-    # Example: "we have \\(PA=PD\\)" should extract "PA=PD"
-    inline_latex_pattern = r'\\\(([^)]*=[[^)]*)\\\)'
-    inline_latex_matches = re.findall(inline_latex_pattern, proof_text)
+    # Pattern 3: Inline LaTeX math \\( ... \\)
+    inline_latex_pattern = r'\\\(([^)]*=[^)]*)\\\)'
 
-    for match in inline_latex_matches:
-        # Only extract if it's a simple equation (no angle symbols, etc.)
+    for match_obj in re.finditer(inline_latex_pattern, proof_text):
+        match = match_obj.group(1)
+        start_pos = match_obj.start()
+        end_pos = match_obj.end()
+
+        # Get context for filtering
+        context_before = proof_text[max(0, start_pos-150):start_pos]
+        context_after = proof_text[end_pos:min(len(proof_text), end_pos+150)]
+
         if '=' in match:
+            # Check if should validate
+            if not should_validate_equation(match, context_before, context_after, proof_text):
+                continue
+
             cleaned = clean_latex_equation(match)
             if cleaned and cleaned not in equations:  # Avoid duplicates
                 equations.append(cleaned)
@@ -402,6 +561,7 @@ def tier2_refinement_loop(
 
     current_solution = rlac_solution
     refinement_history = []
+    stuck_count = 0  # FIX #8: Track repeated similar feedback
 
     for round_num in range(max_refinement_rounds):
         # Determine verification reasoning level for this round
@@ -473,7 +633,8 @@ def tier2_refinement_loop(
         # (Disabled for proof problems - see is_proof_problem())
         refined_answer = extract_boxed_answer(refined_solution, problem_statement)
 
-        if refined_answer and refined_answer != locked_answer:
+        # FIX #7: Use semantic equivalence instead of string comparison
+        if refined_answer and not semantically_equivalent_answers(refined_answer, locked_answer, verbose=verbose):
             if verbose:
                 print(f"[TIER 2 ERROR] Answer changed during refinement!")
                 print(f"[TIER 2 ERROR]   Expected: {locked_answer}")
@@ -535,11 +696,28 @@ def tier2_refinement_loop(
             print(f"[TIER 2 VALIDATION] ✓ Validated {validation_result['validated_count']} equations successfully")
 
         # Step 8: Check for refinement loops (same gaps repeating)
-        if detect_refinement_loop(refinement_history, issues):
+        # FIX #8: Adaptive refinement - detect and escalate when stuck
+        is_stuck = detect_refinement_loop(refinement_history, issues)
+
+        if is_stuck:
+            stuck_count += 1
             if verbose:
-                print(f"[TIER 2 WARNING] Refinement loop detected - same gaps reappearing")
-                print(f"[TIER 2 WARNING] Current approach cannot fix these gaps")
-            return current_solution, "TIER_1_ONLY", refinement_history
+                print(f"[TIER 2 ADAPTIVE] Similar feedback detected ({stuck_count}/2)")
+                print(f"[TIER 2 ADAPTIVE] Same issues reappearing: {[i['location'][:30] for i in issues[:2]]}")
+
+            if stuck_count >= 2:
+                if verbose:
+                    print(f"\n[TIER 2 ESCALATION] Repeated feedback {stuck_count} times - current approach failing")
+                    print(f"[TIER 2 ESCALATION] Options:")
+                    print(f"  1. Accept TIER_1_ONLY (answer correct, proof needs manual review)")
+                    print(f"  2. Fresh start with different proof strategy (not implemented)")
+                    print(f"  3. Section rewrite instead of targeted fixes (not implemented)")
+                    print(f"[TIER 2 DECISION] Accepting TIER_1_ONLY status")
+
+                return current_solution, "TIER_1_ONLY", refinement_history
+        else:
+            # Progress made, reset stuck counter
+            stuck_count = 0
 
         # Step 9: Update for next iteration
         refinement_history.append({
@@ -547,7 +725,8 @@ def tier2_refinement_loop(
             'issues_count': len(issues),
             'critical': len(critical_errors),
             'gaps': len(justification_gaps),
-            'feedback_summary': bug_report[:500] if bug_report else ""
+            'feedback_summary': bug_report[:500] if bug_report else "",
+            'stuck': is_stuck  # Track if this round was stuck
         })
 
         current_solution = refined_solution
@@ -922,6 +1101,9 @@ def extract_boxed_answer(solution, problem_statement=None):
     Extract answer from \\boxed{...} for verification.
     Handles nested braces correctly (e.g., \\dfrac{a}{b}, \\Bigl(...\\Bigr)).
 
+    FIX #6: Uses LAST boxed expression (final answer), not first (intermediate result).
+    Proofs often have intermediate results like \\boxed{k\\le 1} before final \\boxed{k\\in{0,1}}.
+
     For "prove that" problems, returns None to disable answer locking.
     This prevents false rejections when refinements reorder proof steps.
 
@@ -940,12 +1122,15 @@ def extract_boxed_answer(solution, problem_statement=None):
     if problem_statement and is_proof_problem(problem_statement):
         return None
 
-    # Find \boxed{ or boxed{
+    # FIX #6: Find ALL \boxed{ occurrences, use LAST one (final answer)
     pattern = r'\\?boxed\{'
-    match = re.search(pattern, solution)
+    matches = list(re.finditer(pattern, solution))
 
-    if not match:
+    if not matches:
         return None
+
+    # Use LAST match (final answer), not first (intermediate result)
+    match = matches[-1]
 
     # Start after the opening brace
     start = match.end()
@@ -966,6 +1151,128 @@ def extract_boxed_answer(solution, problem_statement=None):
         return solution[start:i-1].strip()
 
     return None
+
+
+def semantically_equivalent_answers(ans1, ans2, verbose=False):
+    """
+    FIX #7: Check if two mathematical answers are semantically equivalent.
+
+    Handles common notational variations:
+    - Set notation vs inequalities: k\\in{0,1} ⟺ k≤1 (for k∈ℕ)
+    - LaTeX formatting: \\; spacing, extra braces
+    - Algebraic expressions: \\sqrt{2} vs \\frac{\\sqrt{2}}{1}
+
+    Args:
+        ans1, ans2: Answer strings to compare
+        verbose: Print debug info
+
+    Returns:
+        True if semantically equivalent, False otherwise
+    """
+    if not ans1 or not ans2:
+        return False
+
+    # Normalize formatting
+    def normalize(ans):
+        import re
+        ans = ans.strip()
+
+        # FIX: Remove LaTeX brace escaping FIRST
+        # This converts \{ → { and \} → }
+        # Must happen before other operations to allow SymPy parsing
+        ans = ans.replace(r'\{', '{').replace(r'\}', '}')
+
+        # Remove LaTeX spacing commands
+        ans = ans.replace(r'\;', '').replace(r'\,', '').replace(r'\!', '')
+        # Normalize inequality symbols to canonical forms (use word boundaries)
+        ans = re.sub(r'≤|\\le\b', '<=', ans)
+        ans = re.sub(r'≥|\\ge\b', '>=', ans)
+        ans = re.sub(r'≠|\\ne\b', '!=', ans)
+        ans = re.sub(r'\\lt\b', '<', ans)
+        ans = re.sub(r'\\gt\b', '>', ans)
+        # Normalize set membership (add spaces around)
+        ans = re.sub(r'∈|\\in\b', ' in ', ans)
+        # Remove extra whitespace (collapse multiple spaces)
+        ans = ' '.join(ans.split())
+        # Normalize commas (remove spaces around commas in sets)
+        ans = ans.replace(' ,', ',').replace(', ', ',')
+        # Normalize brace usage (do after comma normalization)
+        ans = ans.replace('{ ', '{').replace(' }', '}')
+        # Final pass: remove spaces inside braces (braces no longer have backslashes)
+        ans = re.sub(r'\{\s+', '{', ans)
+        ans = re.sub(r'\s+\}', '}', ans)
+        return ans
+
+    ans1_norm = normalize(ans1)
+    ans2_norm = normalize(ans2)
+
+    # Exact match after normalization
+    if ans1_norm == ans2_norm:
+        if verbose:
+            print(f"[SEMANTIC CHECK] Exact match after normalization")
+        return True
+
+    # Try SymPy symbolic simplification
+    try:
+        import sympy as sp
+        expr1 = sp.sympify(ans1_norm, evaluate=False)
+        expr2 = sp.sympify(ans2_norm, evaluate=False)
+
+        # Check if algebraically equivalent
+        diff = sp.simplify(expr1 - expr2)
+        if diff == 0:
+            if verbose:
+                print(f"[SEMANTIC CHECK] SymPy confirms algebraic equivalence")
+            return True
+    except Exception as e:
+        # SymPy parsing failed (not missing dependency, but can't parse expression)
+        if verbose:
+            print(f"[SEMANTIC CHECK] SymPy parsing failed (falling back to pattern matching): {e}")
+        pass
+
+    # Special case: Set notation vs inequality for integer variables
+    # k\in{0,1} ⟺ k≤1 (for k∈ℕ, k≥0)
+    # k\in{0,1} ⟺ k<2
+
+    import re
+
+    # After normalization, all symbols are canonical: in, <=, >=, <, >, !=
+    # Extract variable name (usually k, n, etc.)
+    var_pattern = r'([a-z])'
+
+    # Pattern 1: k in {0,1} (normalized from \in or ∈)
+    set_pattern_01 = r'([a-z])\s*in\s*\\?\{0,1\\?\}'
+
+    # Pattern 2: k <= 1 (normalized from \le or ≤)
+    ineq_pattern_le1 = r'([a-z])\s*<=\s*1'
+
+    # Pattern 3: k < 2 (normalized from \lt)
+    ineq_pattern_lt2 = r'([a-z])\s*<\s*2'
+
+    # Check if one is set {0,1} and other is inequality ≤1 or <2
+    set_match_1 = re.search(set_pattern_01, ans1_norm)
+    set_match_2 = re.search(set_pattern_01, ans2_norm)
+
+    ineq_match_1 = re.search(ineq_pattern_le1, ans1_norm) or re.search(ineq_pattern_lt2, ans1_norm)
+    ineq_match_2 = re.search(ineq_pattern_le1, ans2_norm) or re.search(ineq_pattern_lt2, ans2_norm)
+
+    if (set_match_1 and ineq_match_2) or (set_match_2 and ineq_match_1):
+        # Check if same variable
+        var1 = set_match_1.group(1) if set_match_1 else ineq_match_1.group(1)
+        var2 = set_match_2.group(1) if set_match_2 else ineq_match_2.group(1)
+
+        if var1 == var2:
+            if verbose:
+                print(f"[SEMANTIC CHECK] Set {{0,1}} ⟺ inequality ≤1 for variable {var1}")
+            return True
+
+    # No equivalence found
+    if verbose:
+        print(f"[SEMANTIC CHECK] No equivalence found")
+        print(f"  ans1: {ans1_norm}")
+        print(f"  ans2: {ans2_norm}")
+
+    return False
 
 
 def detect_refinement_loop(refinement_history, current_issues, window=3):

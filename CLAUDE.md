@@ -86,11 +86,40 @@ python code/agent_gpt_oss.py problems/imo01.txt \
 - `RLAC_MAX_REGEN` - Maximum regeneration attempts (default: 4)
 - `RLAC_SOL_REASONING` - Solution reasoning effort (default: low)
 - `RLAC_CRITIC_REASONING` - Critic reasoning effort (default: medium)
+- `RLAC_VERIFY_EVERY_N_ROUNDS` - Run verification every N rounds during RLAC (default: 2)
+- `RLAC_VERIFY_START_ROUND` - Start verification from round N (default: 0)
+- `RLAC_DISABLE_INLINE_VERIFICATION` - Disable in-RLAC verification (default: false)
+
+**Answer Validation Environment Variable:**
+- `ENABLE_ANSWER_VALIDATION` - Enable answer validation for measurement (default: 0, set to 1 to enable)
+
+**P0 Ablation Environment Variables (2025-12-28):**
+- `RLAC_DISABLE_P0_FORMAT_VALIDATION` - Disable format validation (default: false)
+- `RLAC_DISABLE_P0_NEAR_SUCCESS_PROTECTION` - Disable near-success protection (default: false)
+- `RLAC_DISABLE_P0_ANSWER_LOCK` - Disable answer lock mechanism (default: false)
+- `RLAC_DISABLE_ADAPTIVE_TEMPERATURE` - Disable adaptive temperature (default: false, always true for ablation tests)
+
+**In-RLAC Verification (2025-12-07):**
+- **FEATURE:** Cooperative verification now runs DURING RLAC rounds (not just after)
+- Catches critical errors early (e.g., wrong constructions in FIND problems)
+- Default: Verification runs every 2 rounds starting from round 0
+- If verification finds "Critical Error" → BROKEN verdict with verification feedback
+- If verification finds "Justification Gap" → SUSPICIOUS verdict (acceptable for PROVE)
+- If verification passes → continues with normal prompt-based attack
+- **Use case:** Problem 1 (FIND) - catches construction errors in round 0-2 instead of missing them
+- **Use case:** Problem 2 (PROVE) - allows justification gaps, focuses on method correctness
 
 **Recent Fixes (2025-11-25):**
 - **BUGFIX:** Counterexample truncation increased from 400 to 2000 chars (geometry problems need full specifications)
 - Answer lock properly disabled during P5/P5.1 reconsideration
 - Architecture consolidated: all RLAC code in agent_gpt_oss.py
+
+**P0 Ablation Testing (2025-12-28):**
+- **FRAMEWORK:** Systematic ablation testing of P0 features with temperature=0
+- **Scripts:** `test_p0_ablation.sh` (full test), `test_p0_ablation_quick.sh` (3 rounds)
+- **Features tested:** Format validation, near-success protection, answer lock, adaptive temperature
+- **Purpose:** Identify which P0 features are critical vs. efficiency improvements
+- **Documentation:** See `docs/P0_ABLATION_GUIDE.md` for detailed guide
 
 ## Common Commands
 
@@ -222,6 +251,62 @@ python code/agent_gpt_oss.py problems/imo01.txt \
   --verification-reasoning high \
   --log asymmetric_fresh.log
 ```
+
+### Answer Validation Usage
+
+Answer validation is **disabled by default** to prevent ground truth leakage. Enable it only for measurement purposes:
+
+```bash
+# Development mode - measure accuracy against ground truth
+ENABLE_ANSWER_VALIDATION=1 python code/agent_gpt_oss.py problems/imo01.txt --log output.log
+
+# Production mode - solve unknown problems (default)
+python code/agent_gpt_oss.py problems/imo01.txt --log output.log
+
+# With BFS baseline
+ENABLE_ANSWER_VALIDATION=1 python code/agent_gpt_oss.py problems/imo01.txt --num-initial-attempts 5 --log output.log
+
+# Disable validation explicitly
+ENABLE_ANSWER_VALIDATION=0 python code/agent_gpt_oss.py problems/imo01.txt --log output.log
+```
+
+### P0 Ablation Testing (BFS-based)
+```bash
+# Full ablation test (N=12 runs per config, all P0 feature combinations)
+./test_p0_ablation.sh problems/imo01.txt 12
+
+# Quick validation test (N=3 runs for fast testing)
+./test_p0_ablation_quick.sh problems/imo01.txt
+
+# Custom number of runs
+./test_p0_ablation.sh problems/imo01.txt 30  # For final validation
+
+# Results include:
+# - Individual BFS run logs for each configuration
+# - Success rates, avg iterations, avg duration per config
+# - Markdown report with statistical comparison
+# - Identifies which P0 features help/hurt BFS performance
+
+# View results
+cat ablation_results_*/ablation_report.md
+
+# Compare success rates across configs
+for dir in ablation_results_*/*/; do
+  echo "$dir: $(grep -l 'Correct solution found' $dir/*.log | wc -l)/12"
+done
+
+# Analyze feature impact
+# - ≥20% difference = MAJOR impact
+# - 10-20% difference = MODERATE impact
+# - <10% difference = MINIMAL impact
+```
+
+**Expected Results:**
+- **Format validation**: Should help BFS (catches extraction bugs)
+- **Near-success protection**: Neutral for BFS (RLAC-specific)
+- **Answer lock**: May hurt BFS (prevents exploration)
+- **N=12 recommended**: Detects 15%+ differences with 80% power
+- **N=30 for validation**: Detects 8%+ differences with 90% power
 
 ## Key Architectural Patterns
 

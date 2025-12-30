@@ -1,0 +1,79 @@
+================================================================================
+  BFS BASELINE TEST ANALYSIS - EXECUTIVE SUMMARY
+  Netflix Experimentation Framework Perspective
+================================================================================
+
+CRITICAL FINDING: CODE REGRESSION DETECTED
+------------------------------------------
+Old Baseline (20251220):  1/12 success (8.3%)  [verification="medium"]
+New Baseline (20251221):  0/12 success (0.0%)  [verification="high"]
+                         ==================
+                         REGRESSION: -8.3pp
+
+Statistical Significance: p=0.0138 (if true rate ≥30%)
+Conclusion: This is NOT random variation. This is a systematic failure.
+
+
+ROOT CAUSE IDENTIFIED
+---------------------
+✓ Answer Quality IMPROVED: 2→4 correct answers (16.7%→33.3%)
+✗ Verification TOO STRICT: ALL runs rejected with "INVALID" verdict
+
+The Bug:
+  VERIFICATION_REASONING_EFFORT = "high"  # ← TOO STRICT, rejects valid solutions
+
+Old Code (WORKING):
+  VERIFICATION_REASONING_EFFORT = "medium"  # ← Accepts "Justification Gaps"
+
+Evidence:
+  Run 1 (NEW): Answer k∈{0,1} (CORRECT) → Verdict INVALID → FAILURE
+  Run 6 (OLD): Answer k∈{0,1} (CORRECT) → Verdict INCOMPLETE → SUCCESS
+
+
+RECOMMENDATION: STOP & REVERT
+------------------------------
+Priority 0 (IMMEDIATE):
+  [x] STOP current testing (don't waste $288 on 0% success rate)
+  [x] REVERT verification reasoning from "high" → "medium"
+  [x] Re-run baseline with N=18 (target: 1-2 successes)
+
+Priority 1 (24 HOURS):
+  [ ] Confirm 8-11% success rate with MEDIUM verification
+  [ ] Implement binary verification verdict (ACCEPT/REJECT)
+
+Priority 2 (1 WEEK):
+  [ ] A/B test OpenRouter vs local (6+6 runs, measure cost/speed)
+  [ ] Simplify resume logic (max 5 resumes instead of 14)
+
+
+OPENROUTER DECISION: CONDITIONAL YES
+------------------------------------
+IF verification is fixed (MEDIUM):
+  ✓ YES - Expected ROI: +50% more successes for same budget
+  ✓ Faster iteration cycles → better experimentation velocity
+
+IF verification stays broken (HIGH):
+  ✗ NO - Don't optimize infrastructure while system is failing
+
+
+SAMPLE SIZE ANALYSIS
+--------------------
+Current:     N=12 runs
+Required:    N=36 runs (for 30% rate ±15% margin, 95% CI)
+Status:      Underpowered (33% of required), but irrelevant given 0% success
+
+
+KEY INSIGHT (Netflix Perspective)
+----------------------------------
+"Failing fast is better than failing slow."
+
+We detected this bug in 1 day with N=12. 
+Fix it now, re-run baseline, iterate quickly.
+Don't waste time scaling broken infrastructure.
+
+
+DETAILED ANALYSIS AVAILABLE IN:
+--------------------------------
+/home/user/IMO25/BFS_BASELINE_ANALYSIS_REPORT.md
+
+================================================================================

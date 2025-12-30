@@ -1,0 +1,699 @@
+{
+  "summary": {
+    "total_iterations": 52,
+    "total_bfs_attempts": 30,
+    "total_runs": 10,
+    "final_answer": "\\{0,1,2,\\dots ,n-2\\",
+    "final_verdict": "INVALID",
+    "final_error_count": 5,
+    "resume_count": 59,
+    "total_iterations_across_resumes": 148
+  },
+  "bfs_initial_phase": {
+    "attempts": [
+      {
+        "timestamp": "2025-12-19 23:15:53",
+        "attempt": 1,
+        "score": -120.92
+      },
+      {
+        "timestamp": "2025-12-19 23:30:49",
+        "attempt": 2,
+        "score": -66.19
+      },
+      {
+        "timestamp": "2025-12-19 23:50:45",
+        "attempt": 3,
+        "score": -81.69
+      },
+      {
+        "timestamp": "2025-12-20 01:48:27",
+        "attempt": 1,
+        "score": -82.31
+      },
+      {
+        "timestamp": "2025-12-20 02:13:47",
+        "attempt": 2,
+        "score": -83.33
+      },
+      {
+        "timestamp": "2025-12-20 02:32:11",
+        "attempt": 3,
+        "score": -96.15
+      },
+      {
+        "timestamp": "2025-12-20 04:05:08",
+        "attempt": 1,
+        "score": -44.84
+      },
+      {
+        "timestamp": "2025-12-20 04:24:36",
+        "attempt": 2,
+        "score": -90.65
+      },
+      {
+        "timestamp": "2025-12-20 04:37:18",
+        "attempt": 3,
+        "score": -66.77
+      },
+      {
+        "timestamp": "2025-12-20 06:04:55",
+        "attempt": 1,
+        "score": -46.82
+      },
+      {
+        "timestamp": "2025-12-20 06:23:17",
+        "attempt": 2,
+        "score": -52.27
+      },
+      {
+        "timestamp": "2025-12-20 06:38:11",
+        "attempt": 3,
+        "score": -54.14
+      },
+      {
+        "timestamp": "2025-12-20 08:09:06",
+        "attempt": 1,
+        "score": -67.5
+      },
+      {
+        "timestamp": "2025-12-20 08:25:53",
+        "attempt": 2,
+        "score": -51.91
+      },
+      {
+        "timestamp": "2025-12-20 08:52:53",
+        "attempt": 3,
+        "score": 93.65
+      },
+      {
+        "timestamp": "2025-12-20 10:46:54",
+        "attempt": 1,
+        "score": -23.72
+      },
+      {
+        "timestamp": "2025-12-20 11:04:26",
+        "attempt": 2,
+        "score": -69.62
+      },
+      {
+        "timestamp": "2025-12-20 11:20:36",
+        "attempt": 3,
+        "score": -109.08
+      },
+      {
+        "timestamp": "2025-12-20 12:56:58",
+        "attempt": 1,
+        "score": -82.65
+      },
+      {
+        "timestamp": "2025-12-20 13:15:01",
+        "attempt": 2,
+        "score": -111.62
+      },
+      {
+        "timestamp": "2025-12-20 13:29:56",
+        "attempt": 3,
+        "score": -33.86
+      },
+      {
+        "timestamp": "2025-12-20 15:02:25",
+        "attempt": 1,
+        "score": -71.77
+      },
+      {
+        "timestamp": "2025-12-20 15:17:05",
+        "attempt": 2,
+        "score": -46.95
+      },
+      {
+        "timestamp": "2025-12-20 15:25:53",
+        "attempt": 3,
+        "score": -81.25
+      },
+      {
+        "timestamp": "2025-12-20 16:51:44",
+        "attempt": 1,
+        "score": -48.38
+      },
+      {
+        "timestamp": "2025-12-20 17:10:19",
+        "attempt": 2,
+        "score": -47.8
+      },
+      {
+        "timestamp": "2025-12-20 17:27:30",
+        "attempt": 3,
+        "score": -91.27
+      },
+      {
+        "timestamp": "2025-12-20 18:38:30",
+        "attempt": 1,
+        "score": -20.23
+      },
+      {
+        "timestamp": "2025-12-20 19:00:36",
+        "attempt": 2,
+        "score": -71.91
+      },
+      {
+        "timestamp": "2025-12-20 19:21:44",
+        "attempt": 3,
+        "score": -56.92
+      }
+    ],
+    "best_score": 93.65,
+    "worst_score": -120.92
+  },
+  "runs": [
+    {
+      "run_number": 1,
+      "total_iterations": 7,
+      "start_time": "2025-12-19 23:50:45",
+      "end_time": "2025-12-20 01:19:02",
+      "iterations": [
+        {
+          "timestamp": "2025-12-19 23:50:45",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 00:11:44",
+          "iteration": 1,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "\\\\text{A sunny line contains at most",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 00:15:59",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 1,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 00:30:26",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 3,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 00:45:08",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 5,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 01:04:04",
+          "iteration": 5,
+          "corrects": 0,
+          "errors": 7,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 01:19:02",
+          "iteration": 6,
+          "corrects": 0,
+          "errors": 9,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "UNKNOWN",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 2,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 02:32:11",
+      "end_time": "2025-12-20 03:37:29",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 02:32:11",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 02:47:00",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 03:06:07",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 03:22:01",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 03:37:29",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 3,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 04:37:18",
+      "end_time": "2025-12-20 05:29:12",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 04:37:18",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 04:49:10",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:00:04",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:10:14",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 05:29:12",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 4,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 06:38:11",
+      "end_time": "2025-12-20 07:32:57",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 06:38:11",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 06:53:06",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:05:19",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:20:16",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 07:32:57",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 5,
+      "total_iterations": 6,
+      "start_time": "2025-12-20 08:52:53",
+      "end_time": "2025-12-20 10:11:15",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 08:52:53",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "\\\\;k\\\\in\\\\{0,1,2,\\\\dots ,n-2\\\\",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 09:05:03",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 1,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:22:05",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 3,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:38:34",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 5,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 09:52:50",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 7,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 10:11:15",
+          "iteration": 5,
+          "corrects": 0,
+          "errors": 9,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 6,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 11:20:36",
+      "end_time": "2025-12-20 12:14:43",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 11:20:36",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 11:31:21",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 11:46:40",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 11:58:01",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 12:14:43",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 7,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 13:29:56",
+      "end_time": "2025-12-20 14:35:23",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 13:29:56",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 13:46:05",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 13:59:07",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 14:16:18",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 14:35:23",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 8,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 15:25:53",
+      "end_time": "2025-12-20 16:23:00",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 15:25:53",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 15:37:06",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 15:53:04",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 16:10:50",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 16:23:00",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 9,
+      "total_iterations": 5,
+      "start_time": "2025-12-20 17:27:30",
+      "end_time": "2025-12-20 18:20:48",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 17:27:30",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 17:38:59",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 17:53:51",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 18:10:15",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 18:20:48",
+          "iteration": 4,
+          "corrects": 0,
+          "errors": 8,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    },
+    {
+      "run_number": 10,
+      "total_iterations": 4,
+      "start_time": "2025-12-20 19:21:44",
+      "end_time": "2025-12-20 20:20:40",
+      "iterations": [
+        {
+          "timestamp": "2025-12-20 19:21:44",
+          "iteration": 0,
+          "corrects": 1,
+          "errors": 0,
+          "answer": "42",
+          "passed_verification": true
+        },
+        {
+          "timestamp": "2025-12-20 19:45:31",
+          "iteration": 1,
+          "corrects": 0,
+          "errors": 2,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 20:00:45",
+          "iteration": 2,
+          "corrects": 0,
+          "errors": 4,
+          "answer": "42",
+          "passed_verification": false
+        },
+        {
+          "timestamp": "2025-12-20 20:20:40",
+          "iteration": 3,
+          "corrects": 0,
+          "errors": 6,
+          "answer": "42",
+          "passed_verification": false
+        }
+      ],
+      "pattern": "DEGRADE (started valid, became invalid)",
+      "error_trend": "ACCUMULATING (errors increasing)"
+    }
+  ],
+  "final_state": {
+    "answer": "\\{0,1,2,\\dots ,n-2\\",
+    "verdict": "INVALID",
+    "errors": [
+      "**Critical Error** (incorrect algebra in Lemma\u202f3) that invalidates the claimed upper bound on\u202f\\(k\\); it also has a **Justification Gap** in Lemma\u202f2 where the argument for the bound \\(|\\ell\\cap T_n|\\le n-1\\) is insufficient.",
+      "**Critical Error** \u2013 the algebraic simplification is incorrect; \\(n^{2}-\\frac{n(n+1)}{2}= \\frac{n(n-1)}{2}\\), not \\(n-2\\). Consequently the derived upper bound \\(k\\le n-2\\) is not proved.",
+      "**Justification Gap** in Lemma\u202f2 where the argument for the bound \\(|\\ell\\cap T_n|\\le n-1\\) is insufficient.",
+      "**Justification Gap** \u2013 the inequality \\(\\frac{n}{|m+1|}<n\\) is false when \\(-1<m<0\\); the proof does not cover these slopes, so the bound \\(|\\ell\\cap T_n|\\le n-1\\) is not rigorously established.",
+      "**Justification Gap** \u2013 the argument that points with ordinate \\(b\\le k\\) and abscissa \\(a\\ge2\\) need not be covered is hand\u2011wavy; the construction actually leaves many points of \\(T_n\\) uncovered when \\(k>0\\). The coverage claim is not rigorously demonstrated."
+    ],
+    "current_iteration": 2,
+    "max_runs": 30
+  }
+}

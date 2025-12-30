@@ -99,7 +99,7 @@ class AdversarialCritic:
         print(log_msg)
 
     def attack_solution(self, problem_statement, solution, round_num=0, max_rounds=10,
-                       api_request_func=None, api_key=None) -> Dict[str, Any]:
+                       api_request_func=None, api_key=None, verify_func=None) -> Dict[str, Any]:
         """
         Attack a solution with adversarial testing.
 
@@ -110,6 +110,7 @@ class AdversarialCritic:
             max_rounds: Maximum RLAC rounds
             api_request_func: Function to send API requests (from agent_gpt_oss)
             api_key: API key for requests
+            verify_func: Optional verification function (verify_solution_safe) for rigorous checking
 
         Returns:
             Dict containing:
@@ -122,11 +123,121 @@ class AdversarialCritic:
                 - full_attack: Complete attack text
                 - round_num: Round number for tracking
                 - timestamp: Attack timestamp
+                - verification_used: True if verification was used instead of prompt-based attack
         """
         if self.verbose:
             self._log(f"\n{'='*80}")
             self._log(f"[ADVERSARIAL CRITIC] Round {round_num + 1}/{max_rounds}")
             self._log(f"{'='*80}\n")
+
+        # NEW: Run cooperative verification if provided (every N rounds)
+        # Configuration via environment variables
+        import os
+        # P0-3 FIX: Reduce verification frequency to reduce overhead
+        # Changed from every 2 rounds starting at 0 to every 4 rounds starting at 3
+        # This reduces verification calls from 6 to ~3 in typical 12-round scenarios
+        verify_every_n = int(os.getenv('RLAC_VERIFY_EVERY_N_ROUNDS', '4'))
+        verify_start_round = int(os.getenv('RLAC_VERIFY_START_ROUND', '3'))
+        disable_inline_verification = os.getenv('RLAC_DISABLE_INLINE_VERIFICATION', 'false').lower() == 'true'
+
+        should_verify = (
+            verify_func is not None and
+            not disable_inline_verification and
+            round_num >= verify_start_round and
+            round_num % verify_every_n == 0
+        )
+
+        if should_verify:
+            if self.verbose:
+                self._log(f"[IN-RLAC VERIFICATION] Round {round_num}/{max_rounds}")
+                self._log(f"[IN-RLAC VERIFICATION] Running cooperative verification (every {verify_every_n} rounds)...")
+
+            try:
+                # Call verification function (verify_solution_safe)
+                bug_report, good_verify = verify_func(
+                    problem_statement,
+                    solution,
+                    verbose=False,  # Don't duplicate logging
+                    reasoning_effort=self.reasoning_effort
+                )
+
+                # Check if verification found issues
+                verification_passed = "yes" in good_verify.lower()
+
+                if not verification_passed:
+                    # Verification found issues - use them for attack
+                    if self.verbose:
+                        self._log("[IN-RLAC VERIFICATION] ✓ Verification found issues - using as attack feedback")
+                        self._log(f"[IN-RLAC VERIFICATION] Bug report length: {len(bug_report)} chars")
+
+                    # Determine severity and verdict
+                    bug_report_lower = bug_report.lower()
+                    # FIX: Use regex to match "critical error" OR "critical errors" (plural)
+                    import re
+                    if re.search(r'\bcritical\s+errors?\b', bug_report_lower):
+                        verdict = "BROKEN"
+                        severity = "CRITICAL"
+                        penalty = 100
+                        critical_flaws = [bug_report[:2000]]  # Truncate to reasonable length
+                        major_issues = []
+                        minor_issues = []
+                    elif "justification gap" in bug_report_lower or "gap" in bug_report_lower:
+                        verdict = "SUSPICIOUS"
+                        severity = "MAJOR"
+                        penalty = 50
+                        critical_flaws = []
+                        major_issues = [bug_report[:2000]]
+                        minor_issues = []
+                    else:
+                        verdict = "SUSPICIOUS"
+                        severity = "MINOR"
+                        penalty = 25
+                        critical_flaws = []
+                        major_issues = []
+                        minor_issues = [bug_report[:2000]]
+
+                    # Create attack result from verification
+                    verification_attack_result = {
+                        'verdict': verdict,
+                        'counterexamples': [],  # Verification doesn't provide structured counterexamples
+                        'critical_flaws': critical_flaws,
+                        'major_issues': major_issues,
+                        'minor_issues': minor_issues,
+                        'total_penalty': penalty,
+                        'full_attack': f"[VERIFICATION-BASED ATTACK]\n\n{bug_report}",
+                        'round_num': round_num,
+                        'timestamp': datetime.now().isoformat(),
+                        'verification_used': True
+                    }
+
+                    # Update metrics
+                    self.total_attacks += 1
+                    if verdict == 'BROKEN':
+                        self.total_broken_solutions += 1
+                    elif verdict == 'ROBUST':
+                        self.total_robust_solutions += 1
+
+                    # Add to history
+                    self.attack_history.append(verification_attack_result)
+
+                    # Log summary
+                    if self.verbose:
+                        self._log(f"[IN-RLAC VERIFICATION] Verdict from verification: {verdict}")
+                        self._log(f"[IN-RLAC VERIFICATION] Severity: {severity}")
+                        self._log(f"[IN-RLAC VERIFICATION] Penalty: {penalty}")
+
+                    return verification_attack_result
+
+                else:
+                    # Verification passed - continue with normal prompt-based attack
+                    if self.verbose:
+                        self._log("[IN-RLAC VERIFICATION] Verification passed - continuing with prompt-based attack")
+
+            except Exception as e:
+                # Verification failed - log and continue with prompt-based attack
+                if self.verbose:
+                    self._log(f"[IN-RLAC VERIFICATION] Warning: Verification failed with error: {e}")
+                    self._log("[IN-RLAC VERIFICATION] Continuing with prompt-based attack")
 
         # Get attack intensity based on round (curriculum learning)
         intensity_name, intensity_prompt = get_attack_intensity_prompt(round_num, max_rounds)
@@ -241,12 +352,18 @@ Follow the output format specified in your system prompt.
 
     def _get_progressive_reasoning_effort(self, round_num: int, max_rounds: int) -> str:
         """
-        Get progressive reasoning effort based on round number.
+        P1-1: Get progressive reasoning effort based on round number.
 
-        Implements curriculum learning for critic:
+        Implements adaptive curriculum learning for critic:
         - Early rounds (0-2): LOW reasoning for quick basic attacks
         - Middle rounds (3-6): MEDIUM reasoning for moderate attacks
-        - Late rounds (7+): HIGH reasoning for advanced rigorous attacks
+        - Late rounds (7+): Configurable via RLAC_ADAPTIVE_REASONING_LATE (default: medium)
+
+        Environment variables:
+        - RLAC_ADAPTIVE_REASONING_EARLY: Effort for rounds 0-2 (default: low)
+        - RLAC_ADAPTIVE_REASONING_MIDDLE: Effort for rounds 3-6 (default: medium)
+        - RLAC_ADAPTIVE_REASONING_LATE: Effort for rounds 7+ (default: medium)
+        - RLAC_DISABLE_ADAPTIVE_REASONING: Set to 'true' to disable (uses base reasoning)
 
         Args:
             round_num: Current round (0-indexed)
@@ -255,13 +372,27 @@ Follow the output format specified in your system prompt.
         Returns:
             Reasoning effort string: "low", "medium", or "high"
         """
+        import os
+
+        # P1-1: Check if adaptive reasoning is disabled
+        disable_adaptive = os.getenv('RLAC_DISABLE_ADAPTIVE_REASONING', 'false').lower() == 'true'
+        if disable_adaptive:
+            return self.reasoning_effort
+
+        # P1-1: Get configurable thresholds and efforts
+        early_effort = os.getenv('RLAC_ADAPTIVE_REASONING_EARLY', 'low').lower()
+        middle_effort = os.getenv('RLAC_ADAPTIVE_REASONING_MIDDLE', 'medium').lower()
+        late_effort = os.getenv('RLAC_ADAPTIVE_REASONING_LATE', 'medium').lower()
+
+        # P1-1: Progressive reasoning based on round number
         if round_num < 3:
-            return "low"
+            return early_effort
         elif round_num < 7:
-            return "medium"
-        # high reason effort takes too long, let's avoid it unless there is a strong reason.
-        # else:
-        #     return "high"
+            return middle_effort
+        else:
+            # P1-1 FIX: Return medium (or configured) for late rounds
+            # High reasoning takes too long and rarely provides additional value
+            return late_effort
 
     def _parse_attack_result(self, attack_text: str, round_num: int) -> Dict[str, Any]:
         """
@@ -291,6 +422,21 @@ Follow the output format specified in your system prompt.
 
         # Extract counterexamples FIRST (needed for verdict validation)
         result['counterexamples'] = self._extract_counterexamples(attack_text)
+
+        # FIX #4: Verify counterexamples are arithmetically correct
+        # This prevents false positives like round 16 where claimed points don't satisfy line equations
+        verified_counterexamples, verification_errors = self._verify_counterexamples(
+            attack_text, result['counterexamples']
+        )
+
+        if verification_errors:
+            if self.verbose:
+                self._log(f"[COUNTEREXAMPLE VERIFICATION] Found {len(verification_errors)} invalid counterexamples:")
+                for error in verification_errors[:3]:  # Show first 3
+                    self._log(f"  - {error}")
+            # Downgrade verdict if counterexamples are invalid
+            result['counterexamples'] = verified_counterexamples  # Use only verified ones
+            result['verification_errors'] = verification_errors
 
         # NEW: Extract answer implications - what counterexamples prove about correct answer
         result['answer_implications'] = self._extract_answer_implications(attack_text, result['counterexamples'])
@@ -419,6 +565,84 @@ Follow the output format specified in your system prompt.
             return 'SUSPICIOUS'
 
         return 'UNKNOWN'
+
+    def _verify_counterexamples(self, attack_text: str, counterexamples: List[str]) -> Tuple[List[str], List[str]]:
+        """
+        Verify that geometric/algebraic counterexamples are arithmetically correct.
+
+        This prevents false positives like:
+        - Claimed point (1,2) on line y = -1/2*x + 3/2 (actually y=1 at x=1, not y=2)
+        - Claimed intersection that doesn't satisfy equation
+
+        Returns:
+            Tuple of (verified_counterexamples, errors)
+        """
+        if not counterexamples:
+            return [], []
+
+        verified = []
+        errors = []
+
+        # Extract all line equations and points from attack text
+        line_pattern = r'(?:Line|L\d+|y)\s*[=:]\s*([-\d./]+)\s*\*?\s*x\s*([+\-]\s*[-\d./]+)?'
+        point_pattern = r'\((\d+)\s*,\s*(\d+)\)'
+
+        lines = re.findall(line_pattern, attack_text)
+        points = re.findall(point_pattern, attack_text)
+
+        if not lines or not points:
+            # No geometric claims to verify, accept all counterexamples
+            return counterexamples, []
+
+        # For each counterexample, check if any claimed point-line pairs are valid
+        for i, ce in enumerate(counterexamples):
+            # Extract numbers from counterexample
+            ce_points = re.findall(point_pattern, ce)
+            ce_lines = re.findall(line_pattern, ce)
+
+            if not ce_points or not ce_lines:
+                # Non-geometric counterexample, accept it
+                verified.append(ce)
+                continue
+
+            # Verify each claimed point lies on some claimed line
+            ce_valid = True
+            invalid_claims = []
+
+            for px_str, py_str in ce_points:
+                px, py = int(px_str), int(py_str)
+                found_valid_line = False
+
+                # Check if point lies on any claimed line
+                for slope_str, intercept_str in ce_lines:
+                    try:
+                        # Parse slope and intercept
+                        slope = float(eval(slope_str.replace('*', ''))) if slope_str else 1
+                        intercept = float(eval(intercept_str.replace('+', '').strip())) if intercept_str else 0
+
+                        # Calculate expected y
+                        expected_y = slope * px + intercept
+
+                        # Check if point satisfies equation (with small tolerance for float error)
+                        if abs(expected_y - py) < 0.01:
+                            found_valid_line = True
+                            break
+                    except:
+                        # Parsing error, skip this line
+                        continue
+
+                if not found_valid_line:
+                    ce_valid = False
+                    invalid_claims.append(f"Point ({px},{py}) does not lie on any claimed line")
+
+            if ce_valid:
+                verified.append(ce)
+            else:
+                errors.append(f"Counterexample {i+1}: {'; '.join(invalid_claims)}")
+                if self.verbose:
+                    self._log(f"[VERIFICATION] Rejected counterexample {i+1}: {invalid_claims[0]}")
+
+        return verified, errors
 
     def _extract_counterexamples(self, attack_text: str) -> List[str]:
         """

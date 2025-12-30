@@ -1,0 +1,181 @@
+================================================================================
+GPT-5 RESPONSE DEBUGGING
+Started: 2025-12-26 20:41:36
+================================================================================
+
+================================================================================
+TEST 1: Minimal Query (Sanity Check)
+================================================================================
+
+Request Payload:
+{
+  "model": "gpt-5",
+  "input": "What is 2+2?",
+  "reasoning": {
+    "effort": "high"
+  },
+  "max_output_tokens": 8192
+}
+
+Response Status: 200
+
+Full Raw Response:
+{
+  "id": "resp_0964d6409c75de8400694f39524e1881998811c0727eb6a6be",
+  "object": "response",
+  "created_at": 1766799698,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1766799700,
+  "error": null,
+  "incomplete_details": null,
+  "instructions": null,
+  "max_output_tokens": 8192,
+  "max_tool_calls": null,
+  "model": "gpt-5-2025-08-07",
+  "output": [
+    {
+      "id": "rs_0964d6409c75de8400694f3952f5508199a5cb9bf701d23926",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "msg_0964d6409c75de8400694f3953cd5c8199a13388f600736e53",
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "4"
+        }
+      ],
+      "role": "assistant"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": null,
+  "reasoning": {
+    "effort": "high",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1.0,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 1.0,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 13,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 7,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 20
+  },
+  "user": null,
+  "metadata": {}
+}
+
+--------------------------------------------------------------------------------
+EXTRACTION ATTEMPTS:
+--------------------------------------------------------------------------------
+
+Method 1: response['output']['content']
+✗ FAILED: list indices must be integers or slices, not str
+
+Method 2: response['choices'][0]['message']['content']
+✗ FAILED: 'choices'
+
+Method 3: response['text']
+✓ SUCCESS: 2 chars
+✗ FAILED: slice(None, 200, None)
+
+Method 4: response['response']['content']
+✗ FAILED: 'response'
+
+--------------------------------------------------------------------------------
+AVAILABLE KEYS IN RESPONSE:
+--------------------------------------------------------------------------------
+[
+  "id",
+  "object",
+  "created_at",
+  "status",
+  "background",
+  "billing",
+  "completed_at",
+  "error",
+  "incomplete_details",
+  "instructions",
+  "max_output_tokens",
+  "max_tool_calls",
+  "model",
+  "output",
+  "parallel_tool_calls",
+  "previous_response_id",
+  "prompt_cache_key",
+  "prompt_cache_retention",
+  "reasoning",
+  "safety_identifier",
+  "service_tier",
+  "store",
+  "temperature",
+  "text",
+  "tool_choice",
+  "tools",
+  "top_logprobs",
+  "top_p",
+  "truncation",
+  "usage",
+  "user",
+  "metadata"
+]
+
+================================================================================
+TEST 2: Verification Prompt (Like agent_oai.py)
+================================================================================
+
+Request Payload:
+Model: gpt-5
+Input length: 796 chars
+Max output tokens: 8192
+
+Response Status: 200
+
+✓ Full response saved to: gpt5_verification_response_debug.json
+
+--------------------------------------------------------------------------------
+EXTRACTION ATTEMPT:
+--------------------------------------------------------------------------------
+✓ SUCCESS with: text
+
+Extracted content (51 chars):
+{'format': {'type': 'text'}, 'verbosity': 'medium'}
+
+================================================================================
+DIAGNOSTIC COMPLETE
+================================================================================
+
+Next Steps:
+1. Review gpt5_verification_response_debug.json for full API response
+2. Identify correct extraction method
+3. Update agent_oai.py extract_text_from_response() accordingly

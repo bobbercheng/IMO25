@@ -1,0 +1,4 @@
+ERROR: No API key found
+Please set one of:
+  export OPENROUTER_API_KEY='sk-or-v1-...'
+  export GPT_OSS_API_KEY='sk-or-v1-...'

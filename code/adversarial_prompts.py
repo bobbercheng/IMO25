@@ -98,7 +98,7 @@ adversarial_attack_moderate = """
 
 Focus on edge cases and assumptions:
 1. Test boundary conditions (n=0, negative numbers, infinity)
-2. Challenge implicit assumptions ("Why must k ≥ 0?")
+2. Challenge implicit assumptions ("Why must p > 1?", "Why must m be positive?")
 3. Look for gaps in logical flow ("How does step 3 follow from step 2?")
 4. Check if all problem constraints are satisfied
 5. Verify uniqueness claims (if claimed)
@@ -207,11 +207,11 @@ Your previous solution was attacked. Now apply DEFENSE-FIRST thinking:
    - If YES, proceed to question 2
 
 2. **What does this counterexample PROVE?**
-   - If the critic shows k=1 is achievable, this PROVES k=1 should be in the answer
+   - If the critic shows p=2 is achievable, this PROVES p=2 should be in the answer
    - If the critic shows a construction works, this PROVES that construction is valid
 
 3. **Is my ANSWER compatible with this evidence?**
-   - If my answer says "only k ∈ {{0, n}}" but critic proves k=1 works, my answer is WRONG
+   - If my answer says "only p ∈ {{3, q}}" but critic proves p=2 works, my answer is WRONG
    - If my answer excludes something the counterexample proves possible, I MUST CHANGE MY ANSWER
 
 4. **Decision: Should my ANSWER change?**
@@ -274,6 +274,52 @@ Be HONEST. If the critic found a real flaw, fix it. If the attack is invalid, de
 
 ### Detailed Solution ###
 [Complete updated solution]
+"""
+
+# ENHANCEMENT 2: Verification Feedback Loop
+# When in-RLAC verification finds issues, use this specialized prompt
+# that emphasizes FIXING errors directly rather than defending
+verification_feedback_revision_prompt = """
+### COOPERATIVE VERIFICATION REPORT ###
+
+Your solution has been checked by a cooperative verifier (not an adversarial critic).
+The verifier found the following issues that need to be addressed:
+
+{verification_feedback}
+
+### CRITICAL REQUIREMENT ###
+
+This feedback is from COOPERATIVE VERIFICATION, not adversarial attack.
+The verifier is helping you identify actual mathematical errors and gaps.
+
+**You MUST:**
+1. **ACCEPT the verification findings** - Do NOT try to defend or argue against them
+2. **FIX each specific issue mentioned** - Address the exact errors pointed out
+3. **VERIFY your fixes** - Double-check that your corrections actually resolve the issues
+
+**Common verification findings:**
+- **"Critical Error"**: Mathematical mistake (e.g., wrong equation, uncovered points)
+  → FIX: Correct the mathematics, verify with explicit calculation
+- **"Justification Gap"**: Missing proof step or unjustified claim
+  → FIX: Add the missing justification, show the reasoning explicitly
+- **"Construction Error"**: Claimed construction doesn't work as stated
+  → FIX: Provide correct construction with explicit verification
+
+**IMPORTANT INSTRUCTIONS:**
+- If verification says "Claim X not proven" → Provide explicit proof for claim X
+- If verification says "Case Y missing" → Add complete analysis for missing case Y
+- If verification says "Inductive step not justified" → Prove the inductive step explicitly
+- If verification says "Base case incorrect" → Fix the base case with explicit construction
+
+After fixing ALL issues mentioned in the verification report, provide your complete revised solution in standard format:
+
+### Summary ###
+[Brief summary mentioning fixes made]
+
+### Detailed Solution ###
+[Complete solution with all verification issues resolved]
+
+**Do not skip ANY verification findings** - address every single issue mentioned above.
 """
 
 # ==============================================================================
@@ -660,7 +706,7 @@ This suggests your ANSWER (not just your proof) may be fundamentally incorrect.
 The counterexamples above appear to be mathematically valid. Accept them as TRUE.
 
 **Step 2: What Do They Prove?**
-- If counterexample shows k=1 is achievable → k=1 MUST be in the correct answer
+- If counterexample shows p=2 is achievable → p=2 MUST be in the correct answer
 - If counterexample shows X works → X MUST be possible in the correct answer
 - List what MUST be true based on the evidence:
   * [Evidence 1 proves...]
@@ -714,9 +760,9 @@ State explicitly: "I accept that [counterexample] proves [what it proves]"
 You MUST explicitly verify your answer for small cases:
 
 For COMBINATORICS/NUMBER THEORY problems:
-- n=3: List ALL valid values. Show explicit constructions or proofs of impossibility.
-- n=4: List ALL valid values. Show explicit constructions or proofs of impossibility.
-- n=5: List ALL valid values. Show explicit constructions or proofs of impossibility.
+- p=2: List ALL valid values. Show explicit constructions or proofs of impossibility.
+- p=3: List ALL valid values. Show explicit constructions or proofs of impossibility.
+- p=5: List ALL valid values. Show explicit constructions or proofs of impossibility.
 
 For GEOMETRY problems:
 - Test with specific coordinates (unit triangle, simple square)
@@ -724,23 +770,23 @@ For GEOMETRY problems:
 
 **FORMAT FOR SMALL CASE VERIFICATION**:
 ```
-SMALL CASE n=3:
+SMALL CASE p=2:
 - Possible values: [list them]
-- For each value k, either:
+- For each value m, either:
   * Construction: [explicit construction that works]
-  * Impossibility: [proof why k is impossible]
-- Conclusion for n=3: k ∈ [set]
+  * Impossibility: [proof why m is impossible]
+- Conclusion for p=2: m ∈ [set]
 
-SMALL CASE n=4:
+SMALL CASE p=3:
 [same format]
 
-SMALL CASE n=5:
+SMALL CASE p=5:
 [same format]
 ```
 
 **Step 3: PATTERN IDENTIFICATION**
 Based on your small case analysis:
-- What pattern emerges? (e.g., k ≤ f(n) for some function f)
+- What pattern emerges? (e.g., m ≤ f(p) for some function f)
 - Does this pattern match what the counterexamples proved?
 
 **Step 4: REVISED ANSWER**
@@ -762,7 +808,7 @@ Prove your revised answer. The proof must:
 
 **Output Format**:
 1. [ACCEPTANCE] Which counterexamples you accept and what they prove
-2. [SMALL CASES] Complete verification for n=3, n=4, n=5
+2. [SMALL CASES] Complete verification for p=2, p=3, p=5
 3. [PATTERN] The pattern you identified
 4. [REVISED ANSWER] Your new answer
 5. [PROOF] Rigorous proof of the revised answer
@@ -805,13 +851,13 @@ This catches ~80% of mathematical errors before complex reasoning.
 **Verification Protocol**:
 
 For NUMBER THEORY problems:
-- Test n=1, n=2, n=3, n=4, n=5 explicitly
-- Test n=prime (7, 11, 13) and n=composite (6, 9, 12)
-- Test n=power of 2 (4, 8, 16) and n=odd (3, 5, 7)
+- Test m=1, m=2, m=4, m=6, m=8 explicitly
+- Test m=prime (7, 11, 13) and m=composite (9, 12, 15)
+- Test m=power of 2 (4, 8, 16) and m=odd (5, 7, 9)
 - Compute ACTUAL values, don't just claim "works"
 
 For COMBINATORICS problems:
-- Enumerate ALL cases for n=1, n=2, n=3
+- Enumerate ALL cases for r=1, r=2, r=4
 - Count explicitly (list them out)
 - Verify claimed formulas match actual counts
 - Check base cases and small recursion steps
@@ -820,7 +866,7 @@ For GEOMETRY problems:
 - Test with specific coordinates (unit triangle, square)
 - Verify angle/length calculations with actual numbers
 - Test degenerate cases (collinear, coincident points)
-- Use n=3,4,5 sided polygons explicitly
+- Use polygons with varying sides (triangle, square, pentagon) explicitly
 
 For ALGEBRA/INEQUALITY problems:
 - Test equality cases with specific values
