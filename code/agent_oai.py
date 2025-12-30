@@ -180,8 +180,43 @@ Follow this THREE-LEVEL decision process in strict sequential order:
 *   First, identify the final answer in the solution (e.g., "p∈{2,3,7}", "maximum value is 42", "proof complete").
 *   Verify if the answer is mathematically valid.
 *   **Decision:**
-    *   If answer is **WRONG** → verdict = **FAIL** (Critical Error) → STOP (do not proceed to Level 2)
-    *   If answer is **CORRECT** → proceed to Level 2
+    *   If answer is **WRONG** → verdict = **FAIL** (Critical Error) → STOP (do not proceed to Level 1.5)
+    *   If answer is **CORRECT** → proceed to Level 1.5
+
+**LEVEL 1.5: Check Optimality (for MINIMUM/MAXIMUM problems only)** *(2025-12-30 TIER 1 Enhancement)*
+*   **Trigger:** If problem asks for MINIMUM, MAXIMUM, SMALLEST, LARGEST, or LEAST/GREATEST value
+*   **Skip:** For PROVE problems or problems without optimization requirement
+*
+*   **Optimality Challenge Process:**
+    1. **Identify the construction approach** used in solution (e.g., "diagonal permutation", "greedy algorithm", "block-based")
+    2. **Test small cases** (n=3, n=4, n=5) using the proposed construction
+    3. **Try alternative approaches** on same small cases:
+       - For grid/tiling: Try different permutation structures
+       - For counting: Try different bijections or partitions
+       - For optimization: Try different greedy strategies or orderings
+    4. **Special structure detection:**
+       - Is n a perfect square? (e.g., 2025 = 45²) → Consider block decomposition
+       - Is n highly composite? → Look for factorization-based approaches
+       - Is answer a simple formula (2n-2, n², n+1)? → Question if this is truly optimal
+
+*   **Decision:**
+    *   If small-case testing shows **alternative approach performs BETTER** (fewer for MIN, more for MAX):
+        → verdict = **SUSPICIOUS_OPTIMALITY** → STOP (solution may not be optimal)
+    *   If special structure detected (n=k²) but **not exploited** in construction:
+        → verdict = **SUSPICIOUS_OPTIMALITY** → STOP (suggest exploring special structure)
+    *   If answer formula is **suspiciously simple** (2n-2, n²) for complex optimization:
+        → verdict = **SUSPICIOUS_OPTIMALITY** → STOP (verify this is truly tight bound)
+    *   If no better alternatives found in small cases:
+        → proceed to Level 2
+
+*   **Example - IMO Problem 6:**
+    - Problem: "Determine minimum tiles for 2025×2025 grid"
+    - Proposed answer: 4048 tiles (using 2n-2 diagonal permutation)
+    - Small-case test: n=3 with diagonal → 4 tiles
+    - Alternative test: n=3 with other permutation → 3 tiles possible! ❌
+    - Special structure: 2025 = 45² (perfect square not exploited) ❌
+    - Simple formula: 2n-2 (suspiciously generic for optimization) ❌
+    - **Verdict: SUSPICIOUS_OPTIMALITY** (construction may not be optimal)
 
 **LEVEL 2: Check Reasoning Validity**
 *   Examine the mathematical principles and methods used in the solution.
@@ -219,7 +254,66 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
 *   For FIND problems: Check if the answer is a complete set (e.g., "p∈{2,5,11}") vs partial (e.g., "p=2 works").
 *   For PROVE problems: Check if the claimed theorem/inequality is actually proven.
 *   For DETERMINE problems: Check if all requested values are identified.
-*   **Gate Decision:** WRONG answer → immediate FAIL, CORRECT answer → proceed to Level 2.
+*   **Gate Decision:** WRONG answer → immediate FAIL, CORRECT answer → proceed to Level 1.5.
+
+**LEVEL 1.5 IMPLEMENTATION: Optimality Check (MIN/MAX problems only)** *(2025-12-30)*
+*   **Step 1: Problem Type Detection**
+    - Scan problem statement for keywords: "minimum", "maximum", "smallest", "largest", "least", "greatest", "minimize", "maximize"
+    - If found → This is an OPTIMIZATION problem, proceed with optimality check
+    - If not found → Skip Level 1.5, proceed directly to Level 2
+
+*   **Step 2: Extract Construction Details**
+    - Identify what construction/approach the solution uses (e.g., "diagonal permutation σ(i)=i", "greedy by size", "block-based k×k")
+    - Extract the answer formula if provided (e.g., "2n-2", "k²+2k-3")
+
+*   **Step 3: Small-Case Verification**
+    - Manually test the proposed construction on n=3 or n=4 (whichever is tractable)
+    - Calculate the result for small case using proposed method
+    - Try ONE alternative approach on same small case:
+      * For permutation problems: Try non-identity permutation
+      * For partitioning: Try different partition strategy
+      * For greedy: Try different ordering criterion
+    - Compare results: Does alternative achieve better value?
+
+*   **Step 4: Special Structure Check**
+    - Check if n has special properties:
+      * Is n = k² (perfect square)? Example: 2025 = 45²
+      * Is n highly composite? Example: 2024 = 2³ × 11 × 23
+    - Does the solution exploit this structure?
+      * Perfect square → Look for block decomposition (k×k blocks)
+      * Highly composite → Look for factorization-based construction
+
+*   **Step 5: Formula Simplicity Heuristic**
+    - If answer is simple formula (2n, n², 2n-2, n+1, etc.):
+      * Simple formulas are often "first attempt" solutions
+      * IMO optimization problems rarely have such clean formulas
+      * Flag as potentially suboptimal
+
+*   **Decision Rule:**
+    - If Step 3 found better alternative → **SUSPICIOUS_OPTIMALITY**
+    - If Step 4 found unexploited structure → **SUSPICIOUS_OPTIMALITY**
+    - If Step 5 flagged simple formula AND (Step 3 OR Step 4) raised concerns → **SUSPICIOUS_OPTIMALITY**
+    - Otherwise → Proceed to Level 2
+
+*   **Example Application (Problem 6):**
+    ```
+    Problem: "Determine minimum tiles for 2025×2025 grid" → OPTIMIZATION detected
+    Answer: 4048 tiles
+    Construction: Diagonal permutation σ(i)=i with 2n-2 vertical strips
+
+    Step 3 (small-case):
+      n=3 diagonal: 4 tiles
+      n=3 alternative (σ = (1,3,2)): 3 tiles ← BETTER! ❌
+
+    Step 4 (structure):
+      2025 = 45² → Perfect square detected
+      Solution uses diagonal (generic) → Structure NOT exploited ❌
+
+    Step 5 (formula):
+      Answer = 2n-2 → Very simple formula ❌
+
+    VERDICT: SUSPICIOUS_OPTIMALITY (multiple red flags)
+    ```
 
 **LEVEL 2 IMPLEMENTATION: Reasoning Validity**
 
@@ -359,10 +453,19 @@ Use this format:
 Your response should provide a concise summary:
 
 *   **Level 1 Result:** State whether the final answer is CORRECT or WRONG (quote the answer)
+*   **Level 1.5 Result:** *(For optimization problems only)* State whether optimality check was triggered and result:
+    - "Not applicable (not an optimization problem)" - Skip to Level 2
+    - "PASSED optimality check" - No red flags detected, proceed to Level 2
+    - "SUSPICIOUS_OPTIMALITY" - Solution may not be optimal (stop here, do not proceed)
 *   **Level 2 Result:** State whether reasoning uses VALID or INVALID mathematical principles
 *   **Level 3 Result:** List any presentation issues found (Justification Gaps or Critical Errors in logic chain)
-*   **Final Verdict:** "PASS" or "FAIL" based on the hierarchical decision tree
+*   **Final Verdict:** "PASS", "FAIL", or "SUSPICIOUS_OPTIMALITY" based on the hierarchical decision tree
 *   **Reasoning:** Brief explanation of the verdict
+
+**Verdict Types:**
+- **PASS**: Answer correct + reasoning valid + (optimality OK or not applicable) + (no critical errors OR only justification gaps)
+- **FAIL**: Answer wrong OR reasoning invalid OR critical errors in logic chain
+- **SUSPICIOUS_OPTIMALITY**: Answer correct + reasoning valid BUT optimality concerns detected (alternative approach may be better)
 
 All detailed mathematical analysis should be provided in the structured JSON output (not in a separate prose log).
 

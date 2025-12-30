@@ -1393,9 +1393,9 @@ def validate_verdict_schema(verdict_obj):
         if field not in verdict_obj:
             return False, f"Missing required field: '{field}'"
 
-    # Validate verdict enum
-    if verdict_obj["verdict"] not in ["PASS", "FAIL"]:
-        return False, f"Invalid verdict value: '{verdict_obj['verdict']}' (expected PASS or FAIL)"
+    # Validate verdict enum (2025-12-30: Added SUSPICIOUS_OPTIMALITY for TIER 1)
+    if verdict_obj["verdict"] not in ["PASS", "FAIL", "SUSPICIOUS_OPTIMALITY"]:
+        return False, f"Invalid verdict value: '{verdict_obj['verdict']}' (expected PASS, FAIL, or SUSPICIOUS_OPTIMALITY)"
 
     # Validate confidence range
     if not isinstance(verdict_obj["confidence"], (int, float)):
@@ -1784,7 +1784,7 @@ If solution is analyzing k≥4 case:
 
 Please return ONLY valid JSON matching this exact schema:
 {{
-  "verdict": "PASS" or "FAIL",
+  "verdict": "PASS" or "FAIL" or "SUSPICIOUS_OPTIMALITY",
   "confidence": number between 0.0 and 1.0,
   "issues": [
     {{
@@ -1840,7 +1840,7 @@ Return ONLY the JSON, no other text."""
 
 Return your verdict as VALID JSON matching this schema (no extra text, no reasoning prefix):
 {
-  "verdict": "PASS" or "FAIL",
+  "verdict": "PASS" or "FAIL" or "SUSPICIOUS_OPTIMALITY",
   "confidence": 0.0 to 1.0,
   "issues": [],
   "answer_correctness": "CORRECT" or "INCORRECT" or "INCOMPLETE" or "UNKNOWN",
