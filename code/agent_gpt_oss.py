@@ -6618,8 +6618,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             if DYNAMIC_BFS_PROMPTS_AVAILABLE:
                 use_dynamic = should_use_dynamic_prompts(problem_statement, num_initial_attempts)
                 if use_dynamic:
-                    dynamic_prompts_list = generate_bfs_prompts(problem_statement, num_initial_attempts)
+                    # BFS Diversity Fix (2025-12-30): Generate larger prompt pool for rotation
+                    # Need enough prompts for all parallel runs to use different sequences
+                    # Generate at least 20 prompts to enable diverse rotation across runs
+                    min_prompt_pool_size = max(20, num_initial_attempts * 5)
+                    dynamic_prompts_list = generate_bfs_prompts(problem_statement, min_prompt_pool_size)
                     print(f">>>>>>> BFS: Using dynamic prompts (explicit parameter exploration)")
+                    print(f">>>>>>> BFS: Generated {len(dynamic_prompts_list)} prompts for diversity pool")
                 else:
                     print(f">>>>>>> BFS: Using generic diversity hints (parameter parsing failed)")
 

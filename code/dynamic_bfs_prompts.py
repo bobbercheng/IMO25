@@ -139,6 +139,7 @@ def generate_bfs_prompts(problem_statement: str, num_prompts: int = 5) -> List[s
         if min_n_match:
             min_n = int(min_n_match.group(1))
 
+            # BFS Diversity Fix (2025-12-30): Generate more prompts for larger pool
             # Generate prompts for k=0,1,2,3,...,min_n at n=min_n
             prompts.append(
                 f"**Explicit Task**: For n={min_n} (the minimal case), "
@@ -146,20 +147,32 @@ def generate_bfs_prompts(problem_statement: str, num_prompts: int = 5) -> List[s
                 f"Provide explicit construction or prove it's impossible."
             )
 
-            for k_val in range(1, min(num_prompts, min_n + 2)):
+            # Generate more parameter values to fill the pool
+            for k_val in range(1, min(num_prompts, max(min_n + 2, 15))):
                 prompts.append(
                     f"**Explicit Task**: For n={min_n}, "
                     f"try to construct a configuration with exactly {var}={k_val} {desc}. "
                     f"Provide explicit construction or prove it's impossible."
                 )
 
-            # Add exploration prompt for edge case
+            # Add exploration prompts for edge cases and variations
             if len(prompts) < num_prompts:
                 prompts.append(
                     f"**Explicit Task**: For n={min_n}, "
                     f"try to construct a configuration with exactly {var}={min_n} {desc}. "
                     f"This is the maximum possible case."
                 )
+
+            # Add larger n values for more diversity
+            if len(prompts) < num_prompts:
+                for n_val in [min_n + 1, min_n + 2, 2 * min_n, min_n * min_n]:
+                    if len(prompts) >= num_prompts:
+                        break
+                    prompts.append(
+                        f"**Explicit Task**: For n={n_val}, "
+                        f"explore possible values of {var}. "
+                        f"What constructions work for this larger case?"
+                    )
 
     else:
         # Generic prompts based on variable
@@ -184,8 +197,13 @@ def generate_bfs_prompts(problem_statement: str, num_prompts: int = 5) -> List[s
 
 
 def generate_generic_prompts(num_prompts: int) -> List[str]:
-    """Generate generic exploration prompts when parameter parsing fails."""
-    prompts = [
+    """
+    Generate generic exploration prompts when parameter parsing fails.
+
+    BFS Diversity Fix (2025-12-30): Extended to generate up to 20+ diverse prompts
+    to support run-specific prompt rotation across multiple parallel runs.
+    """
+    base_prompts = [
         "**Explicit Task**: Start with the simplest/smallest possible case. "
         "What happens in the minimal configuration?",
 
@@ -199,9 +217,64 @@ def generate_generic_prompts(num_prompts: int) -> List[str]:
         "What are the limits?",
 
         "**Explicit Task**: Systematically enumerate all possibilities for small cases. "
-        "Which configurations are valid?"
+        "Which configurations are valid?",
+
+        # Additional prompts for larger diversity pool (prompts 6-20)
+        "**Explicit Task**: Consider a greedy construction. "
+        "What is the optimal choice at each step?",
+
+        "**Explicit Task**: Try a probabilistic or random construction. "
+        "Can you find a configuration by random selection?",
+
+        "**Explicit Task**: Use a constructive proof approach. "
+        "Build the solution step by step.",
+
+        "**Explicit Task**: Consider the dual or complementary problem. "
+        "What insights does the inverse provide?",
+
+        "**Explicit Task**: Explore symmetry and structural properties. "
+        "Are there patterns or invariants?",
+
+        "**Explicit Task**: Try a case-based analysis. "
+        "What if we partition into different scenarios?",
+
+        "**Explicit Task**: Use induction or recursion. "
+        "Can we build larger solutions from smaller ones?",
+
+        "**Explicit Task**: Consider algebraic formulations. "
+        "Can we express this with equations or formulas?",
+
+        "**Explicit Task**: Explore graph-theoretic interpretations. "
+        "Can we model this as a graph problem?",
+
+        "**Explicit Task**: Try combinatorial arguments. "
+        "How many ways can we arrange or count?",
+
+        "**Explicit Task**: Consider optimization approaches. "
+        "What minimizes or maximizes the objective?",
+
+        "**Explicit Task**: Use pigeonhole or counting principles. "
+        "What bounds can we establish?",
+
+        "**Explicit Task**: Explore modular arithmetic or number-theoretic properties. "
+        "Are there divisibility or congruence patterns?",
+
+        "**Explicit Task**: Try geometric or spatial interpretations. "
+        "Can we visualize this problem?",
+
+        "**Explicit Task**: Consider adversarial constructions. "
+        "What is the worst-case scenario?",
     ]
-    return prompts[:num_prompts]
+
+    # If more prompts needed, cycle through with variations
+    prompts = base_prompts[:num_prompts]
+    if len(prompts) < num_prompts:
+        # Add variations of base prompts
+        for i in range(len(prompts), num_prompts):
+            idx = i % len(base_prompts)
+            prompts.append(f"{base_prompts[idx]} (Alternative approach {i+1})")
+
+    return prompts
 
 
 def should_use_dynamic_prompts(problem_statement: str, num_initial_attempts: int) -> bool:
