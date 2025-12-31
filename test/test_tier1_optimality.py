@@ -14,7 +14,7 @@ import os
 import sys
 
 # Add code directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'code'))
 
 from agent_gpt_oss import verify_solution_safe
 
