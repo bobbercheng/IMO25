@@ -1148,7 +1148,22 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
                 print(error_msg)
                 print(f"{'='*80}\n")
             # Return error result instead of calling verifier with invalid input
-            return error_msg, "no"
+            # Return proper verdict dictionary structure for test compatibility
+            format_fail_verdict = {
+                "verdict": "FAIL",
+                "confidence": 1.0,
+                "issues": [
+                    {
+                        "type": "CRITICAL_ERROR",
+                        "location": "Solution format",
+                        "description": error_msg,
+                        "severity": 10
+                    }
+                ],
+                "answer_correctness": "UNKNOWN",
+                "reasoning": "Format extraction failed - solution does not match expected format"
+            }
+            return error_msg, format_fail_verdict
 
     # Use global defaults if not specified
     if max_attempts is None:
