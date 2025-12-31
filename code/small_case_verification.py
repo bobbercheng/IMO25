@@ -110,15 +110,15 @@ def should_trigger_small_case_verification(solution_text, verify_text, good_veri
     Conditions:
     1. Solution admits incompleteness, OR
     2. Verification says "incomplete" or "partial", OR
-    3. Good_verify is "no" but no Critical Errors (just missing cases)
+    3. Good_verify is FAIL/no but no Critical Errors (just missing cases)
 
     Args:
         solution_text: Solution text
         verify_text: Verification feedback
-        good_verify: "yes" or "no"
+        good_verify: dict with 'verdict' key (new format) or "yes"/"no" string (legacy)
 
     Returns:
-        bool: Whether to trigger small-case verification
+        tuple: (bool, reason, missing) - Whether to trigger, reason, what's missing
     """
     # Check solution incompleteness
     is_incomplete, reason, missing = detect_incompleteness(solution_text)
@@ -132,7 +132,14 @@ def should_trigger_small_case_verification(solution_text, verify_text, good_veri
             return True, "verification flagged incompleteness", "missing cases"
 
     # Check if failed verification is due to missing cases (not errors)
-    if "no" in good_verify.lower() and verify_text:
+    # Support both dict (new format) and string (legacy format)
+    failed_verify = False
+    if isinstance(good_verify, dict):
+        failed_verify = good_verify.get('verdict') != 'PASS'
+    elif isinstance(good_verify, str):
+        failed_verify = "no" in good_verify.lower()
+
+    if failed_verify and verify_text:
         critical_errors = verify_text.lower().count('critical error')
         if critical_errors == 0:
             # Failed but no critical errors - might just be incomplete

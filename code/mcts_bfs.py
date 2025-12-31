@@ -512,7 +512,14 @@ class MCTSExplorer:
         score = 0.0
 
         # Perfect verification
-        if good_verify and "yes" in good_verify.lower():
+        # Support both dict (new format) and string (legacy format)
+        passed = False
+        if good_verify:
+            if isinstance(good_verify, dict):
+                passed = good_verify.get('verdict') == 'PASS'
+            else:
+                passed = "yes" in good_verify.lower()
+        if passed:
             score += 100.0
 
         if verify:
@@ -768,7 +775,14 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
 
                 print(f">>>>>>> [BEST-OF-N] Verification result: {good_verify}")
 
-                if "yes" in good_verify.lower():
+                # Support both dict (new format) and string (legacy format)
+                verified = False
+                if isinstance(good_verify, dict):
+                    verified = good_verify.get('verdict') == 'PASS'
+                else:
+                    verified = "yes" in good_verify.lower()
+
+                if verified:
                     print(f"\n{'='*80}")
                     print(f">>>>>>> [BEST-OF-N] ✓ VERIFIED SOLUTION FOUND (solution {idx})")
                     print(f">>>>>>> [BEST-OF-N] Strategy: {solution_dict.get('strategy', 'unknown')}")
