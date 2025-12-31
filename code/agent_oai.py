@@ -179,8 +179,9 @@ Follow this THREE-LEVEL decision process in strict sequential order:
 **LEVEL 1: Check Answer Correctness**
 *   First, identify the final answer in the solution (e.g., "p∈{2,3,7}", "maximum value is 42", "proof complete").
 *   **For OPTIMIZATION problems** (MINIMUM/MAXIMUM/SMALLEST/LARGEST):
-    *   SKIP correctness check at this level (optimality is checked at Level 1.5)
-    *   Only check for obvious errors: arithmetic mistakes, constraint violations
+    *   **DO NOT** check correctness at this level - you don't have ground truth for optimal values!
+    *   **DO NOT** use training knowledge to claim an answer is "wrong" or "contradicts known optimal value"
+    *   Only check for obvious errors: arithmetic mistakes (2×2025-2=4050 ❌), constraint violations
     *   If no obvious errors → MANDATORY proceed to Level 1.5 (do not skip!)
 *   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE non-extremal values):
     *   Verify if the answer is mathematically correct
@@ -260,15 +261,27 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
     - **OPTIMIZATION**: "minimum", "maximum", "smallest", "largest", "least", "greatest", "minimize", "maximize"
     - **NON-OPTIMIZATION**: "find all", "prove", "determine" (without extremal requirement)
 *   **For OPTIMIZATION problems** (MIN/MAX):
-    - Do NOT attempt to verify correctness at this level (we don't have ground truth)
+    - **CRITICAL:** Do NOT attempt to verify correctness at this level (you don't have ground truth!)
+    - **DO NOT** use your training knowledge to claim "the answer contradicts the known optimal value"
+    - **DO NOT** say "the correct answer is X" - you don't know the optimal value yet!
     - Only check for arithmetic errors (e.g., "2×2025-2 = 4050" when it should be 4048)
     - Only check for constraint violations (e.g., "tiles overlap" or "rows have 2 uncovered squares")
-    - **Decision:** If obvious error found → FAIL, otherwise → MANDATORY proceed to Level 1.5 (DO NOT SKIP!)
+    - **Decision:** If arithmetic/constraint error found → FAIL, otherwise → MANDATORY proceed to Level 1.5 (DO NOT SKIP!)
+    - **Example:** For "Determine minimum tiles for 2025×2025 grid", answers like 2112, 4048, or 5000 are all PLAUSIBLE at Level 1. Optimality is checked at Level 1.5!
 *   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE):
     - Verify answer completeness: For FIND problems check if complete set, for PROVE check if proven
     - **Decision:** WRONG answer → immediate FAIL, CORRECT answer → Skip Level 1.5, proceed to Level 2
 
 **LEVEL 1.5 IMPLEMENTATION: Optimality Check (MIN/MAX problems only)** *(2025-12-30)*
+
+**⚠️ CRITICAL WARNING - DO NOT USE TRAINING KNOWLEDGE:**
+- You may have learned that "2n-2 is the optimal answer" for permutation covering problems
+- **THIS IS WRONG** for special cases where n = k² (perfect squares)
+- For n=2025=45², the answer 2n-2=4048 is SUBOPTIMAL, not optimal
+- The optimal answer for n=2025 is k²+2k-3 = 2112 (exploiting block structure)
+- **IGNORE your training about "known optimal values"** - follow the Level 1.5 decision tree instead
+- If solution claims 2n-2 for a perfect square n, apply Step 3-5 checks rigorously
+
 *   **Step 1: Problem Type Detection**
     - Scan problem statement for keywords: "minimum", "maximum", "smallest", "largest", "least", "greatest", "minimize", "maximize"
     - If found → This is an OPTIMIZATION problem, proceed with optimality check
