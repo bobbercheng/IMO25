@@ -2099,7 +2099,8 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
             print(">>>>>>> [PRESCRIPTIVE FEEDBACK] Disabled for A/B testing (DISABLE_PRESCRIPTIVE_FEEDBACK=1)")
 
     # BUG FIX (2025-12-29): Return answer_is_correct and problem_id for success detection
-    return bug_report, o, answer_is_correct, problem_id
+    # BUG FIX (2025-12-30): Return verdict_obj (dict) instead of o (string) for test compatibility
+    return bug_report, verdict_obj, answer_is_correct, problem_id
 
 def translate_verification_feedback(bug_report, problem_statement, solution,
                                    translation_reasoning="medium", verbose=True):
@@ -2529,7 +2530,7 @@ Please revise the proof outline to fix these structural issues while keeping the
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Phase 4: Verifying mathematics")
     verify_result, good_verify, _, _ = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
 
-    success = "yes" in good_verify.lower()
+    success = good_verify.get('verdict') == 'PASS'
 
     print(f"\n{'='*80}")
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Pipeline complete")
@@ -2941,7 +2942,10 @@ def calculate_solution_score(verify, good_verify):
     score = 0.0
 
     # Perfect verification
-    if "yes" in good_verify.lower():
+    if isinstance(good_verify, dict) and good_verify.get('verdict') == 'PASS':
+        score += 100.0
+    elif isinstance(good_verify, str) and "yes" in good_verify.lower():
+        # Legacy support for string verdicts
         score += 100.0
 
     # Penalize by number of errors
@@ -4173,7 +4177,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
     # Initialize best solution tracking
     best_solution = solution
-    best_solution_score = 0 if "yes" in good_verify.lower() else -10
+    best_solution_score = 0 if good_verify.get('verdict') == 'PASS' else -10
     best_solution_round = 0
     print(f">>>>>>> [RLAC TRACKING] Initial best solution score: {best_solution_score}")
 
@@ -5098,9 +5102,9 @@ Start completely fresh with a different mathematical approach.
                 else:
                     # STRATEGIC FIX #2: Skip verification for adaptive exit
                     print(">>>>>>> [RLAC FINAL] Skipping verification for adaptive exit (no progress)")
-                    verify, good_verify = "", "no"
+                    verify, good_verify = "", {"verdict": "FAIL", "reasoning": "Skipped for adaptive exit"}
 
-                cooperative_verified = "yes" in good_verify.lower()
+                cooperative_verified = good_verify.get('verdict') == 'PASS'
 
                 if cooperative_verified:
                     print(">>>>>>> [RLAC FINAL] ✓ TIER 2 ACHIEVED: Passed both adversarial AND cooperative verification!")
@@ -6380,7 +6384,7 @@ Provide a corrected solution that passes validation for all small cases.
             reasoning_effort=ver_reasoning
         )
 
-        cooperative_verified = "yes" in good_verify.lower()
+        cooperative_verified = good_verify.get('verdict') == 'PASS'
 
         if cooperative_verified:
             print(">>>>>>> [SUSPICIOUS CONVERGENCE] ✓ Final verification: Answer correct!")
@@ -6952,7 +6956,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"{'='*80}\n")
 
         try:
-            if("yes" not in good_verify.lower()):
+            if good_verify.get('verdict') != 'PASS':
                 # clear
                 correct_count = 0
                 error_count += 1
@@ -7133,7 +7137,7 @@ Do not simply rephrase or polish the previous approach - create something new.
             score_history.append(current_score)
             print(f">>>>>>> [SCORE] Iteration {i} score: {current_score:.2f}")
 
-            if("yes" in good_verify.lower()):
+            if good_verify.get('verdict') == 'PASS':
                 print(">>>>>>> Solution verification PASSED")
                 correct_count += 1
                 error_count = 0
