@@ -6628,6 +6628,12 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             best_verify = None
             best_good_verify = None
 
+            # BFS Diversity Fix (2025-12-30): Use run-specific prompt rotation
+            # Each parallel run gets different prompts to ensure exploration diversity
+            run_id = int(os.getenv('BFS_RUN_ID', '0'))  # 0-indexed run identifier
+            if run_id > 0:
+                print(f">>>>>>> BFS: Run ID = {run_id} (enables diverse prompt selection)")
+
             for attempt in range(num_initial_attempts):
                 print(f">>>>>>> BFS: Initial attempt {attempt+1}/{num_initial_attempts}...")
 
@@ -6636,9 +6642,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
 
                 # Use dynamic BFS prompts if available, otherwise fall back to generic diversity
                 if use_dynamic and attempt < len(dynamic_prompts_list):
-                    explicit_prompt = dynamic_prompts_list[attempt]
+                    # Rotate prompts based on run_id to ensure diversity across parallel runs
+                    # Formula: (run_id * num_attempts + attempt) % total_prompts
+                    # Example: Run 1 with 3 attempts uses prompts [1,2,3], Run 2 uses [2,3,4], etc.
+                    prompt_idx = (run_id * num_initial_attempts + attempt) % len(dynamic_prompts_list)
+                    explicit_prompt = dynamic_prompts_list[prompt_idx]
                     diverse_prompts.append(f"\n{explicit_prompt}")
-                    print(f">>>>>>> BFS: Explicit prompt: {explicit_prompt[:100]}...")
+                    print(f">>>>>>> BFS: Prompt [{prompt_idx}/{len(dynamic_prompts_list)}]: {explicit_prompt[:100]}...")
                 elif attempt > 0:
                     # Fallback: generic diversity hints
                     diversity_hints = [
