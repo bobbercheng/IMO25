@@ -28,11 +28,12 @@ VERIFICATION_VERDICT_SCHEMA = {
             "properties": {
                 "verdict": {
                     "type": "string",
-                    "enum": ["PASS", "FAIL"],
+                    "enum": ["PASS", "FAIL", "SUSPICIOUS_OPTIMALITY"],
                     "description": (
                         "Overall verification verdict. "
                         "PASS: Solution is mathematically sound with acceptable justification level. "
-                        "FAIL: Solution contains critical errors or answer is incorrect."
+                        "FAIL: Solution contains critical errors or answer is incorrect. "
+                        "SUSPICIOUS_OPTIMALITY: Answer may not be optimal (MIN/MAX problems only)."
                     )
                 },
                 "confidence": {
@@ -150,13 +151,19 @@ def interpret_verdict(verdict_obj: dict) -> tuple[dict, str]:
 
     Decision Rules:
         1. If verdict == "PASS" → "yes"
-        2. If verdict == "FAIL" → "no"
-        3. Special case: CORRECT answer with only JUSTIFICATION_GAPs → "yes"
+        2. If verdict == "SUSPICIOUS_OPTIMALITY" → "no" (triggers retry/correction)
+        3. If verdict == "FAIL" → "no"
+        4. Special case: CORRECT answer with only JUSTIFICATION_GAPs → "yes"
            (Policy: Accept gaps for FIND problems with correct answers)
     """
     # Rule 1: Explicit PASS
     if verdict_obj["verdict"] == "PASS":
         return verdict_obj, "yes"
+
+    # Rule 2: SUSPICIOUS_OPTIMALITY (treat as FAIL for retry)
+    if verdict_obj["verdict"] == "SUSPICIOUS_OPTIMALITY":
+        print("[SUSPICIOUS_OPTIMALITY] Solution may not be optimal - triggering correction loop")
+        return verdict_obj, "no"
 
     # Rule 2: Check if FAIL is due to justification gaps only
     if verdict_obj["verdict"] == "FAIL":
@@ -213,6 +220,21 @@ EXAMPLE_PASS_VERDICT = {
     "issues": [],
     "answer_correctness": "CORRECT",
     "reasoning": "The proof correctly applies mathematical induction with valid base case and inductive step."
+}
+
+EXAMPLE_SUSPICIOUS_OPTIMALITY_VERDICT = {
+    "verdict": "SUSPICIOUS_OPTIMALITY",
+    "confidence": 0.85,
+    "issues": [
+        {
+            "type": "JUSTIFICATION_GAP",
+            "location": "The minimum possible number of tiles is 2n-2 = 4048",
+            "description": "Formula 2n-2 uses diagonal permutation but doesn't exploit special structure: 2025 = 45². Small-case testing (n=3) shows alternative permutations achieve better results (3 tiles vs 4 tiles with diagonal). This suggests the construction may not be optimal.",
+            "severity": 5
+        }
+    ],
+    "answer_correctness": "UNKNOWN",
+    "reasoning": "Construction uses valid mathematical reasoning but optimality is questionable. Formula 2n-2 is suspiciously simple for this optimization problem, and perfect square structure n=45² is not exploited."
 }
 
 EXAMPLE_FAIL_VERDICT_CRITICAL_ERROR = {
@@ -273,6 +295,7 @@ if __name__ == "__main__":
 
     test_cases = [
         ("PASS verdict", EXAMPLE_PASS_VERDICT, "yes"),
+        ("SUSPICIOUS_OPTIMALITY", EXAMPLE_SUSPICIOUS_OPTIMALITY_VERDICT, "no"),  # Triggers retry
         ("FAIL - Critical Error", EXAMPLE_FAIL_VERDICT_CRITICAL_ERROR, "no"),
         ("FAIL - Justification Gap", EXAMPLE_FAIL_VERDICT_JUSTIFICATION_GAP, "yes"),  # Override
         ("FAIL - Override to PASS", EXAMPLE_OVERRIDE_CASE, "yes")
