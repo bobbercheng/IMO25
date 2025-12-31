@@ -178,10 +178,15 @@ Follow this THREE-LEVEL decision process in strict sequential order:
 
 **LEVEL 1: Check Answer Correctness**
 *   First, identify the final answer in the solution (e.g., "p∈{2,3,7}", "maximum value is 42", "proof complete").
-*   Verify if the answer is mathematically valid.
-*   **Decision:**
-    *   If answer is **WRONG** → verdict = **FAIL** (Critical Error) → STOP (do not proceed to Level 1.5)
-    *   If answer is **CORRECT** → proceed to Level 1.5
+*   **For OPTIMIZATION problems** (MINIMUM/MAXIMUM/SMALLEST/LARGEST):
+    *   SKIP correctness check at this level (optimality is checked at Level 1.5)
+    *   Only check for obvious errors: arithmetic mistakes, constraint violations
+    *   If no obvious errors → MANDATORY proceed to Level 1.5 (do not skip!)
+*   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE non-extremal values):
+    *   Verify if the answer is mathematically correct
+    *   **Decision:**
+        *   If answer is **WRONG** → verdict = **FAIL** → STOP
+        *   If answer is **CORRECT** → Skip Level 1.5, proceed to Level 2
 
 **LEVEL 1.5: Check Optimality (for MINIMUM/MAXIMUM problems only)** *(2025-12-30 TIER 1 Enhancement)*
 *   **Trigger:** If problem asks for MINIMUM, MAXIMUM, SMALLEST, LARGEST, or LEAST/GREATEST value
@@ -251,10 +256,17 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
 
 **LEVEL 1 IMPLEMENTATION: Answer Correctness**
 *   Extract the final answer from the solution (look for conclusive statements like "Therefore p∈{2,3,7}", "The maximum value is 42", "This completes the proof").
-*   For FIND problems: Check if the answer is a complete set (e.g., "p∈{2,5,11}") vs partial (e.g., "p=2 works").
-*   For PROVE problems: Check if the claimed theorem/inequality is actually proven.
-*   For DETERMINE problems: Check if all requested values are identified.
-*   **Gate Decision:** WRONG answer → immediate FAIL, CORRECT answer → proceed to Level 1.5.
+*   **CRITICAL: Identify problem type FIRST** by scanning for keywords:
+    - **OPTIMIZATION**: "minimum", "maximum", "smallest", "largest", "least", "greatest", "minimize", "maximize"
+    - **NON-OPTIMIZATION**: "find all", "prove", "determine" (without extremal requirement)
+*   **For OPTIMIZATION problems** (MIN/MAX):
+    - Do NOT attempt to verify correctness at this level (we don't have ground truth)
+    - Only check for arithmetic errors (e.g., "2×2025-2 = 4050" when it should be 4048)
+    - Only check for constraint violations (e.g., "tiles overlap" or "rows have 2 uncovered squares")
+    - **Decision:** If obvious error found → FAIL, otherwise → MANDATORY proceed to Level 1.5 (DO NOT SKIP!)
+*   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE):
+    - Verify answer completeness: For FIND problems check if complete set, for PROVE check if proven
+    - **Decision:** WRONG answer → immediate FAIL, CORRECT answer → Skip Level 1.5, proceed to Level 2
 
 **LEVEL 1.5 IMPLEMENTATION: Optimality Check (MIN/MAX problems only)** *(2025-12-30)*
 *   **Step 1: Problem Type Detection**
