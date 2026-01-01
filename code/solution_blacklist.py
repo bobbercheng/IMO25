@@ -98,25 +98,45 @@ class SolutionBlacklist:
             verdict: Verification verdict (FAIL, SUSPICIOUS_OPTIMALITY, etc.)
             iterations: Number of iterations before convergence
         """
-        # Refresh to get latest state
-        self.refresh()
+        # Use file lock for entire operation to prevent race conditions
+        lock = FileLock(str(self.lock_file), timeout=10)
 
-        # Create solution entry
-        solution_entry = {
-            "answer": str(answer),
-            "method": method,
-            "run_id": run_id,
-            "verdict": verdict,
-            "iterations": iterations,
-            "timestamp": time.time()
-        }
+        with lock:
+            # Load latest state inside lock
+            if self.blacklist_file.exists():
+                with open(self.blacklist_file, 'r') as f:
+                    data = json.load(f)
+                solutions = data.get("solutions", [])
+            else:
+                solutions = []
 
-        # Add to cache
-        solutions = self.cache["solutions"]
-        solutions.append(solution_entry)
+            # Create solution entry
+            solution_entry = {
+                "answer": str(answer),
+                "method": method,
+                "run_id": run_id,
+                "verdict": verdict,
+                "iterations": iterations,
+                "timestamp": time.time()
+            }
 
-        # Save to disk
-        self._save_blacklist(solutions)
+            # Add to list
+            solutions.append(solution_entry)
+
+            # Save to disk (still inside lock)
+            data = {
+                "problem_id": self.problem_id,
+                "solutions": solutions,
+                "last_updated": time.time(),
+                "count": len(solutions)
+            }
+
+            with open(self.blacklist_file, 'w') as f:
+                json.dump(data, f, indent=2)
+
+        # Update cache after successful save
+        self.cache["solutions"] = solutions
+        self.cache["last_updated"] = time.time()
 
     def is_blacklisted(self, answer: str, method: Optional[str] = None) -> bool:
         """
