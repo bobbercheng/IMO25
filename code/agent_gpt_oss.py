@@ -7249,7 +7249,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                     # BFS DIVERSITY FIX: Save successful solution to blacklist
                     if agent_blacklist:
                         save_solution_to_blacklist(agent_blacklist,
-                                                   answer=extract_answer_value(solution) or "UNKNOWN",
+                                                   answer=extract_answer_simple(solution) or "UNKNOWN",
                                                    solution_text=solution,
                                                    run_id=agent_run_id,
                                                    verdict_dict=good_verify,
@@ -7282,7 +7282,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                     # BFS DIVERSITY FIX: Save successful solution to blacklist
                     if agent_blacklist:
                         save_solution_to_blacklist(agent_blacklist,
-                                                   answer=extract_answer_value(solution) or "UNKNOWN",
+                                                   answer=extract_answer_simple(solution) or "UNKNOWN",
                                                    solution_text=solution,
                                                    run_id=agent_run_id,
                                                    verdict_dict=good_verify,
@@ -7313,7 +7313,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                 # BFS DIVERSITY FIX: Save failed solution to blacklist to avoid repeating same mistakes
                 if agent_blacklist and solution:
                     save_solution_to_blacklist(agent_blacklist,
-                                               answer=extract_answer_value(solution) or "UNKNOWN",
+                                               answer=extract_answer_simple(solution) or "UNKNOWN",
                                                solution_text=solution,
                                                run_id=agent_run_id,
                                                verdict_dict=good_verify if 'good_verify' in locals() else {'verdict': 'FAIL'},
@@ -7335,7 +7335,7 @@ Do not simply rephrase or polish the previous approach - create something new.
         # BFS DIVERSITY FIX: Save failed solution to blacklist
         if agent_blacklist and solution:
             save_solution_to_blacklist(agent_blacklist,
-                                       answer=extract_answer_value(solution) or "UNKNOWN",
+                                       answer=extract_answer_simple(solution) or "UNKNOWN",
                                        solution_text=solution,
                                        run_id=agent_run_id,
                                        verdict_dict=good_verify if 'good_verify' in locals() else {'verdict': 'FAIL'},
