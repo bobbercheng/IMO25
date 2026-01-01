@@ -163,7 +163,7 @@ wait_for_slot() {
                 report_job_completion $pid
             fi
         done
-        PIDS=("${new_pids[@]}")
+        PIDS=("${new_pids[@]+"${new_pids[@]}"}")
 
         # If still at capacity, wait a bit
         if [ ${#PIDS[@]} -ge $MAX_PARALLEL ]; then
