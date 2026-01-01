@@ -43,6 +43,15 @@ from agent_oai import (
     verification_remider
 )
 
+# Import solution blacklist for diversity enhancement
+try:
+    from solution_blacklist import SolutionBlacklist, extract_method_from_solution
+    from blacklist_integration import extract_problem_id_from_path, get_run_id_from_env, save_solution_to_blacklist
+    BLACKLIST_AVAILABLE = True
+except ImportError:
+    BLACKLIST_AVAILABLE = False
+    print("[WARNING] Solution blacklist not available - diversity enhancement disabled")
+
 # Import TIER 2 refinement module
 try:
     from tier2_refinement import tier2_refinement_loop, extract_boxed_answer, select_tier2_strategy
@@ -2875,10 +2884,31 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None):
+    # BFS DIVERSITY FIX: Load solution blacklist to avoid repeating failed attempts
+    blacklist_prompt = ""
+    blacklist = None
+    if BLACKLIST_AVAILABLE and problem_id:
+        try:
+            blacklist = SolutionBlacklist(problem_id)
+            blacklist.refresh()  # Load latest blacklist from disk
+            blacklist_prompt = blacklist.get_blacklist_prompt(max_entries=5)
+            if verbose and blacklist_prompt:
+                stats = blacklist.get_statistics()
+                print(f"[BLACKLIST] Loaded {stats['total_attempts']} previous attempts")
+                print(f"[BLACKLIST] Unique answers tried: {stats['unique_answers']}")
+                print(f"[BLACKLIST] Injecting diversity prompt")
+        except Exception as e:
+            if verbose:
+                print(f"[BLACKLIST] Warning: Could not load blacklist: {e}")
+            blacklist_prompt = ""
+
+    # Enrich problem with blacklist prompt for diversity
+    enriched_problem = f"{problem_statement}\n{blacklist_prompt}" if blacklist_prompt else problem_statement
+
     p1 = build_request_payload(
             system_prompt=step1_prompt,
-            question_prompt=problem_statement,
+            question_prompt=enriched_problem,  # ← Blacklist prompt visible during generation!
             other_prompts=other_prompts,
             reasoning_effort=reasoning_effort
         )
@@ -4128,7 +4158,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
             p1, solution, verify, good_verify = init_explorations(
                 problem_statement, verbose, current_prompts,
-                sol_reasoning, self_imp_reasoning, ver_reasoning
+                sol_reasoning, self_imp_reasoning, ver_reasoning,
+                agent_problem_id, agent_run_id
             )
 
             if solution is None:
@@ -6466,7 +6497,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
           use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=2,
-          rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True, rlac_critic_reasoning=None):
+          rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True, rlac_critic_reasoning=None,
+          problem_file=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -6496,6 +6528,17 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
     self_imp_reasoning = self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT
     ver_reasoning = verification_reasoning or VERIFICATION_REASONING_EFFORT
+
+    # BFS DIVERSITY FIX: Extract problem_id and run_id for solution blacklist
+    agent_problem_id = extract_problem_id_from_path(problem_file) if problem_file else "unknown"
+    agent_run_id = get_run_id_from_env()
+    agent_blacklist = None
+    if BLACKLIST_AVAILABLE and agent_problem_id != "unknown":
+        try:
+            agent_blacklist = SolutionBlacklist(agent_problem_id)
+            print(f"[BLACKLIST] Initialized for problem: {agent_problem_id}, run: {agent_run_id}")
+        except Exception as e:
+            print(f"[BLACKLIST] Warning: Could not initialize blacklist: {e}")
 
     # RLAC MODE: Use adversarial critic instead of standard agent loop
     if use_rlac:
@@ -6687,7 +6730,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 try:
                     p1, sol, ver, good_ver = init_explorations(
                         problem_statement, True, diverse_prompts,
-                        sol_reasoning, self_imp_reasoning, ver_reasoning
+                        sol_reasoning, self_imp_reasoning, ver_reasoning,
+                        agent_problem_id, agent_run_id
                     )
 
                     if sol:
@@ -6820,7 +6864,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                                 try:
                                     p2, sol2, ver2, good_ver2 = init_explorations(
                                         problem_statement, True, diverse_prompts,
-                                        sol_reasoning, self_imp_reasoning, ver_reasoning
+                                        sol_reasoning, self_imp_reasoning, ver_reasoning,
+                                        agent_problem_id, agent_run_id
                                     )
 
                                     if sol2:
@@ -6912,7 +6957,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 return None
         if not use_mcts and num_initial_attempts <= 1:
             # Original single-path initialization
-            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning)
+            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning, agent_problem_id, agent_run_id)
             if(solution is None):
                 print(">>>>>>> Failed in finding a complete solution.")
                 return None
@@ -7182,6 +7227,16 @@ Do not simply rephrase or polish the previous approach - create something new.
                     if memory_file:
                         save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
                                    sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+                    # BFS DIVERSITY FIX: Save successful solution to blacklist
+                    if agent_blacklist:
+                        save_solution_to_blacklist(agent_blacklist,
+                                                   answer=extract_answer_value(solution) or "UNKNOWN",
+                                                   solution_text=solution,
+                                                   run_id=agent_run_id,
+                                                   verdict_dict=good_verify,
+                                                   iterations=i)
+
                     print(">>>>>>> ✅ CORRECT SOLUTION FOUND (HIGH CONFIDENCE)")
                     print(f"    Verification: PASSED (iteration {i})")
                     print(f"    Answer: CORRECT (matches ground truth)")
@@ -7205,6 +7260,16 @@ Do not simply rephrase or polish the previous approach - create something new.
                     if memory_file:
                         save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
                                    sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+                    # BFS DIVERSITY FIX: Save successful solution to blacklist
+                    if agent_blacklist:
+                        save_solution_to_blacklist(agent_blacklist,
+                                                   answer=extract_answer_value(solution) or "UNKNOWN",
+                                                   solution_text=solution,
+                                                   run_id=agent_run_id,
+                                                   verdict_dict=good_verify,
+                                                   iterations=i)
+
                     print(">>>>>>> ✅ VERIFICATION PASSED (NO GROUND TRUTH)")
                     print(f"    Verification: PASSED (iteration {i})")
                     print(f"    Answer: Not validated (no ground truth available)")
@@ -7226,6 +7291,16 @@ Do not simply rephrase or polish the previous approach - create something new.
                 if memory_file:
                     save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
                                sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+                # BFS DIVERSITY FIX: Save failed solution to blacklist to avoid repeating same mistakes
+                if agent_blacklist and solution:
+                    save_solution_to_blacklist(agent_blacklist,
+                                               answer=extract_answer_value(solution) or "UNKNOWN",
+                                               solution_text=solution,
+                                               run_id=agent_run_id,
+                                               verdict_dict=good_verify if 'good_verify' in locals() else {'verdict': 'FAIL'},
+                                               iterations=i)
+
                 return None
 
         except Exception as e:
@@ -7238,6 +7313,16 @@ Do not simply rephrase or polish the previous approach - create something new.
         if memory_file:
             save_memory(memory_file, problem_statement, other_prompts, MAX_ITERATIONS, MAX_ITERATIONS, solution, verify,
                        sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+        # BFS DIVERSITY FIX: Save failed solution to blacklist
+        if agent_blacklist and solution:
+            save_solution_to_blacklist(agent_blacklist,
+                                       answer=extract_answer_value(solution) or "UNKNOWN",
+                                       solution_text=solution,
+                                       run_id=agent_run_id,
+                                       verdict_dict=good_verify if 'good_verify' in locals() else {'verdict': 'FAIL'},
+                                       iterations=MAX_ITERATIONS)
+
         return None
 
 if __name__ == "__main__":
@@ -7422,7 +7507,8 @@ if __name__ == "__main__":
                    solution_reasoning, self_improvement_reasoning, verification_reasoning,
                    num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
                    use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
-                   rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning)
+                   rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning,
+                   problem_file=args.problem_file)
         if(sol is not None):
             print(f">>>>>>> Found a correct solution.")
             print(json.dumps(sol, indent=4))
