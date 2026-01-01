@@ -52,6 +52,24 @@ except ImportError:
     BLACKLIST_AVAILABLE = False
     print("[WARNING] Solution blacklist not available - diversity enhancement disabled")
 
+    # Provide fallback implementations when import fails
+    def extract_problem_id_from_path(problem_path):
+        """Fallback: Extract problem ID from file path."""
+        if not problem_path:
+            return "unknown"
+        from pathlib import Path
+        return Path(problem_path).stem or "unknown"
+
+    def get_run_id_from_env():
+        """Fallback: Get run ID from environment."""
+        import os
+        run_id = os.environ.get("BFS_RUN_ID", "")
+        return f"run{run_id}" if run_id else "unknown"
+
+    def save_solution_to_blacklist(*args, **kwargs):
+        """Fallback: No-op when blacklist not available."""
+        pass
+
 # Import TIER 2 refinement module
 try:
     from tier2_refinement import tier2_refinement_loop, extract_boxed_answer, select_tier2_strategy
