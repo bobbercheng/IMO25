@@ -115,6 +115,75 @@
       },
       "hint": "For positive reals, arithmetic mean ≥ geometric mean with equality iff all terms equal.",
       "difficulty": "basic"
+    },
+    {
+      "id": "cross_domain_reframing",
+      "name": "Cross-Domain Problem Reframing",
+      "domain": ["meta_strategy", "combinatorics", "optimization"],
+      "applicability": {
+        "problem_type": ["optimization", "construction"],
+        "constraints": ["grid", "permutation", "coverage"]
+      },
+      "hint": "If standard approach yields suboptimal result, try alternative domain framings:\n1. Combinatorics → Permutation covering (Ferrers diagram)\n2. Order Theory → Poset antichain (Dilworth's theorem)\n3. Graph Theory → Bipartite matching (König-Egerváry)\n4. Geometry → Block decomposition (tiling symmetry)\nDifferent framings reveal different optimization opportunities.",
+      "small_example": "Grid covering: Combinatorics framing may give 2k²-2, Order theory framing may give k²+2k-3 (potentially 40%+ better)",
+      "keywords": ["domain translation", "problem reformulation", "meta-strategy"],
+      "difficulty": "advanced",
+      "priority": "critical"
+    },
+    {
+      "id": "optimality_verification_protocol",
+      "name": "Optimality Verification Protocol",
+      "domain": ["meta_strategy", "optimization"],
+      "applicability": {
+        "problem_type": ["optimization"]
+      },
+      "hint": "Before declaring a solution optimal:\n1. Verify construction matches lower bound\n2. Check if bound is GENERIC (all cases) or STRUCTURE-SPECIFIC (special cases)\n3. Identify special structure (perfect square, prime, highly composite)\n4. Search for tighter bounds exploiting structure\n5. Try alternative domain framings\nGeneric bounds are often suboptimal for structured instances.",
+      "small_example": "Ferrers bound 2n-2 is generic. Dilworth bound k²+2k-3 exploits n=k² structure (can be 40%+ better).",
+      "keywords": ["optimality gap", "bound tightness", "verification"],
+      "difficulty": "intermediate",
+      "priority": "critical"
+    },
+    {
+      "id": "perfect_square_optimization",
+      "name": "Perfect Square Structure Exploitation",
+      "domain": ["number_theory", "combinatorics", "optimization"],
+      "applicability": {
+        "problem_type": ["optimization", "construction"],
+        "special_structure": ["perfect_square"]
+      },
+      "hint": "When n=k² (perfect square), generic bounds are often suboptimal:\n1. Look for k×k block decomposition\n2. Apply Dilworth's theorem for poset structure\n3. Exploit two-dimensional symmetry\n4. Check if formula simplifies: f(k²) might be k²+g(k) rather than 2k²-c\nExample: Grid problems with n=k² often have O(k²) solutions, not O(n).",
+      "small_example": "n=m² for integer m: Generic 2n-2, Structure-specific k²+2k-3",
+      "keywords": ["perfect square", "block structure", "symmetry exploitation"],
+      "difficulty": "advanced",
+      "priority": "high"
+    },
+    {
+      "id": "dilworth_vs_ferrers",
+      "name": "Dilworth vs Ferrers Bound Comparison",
+      "domain": ["combinatorics", "order_theory"],
+      "applicability": {
+        "problem_type": ["optimization"],
+        "constraints": ["permutation", "grid", "ordering"],
+        "special_structure": ["perfect_square"]
+      },
+      "hint": "CRITICAL for permutation covering problems:\n- Ferrers diagram: Generic bound 2n-2 (works for ANY permutation)\n- Dilworth's theorem: Tighter bound k²+2k-3 for n=k² (exploits perfect square)\nIf n is perfect square, Dilworth can be 40-50% better than Ferrers!\nExample: For n=k², Ferrers gives 2k²-2 while Dilworth gives k²+2k-3",
+      "small_example": "n=9=3²: Ferrers→16, Dilworth→12 (25% improvement)",
+      "keywords": ["permutation covering", "poset decomposition", "bound comparison"],
+      "difficulty": "advanced",
+      "priority": "critical"
+    },
+    {
+      "id": "dark_matter_exploration",
+      "name": "Dark Matter Exploration Strategy",
+      "domain": ["meta_strategy"],
+      "applicability": {
+        "problem_type": ["optimization", "construction"]
+      },
+      "hint": "When standard approaches converge to same answer, explore 'dark matter' space:\n1. Try low-probability, high-complexity constructions\n2. Use advanced theorems (Dilworth, Ramsey, Turán) even if proofs are complex\n3. Question 'obvious' solutions—they may be local optima\n4. Increase exploration (higher temperature, diverse prompts)\nLow-probability constructions sometimes yield global optima missed by greedy search.",
+      "small_example": "If all attempts find same value C, try alternative constructions—optimal may be significantly better.",
+      "keywords": ["exploration", "local optimum escape", "advanced theorems"],
+      "difficulty": "advanced",
+      "priority": "high"
     }
   ]
 }
