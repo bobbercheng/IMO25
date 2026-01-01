@@ -32,6 +32,15 @@ import argparse
 import logging
 from benchmark_loader import BenchmarkLoader
 
+# Import RAG system for dynamic domain knowledge hints
+try:
+    from problem_analyzer import extract_problem_characteristics
+    from domain_knowledge_rag import build_hint_section
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    print("[WARNING] RAG system not available - domain knowledge hints disabled")
+
 # --- CONFIGURATION ---
 # The model to use. "gpt-4o" is fast and capable.
 MODEL_NAME = "gpt-5"
@@ -181,7 +190,7 @@ Follow this THREE-LEVEL decision process in strict sequential order:
 *   **For OPTIMIZATION problems** (MINIMUM/MAXIMUM/SMALLEST/LARGEST):
     *   **DO NOT** check correctness at this level - you don't have ground truth for optimal values!
     *   **DO NOT** use training knowledge to claim an answer is "wrong" or "contradicts known optimal value"
-    *   Only check for obvious errors: arithmetic mistakes (2×2025-2=4050 ❌), constraint violations
+    *   Only check for obvious errors: arithmetic mistakes (e.g., 2×n-2 = 2n-3 ❌), constraint violations
     *   If no obvious errors → MANDATORY proceed to Level 1.5 (do not skip!)
 *   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE non-extremal values):
     *   Verify if the answer is mathematically correct
@@ -201,8 +210,8 @@ Follow this THREE-LEVEL decision process in strict sequential order:
        - For counting: Try different bijections or partitions
        - For optimization: Try different greedy strategies or orderings
     4. **Special structure detection:**
-       - Is n a perfect square? (e.g., 2025 = 45²) → Consider block decomposition
-       - Is n highly composite? → Look for factorization-based approaches
+       - Is n a perfect square? (test if √n is integer) → Consider block decomposition, Dilworth's theorem
+       - Is n highly composite? (many small factors) → Look for factorization-based approaches
        - Is answer a simple formula (2n-2, n², n+1)? → Question if this is truly optimal
 
 *   **Decision:**
@@ -215,14 +224,15 @@ Follow this THREE-LEVEL decision process in strict sequential order:
     *   If no better alternatives found in small cases:
         → proceed to Level 2
 
-*   **Example - IMO Problem 6:**
-    - Problem: "Determine minimum tiles for 2025×2025 grid"
-    - Proposed answer: 4048 tiles (using 2n-2 diagonal permutation)
-    - Small-case test: n=3 with diagonal → 4 tiles
-    - Alternative test: n=3 with other permutation → 3 tiles possible! ❌
-    - Special structure: 2025 = 45² (perfect square not exploited) ❌
-    - Simple formula: 2n-2 (suspiciously generic for optimization) ❌
-    - **Verdict: SUSPICIOUS_OPTIMALITY** (construction may not be optimal)
+*   **Example - Testing Optimality:**
+    - Problem: "Minimize resource count for n×n grid with constraint C"
+    - Proposed answer: f(n) using construction A
+    - Small-case test: n=3 with A → result R₃
+    - Alternative test: n=3 with construction B → result R₃'
+    - If R₃' < R₃ (for MIN problem) → Construction A may not be optimal
+    - Special structure: If n has special property (perfect square, prime, etc.), check if exploited
+    - Simple formula: If f(n) is very simple (linear, quadratic), question if truly optimal
+    - **Verdict**: If alternatives perform better OR structure not exploited → SUSPICIOUS_OPTIMALITY
 
 **LEVEL 2: Check Reasoning Validity**
 *   Examine the mathematical principles and methods used in the solution.
@@ -264,10 +274,10 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
     - **CRITICAL:** Do NOT attempt to verify correctness at this level (you don't have ground truth!)
     - **DO NOT** use your training knowledge to claim "the answer contradicts the known optimal value"
     - **DO NOT** say "the correct answer is X" - you don't know the optimal value yet!
-    - Only check for arithmetic errors (e.g., "2×2025-2 = 4050" when it should be 4048)
-    - Only check for constraint violations (e.g., "tiles overlap" or "rows have 2 uncovered squares")
+    - Only check for arithmetic errors (e.g., formula calculation mistakes, off-by-one errors)
+    - Only check for constraint violations (e.g., "tiles overlap" or "missing coverage")
     - **Decision:** If arithmetic/constraint error found → FAIL, otherwise → MANDATORY proceed to Level 1.5 (DO NOT SKIP!)
-    - **Example:** For "Determine minimum tiles for 2025×2025 grid", answers like 2112, 4048, or 5000 are all PLAUSIBLE at Level 1. Optimality is checked at Level 1.5!
+    - **Example:** For optimization problems, multiple answer values may be PLAUSIBLE at Level 1. Optimality is checked at Level 1.5!
 *   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE):
     - Verify answer completeness: For FIND problems check if complete set, for PROVE check if proven
     - **Decision:** WRONG answer → immediate FAIL, CORRECT answer → Skip Level 1.5, proceed to Level 2
@@ -275,12 +285,14 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
 **LEVEL 1.5 IMPLEMENTATION: Optimality Check (MIN/MAX problems only)** *(2025-12-30)*
 
 **⚠️ CRITICAL WARNING - DO NOT USE TRAINING KNOWLEDGE:**
-- You may have learned that "2n-2 is the optimal answer" for permutation covering problems
-- **THIS IS WRONG** for special cases where n = k² (perfect squares)
-- For n=2025=45², the answer 2n-2=4048 is SUBOPTIMAL, not optimal
-- The optimal answer for n=2025 is k²+2k-3 = 2112 (exploiting block structure)
-- **IGNORE your training about "known optimal values"** - follow the Level 1.5 decision tree instead
-- If solution claims 2n-2 for a perfect square n, apply Step 3-5 checks rigorously
+- For OPTIMIZATION problems, you don't have ground truth for optimal values
+- DO NOT claim "the answer contradicts the known optimal value" from training
+- DO NOT assume simple formulas (2n-2, n², etc.) are always optimal
+- Special mathematical structures may enable better solutions:
+  * Perfect squares (n=k²) → Consider block decomposition, Dilworth's theorem
+  * Highly composite numbers → Consider factorization-based approaches
+  * Prime powers → Consider algebraic or number-theoretic structure
+- **Test rigorously** before accepting first valid construction as optimal
 
 *   **Step 1: Problem Type Detection**
     - Scan problem statement for keywords: "minimum", "maximum", "smallest", "largest", "least", "greatest", "minimize", "maximize"
@@ -302,11 +314,13 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
 
 *   **Step 4: Special Structure Check**
     - Check if n has special properties:
-      * Is n = k² (perfect square)? Example: 2025 = 45²
-      * Is n highly composite? Example: 2024 = 2³ × 11 × 23
+      * Is n = k² (perfect square)? Test: sqrt(n) is integer
+      * Is n highly composite? Test: n has many small prime factors
+      * Is n a prime power? Test: n = p^k for prime p
     - Does the solution exploit this structure?
-      * Perfect square → Look for block decomposition (k×k blocks)
+      * Perfect square → Look for block decomposition (k×k blocks), Dilworth decomposition
       * Highly composite → Look for factorization-based construction
+      * Prime power → Look for algebraic or group-theoretic approaches
 
 *   **Step 5: Formula Simplicity Heuristic**
     - If answer is simple formula (2n, n², 2n-2, n+1, etc.):
@@ -320,24 +334,23 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
     - If Step 5 flagged simple formula AND (Step 3 OR Step 4) raised concerns → **SUSPICIOUS_OPTIMALITY**
     - Otherwise → Proceed to Level 2
 
-*   **Example Application (Problem 6):**
+*   **Example Application:**
     ```
-    Problem: "Determine minimum tiles for 2025×2025 grid" → OPTIMIZATION detected
-    Answer: 4048 tiles
-    Construction: Diagonal permutation σ(i)=i with 2n-2 vertical strips
+    Problem: "Minimize resources for n×n structure with constraint C" → OPTIMIZATION detected
+    Answer: f(n) using construction A
 
     Step 3 (small-case):
-      n=3 diagonal: 4 tiles
-      n=3 alternative (σ = (1,3,2)): 3 tiles ← BETTER! ❌
+      n=3 with A: result R₁
+      n=3 with alternative B: result R₂ where R₂ < R₁ ← BETTER! ❌
 
     Step 4 (structure):
-      2025 = 45² → Perfect square detected
-      Solution uses diagonal (generic) → Structure NOT exploited ❌
+      n has special property (e.g., n = k²) → Detected
+      Solution uses generic approach → Structure NOT exploited ❌
 
     Step 5 (formula):
-      Answer = 2n-2 → Very simple formula ❌
+      Answer = simple formula (e.g., linear, quadratic) ❌
 
-    VERDICT: SUSPICIOUS_OPTIMALITY (multiple red flags)
+    VERDICT: SUSPICIOUS_OPTIMALITY (alternative construction performs better)
     ```
 
 **LEVEL 2 IMPLEMENTATION: Reasoning Validity**
@@ -755,6 +768,19 @@ def verify_solution(problem_statement, solution, verbose=True):
 
     dsol = extract_detailed_solution(solution)
 
+    # Generate RAG-based domain knowledge hints (no data leakage)
+    rag_hints = ""
+    if RAG_AVAILABLE:
+        try:
+            problem_chars = extract_problem_characteristics(problem_statement)
+            rag_hints = build_hint_section(problem_chars, k=2)
+            if verbose and rag_hints:
+                print(f"[RAG] Generated {len(rag_hints.split(chr(10)))-1} domain knowledge hints based on problem structure")
+        except Exception as e:
+            if verbose:
+                print(f"[RAG] Warning: Could not generate hints: {e}")
+            rag_hints = ""
+
     # Verification constraints to prevent truncation and over-analysis (Option A)
     verification_constraint = """
 **CRITICAL CONSTRAINTS FOR VERIFICATION:**
@@ -792,6 +818,11 @@ def verify_solution(problem_statement, solution, verbose=True):
 **Violating these constraints will cause your response to be truncated and discarded.**
 """
 
+    # Inject RAG hints if available (placed after solution, before verification reminder)
+    rag_section = ""
+    if rag_hints:
+        rag_section = f"\n{rag_hints}\n"
+
     newst = f"""
 {verification_constraint}
 
@@ -804,7 +835,7 @@ def verify_solution(problem_statement, solution, verbose=True):
 ### Solution ###
 
 {dsol}
-
+{rag_section}
 {verification_remider}
 """
     if(verbose):

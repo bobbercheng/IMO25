@@ -1,0 +1,120 @@
+{
+  "theorems": [
+    {
+      "id": "dilworth_decomposition",
+      "name": "Dilworth's Theorem",
+      "domain": ["combinatorics", "optimization"],
+      "applicability": {
+        "problem_type": ["optimization"],
+        "constraints": ["permutation", "grid", "ordering"],
+        "special_structure": ["perfect_square"]
+      },
+      "hint": "For perfect squares n=k², consider Dilworth decomposition: split into k×k blocks and use poset structure to achieve k²+2k-3 bound instead of generic 2n-2.",
+      "small_example": "For n=9 (k=3): Dilworth gives 12 vs naive 16 tiles",
+      "keywords": ["block decomposition", "poset", "antichain"],
+      "difficulty": "advanced"
+    },
+    {
+      "id": "ferrers_diagram",
+      "name": "Ferrers Diagram Bound",
+      "domain": ["combinatorics"],
+      "applicability": {
+        "problem_type": ["optimization", "counting"],
+        "constraints": ["permutation", "partition"]
+      },
+      "hint": "For permutation-based problems, use Ferrers diagram to derive lower bounds by counting distinct row lengths.",
+      "small_example": "Any permutation yields ≥2n-2 tiles",
+      "keywords": ["permutation", "partition", "monotone"],
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "pigeonhole_principle",
+      "name": "Pigeonhole Principle",
+      "domain": ["combinatorics", "number_theory"],
+      "applicability": {
+        "problem_type": ["proof", "construction"],
+        "constraints": ["cardinality", "existence"]
+      },
+      "hint": "When n objects map to m < n categories, at least one category has ≥2 objects.",
+      "difficulty": "basic"
+    },
+    {
+      "id": "chinese_remainder",
+      "name": "Chinese Remainder Theorem",
+      "domain": ["number_theory"],
+      "applicability": {
+        "problem_type": ["construction", "proof"],
+        "constraints": ["modular_arithmetic", "coprime"],
+        "special_structure": ["highly_composite"]
+      },
+      "hint": "For numbers with coprime factors, CRT provides explicit construction via modular system.",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "lagrange_multipliers",
+      "name": "Lagrange Multipliers",
+      "domain": ["optimization", "calculus"],
+      "applicability": {
+        "problem_type": ["optimization"],
+        "constraints": ["continuous", "differentiable", "inequality"]
+      },
+      "hint": "For continuous optimization with constraints, use Lagrange multipliers to find extrema.",
+      "difficulty": "advanced"
+    },
+    {
+      "id": "cauchy_schwarz",
+      "name": "Cauchy-Schwarz Inequality",
+      "domain": ["algebra", "optimization"],
+      "applicability": {
+        "problem_type": ["optimization", "proof"],
+        "constraints": ["inequality", "continuous"]
+      },
+      "hint": "For sum-of-products optimization, Cauchy-Schwarz provides tight bounds: (Σaᵢbᵢ)² ≤ (Σaᵢ²)(Σbᵢ²)",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "vieta_jumping",
+      "name": "Vieta Jumping",
+      "domain": ["number_theory", "algebra"],
+      "applicability": {
+        "problem_type": ["proof"],
+        "constraints": ["quadratic", "integer_solutions"]
+      },
+      "hint": "For quadratic Diophantine equations, Vieta jumping uses infinite descent on solutions.",
+      "difficulty": "advanced"
+    },
+    {
+      "id": "extremal_principle",
+      "name": "Extremal Principle",
+      "domain": ["combinatorics", "geometry"],
+      "applicability": {
+        "problem_type": ["proof", "construction"],
+        "constraints": ["finite_set", "optimization"]
+      },
+      "hint": "Consider the maximal/minimal element and derive contradiction or construction from its extremal properties.",
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "inclusion_exclusion",
+      "name": "Inclusion-Exclusion Principle",
+      "domain": ["combinatorics"],
+      "applicability": {
+        "problem_type": ["counting"],
+        "constraints": ["union", "intersection"]
+      },
+      "hint": "For counting unions: |A∪B∪C| = |A|+|B|+|C| - |A∩B| - |A∩C| - |B∩C| + |A∩B∩C|",
+      "difficulty": "basic"
+    },
+    {
+      "id": "am_gm_inequality",
+      "name": "AM-GM Inequality",
+      "domain": ["algebra", "optimization"],
+      "applicability": {
+        "problem_type": ["optimization"],
+        "constraints": ["positive_reals", "product"]
+      },
+      "hint": "For positive reals, arithmetic mean ≥ geometric mean with equality iff all terms equal.",
+      "difficulty": "basic"
+    }
+  ]
+}
