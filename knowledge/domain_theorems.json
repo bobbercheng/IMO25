@@ -9,7 +9,7 @@
         "constraints": ["permutation", "grid", "ordering"],
         "special_structure": ["perfect_square"]
       },
-      "hint": "For perfect squares n=k², consider Dilworth decomposition: split into k×k blocks and use poset structure to achieve k²+2k-3 bound instead of generic 2n-2.",
+      "hint": "⚠️ PERFECT SQUARE OPTIMIZATION REQUIRED:\n\nFor n=k² (perfect square grid), you MUST use Dilworth decomposition, NOT generic approaches!\n\n✅ CORRECT approach: Split into k×k blocks, apply poset antichain structure → optimal bound k²+2k-3\n❌ WRONG approach: Use naive 2n-2 bound → suboptimal by 40-50%\n\nImplementation: Recognize n=k², decompose into k blocks of size k, use Dilworth's theorem for chain decomposition.",
       "small_example": "For n=9 (k=3): Dilworth gives 12 vs naive 16 tiles",
       "keywords": ["block decomposition", "poset", "antichain"],
       "difficulty": "advanced"
@@ -166,7 +166,7 @@
         "constraints": ["permutation", "grid", "ordering"],
         "special_structure": ["perfect_square"]
       },
-      "hint": "CRITICAL for permutation covering problems:\n- Ferrers diagram: Generic bound 2n-2 (works for ANY permutation)\n- Dilworth's theorem: Tighter bound k²+2k-3 for n=k² (exploits perfect square)\nIf n is perfect square, Dilworth can be 40-50% better than Ferrers!\nExample: For n=k², Ferrers gives 2k²-2 while Dilworth gives k²+2k-3",
+      "hint": "⚠️ CRITICAL OPTIMALITY WARNING for permutation covering with n=k² (perfect square):\n\n❌ DO NOT use Ferrers diagram bound 2n-2 → This is SUBOPTIMAL by 40-50%!\n\n✅ REQUIRED: Use Dilworth's theorem bound k²+2k-3 → This is OPTIMAL for n=k²\n\nExample: n=9=3²\n  - Ferrers approach: 2(9)-2 = 16 tiles (WRONG - suboptimal)\n  - Dilworth approach: 9+2(3)-3 = 12 tiles (CORRECT - optimal)\n\nFor this problem: If you use generic 2n-2, verification will flag SUSPICIOUS_OPTIMALITY.",
       "small_example": "n=9=3²: Ferrers→16, Dilworth→12 (25% improvement)",
       "keywords": ["permutation covering", "poset decomposition", "bound comparison"],
       "difficulty": "advanced",

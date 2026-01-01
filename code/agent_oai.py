@@ -916,9 +916,26 @@ Response in exactly "yes" or "no". No other words.
 
 
 def init_explorations(problem_statement, verbose=True, other_prompts=[]):
+    # FIX: Inject RAG hints BEFORE generation (not just in verification)
+    # This ensures agent sees domain knowledge hints when building solution
+    rag_hints = ""
+    if RAG_AVAILABLE:
+        try:
+            problem_chars = extract_problem_characteristics(problem_statement)
+            rag_hints = build_hint_section(problem_chars, k=2)
+            if verbose and rag_hints:
+                print(f"[RAG] Injecting domain hints into GENERATION prompt")
+        except Exception as e:
+            if verbose:
+                print(f"[RAG] Warning: Could not generate hints: {e}")
+            rag_hints = ""
+
+    # Enrich problem statement with RAG hints for generation
+    enriched_problem = f"{problem_statement}\n\n{rag_hints}" if rag_hints else problem_statement
+
     p1  = build_request_payload(
             system_prompt=step1_prompt,
-            question_prompt=problem_statement,
+            question_prompt=enriched_problem,  # ← RAG hints visible during generation!
             #other_prompts=["* Please explore all methods for solving the problem, including casework, induction, contradiction, and analytic geometry, if applicable."]
             #other_prompts = ["You may use analytic geometry to solve the problem."]
             other_prompts = other_prompts
