@@ -1177,7 +1177,7 @@ def ensure_tier2_format_compatibility(solution, problem_statement):
     This prevents format mismatch errors when RLAC solutions lack required markers.
 
     Args:
-        solution: The RLAC solution (may lack format markers)
+        solution: The RLAC solution (may lack format markers) - dict or string
         problem_statement: Original problem
 
     Returns:
@@ -1185,9 +1185,12 @@ def ensure_tier2_format_compatibility(solution, problem_statement):
     """
     import re
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Check if already has required markers
-    has_summary = bool(re.search(r'###\s*Summary\s*###', solution, re.IGNORECASE))
-    has_detailed = bool(re.search(r'###\s*Detailed\s+Solution\s*###', solution, re.IGNORECASE))
+    has_summary = bool(re.search(r'###\s*Summary\s*###', solution_text, re.IGNORECASE))
+    has_detailed = bool(re.search(r'###\s*Detailed\s+Solution\s*###', solution_text, re.IGNORECASE))
 
     if has_detailed:
         # Already formatted correctly
@@ -1195,15 +1198,15 @@ def ensure_tier2_format_compatibility(solution, problem_statement):
         return solution
 
     print(f"[FORMAT CHECK] Solution missing required markers - reconstructing...")
-    print(f"[FORMAT CHECK] Input length: {len(solution)} chars")
+    print(f"[FORMAT CHECK] Input length: {len(solution_text)} chars")
 
     # Extract answer if present
-    answer_match = re.search(r'\\boxed\{([^}]+)\}', solution)
+    answer_match = re.search(r'\\boxed\{([^}]+)\}', solution_text)
     answer_text = answer_match.group(0) if answer_match else "See solution below"
 
     # If solution is very short (<300 chars), it's likely answer-only or truncated
-    if len(solution) < 300:
-        print(f"[FORMAT WARNING] Solution appears to be answer-only or truncated ({len(solution)} chars)")
+    if len(solution_text) < 300:
+        print(f"[FORMAT WARNING] Solution appears to be answer-only or truncated ({len(solution_text)} chars)")
         print(f"[FORMAT WARNING] This will likely fail TIER 2 verification")
         print(f"[FORMAT WARNING] Wrapping in required format anyway...")
 
@@ -1215,7 +1218,7 @@ However, the proof details were truncated or not generated during RLAC processin
 
 ### Detailed Solution ###
 
-{solution}
+{solution_text}
 
 **Note:** This solution passed TIER 1 adversarial testing (3 consecutive ROBUST verdicts),
 meaning the answer is mathematically correct. However, intermediate proof steps may need
@@ -1233,7 +1236,7 @@ to be filled in during TIER 2 refinement.
 
 ### Detailed Solution ###
 
-{solution}
+{solution_text}
 """
 
     print(f"[FORMAT CHECK] Reformatted solution length: {len(formatted)} chars")
@@ -2868,13 +2871,16 @@ def hash_solution(solution: str) -> str:
     Normalizes whitespace to catch semantically identical solutions.
 
     Args:
-        solution: The solution text to hash
+        solution: The solution text to hash (dict or string)
 
     Returns:
         MD5 hash of normalized solution content
     """
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Normalize: lowercase, collapse whitespace, strip
-    normalized = re.sub(r'\s+', ' ', solution.lower().strip())
+    normalized = re.sub(r'\s+', ' ', solution_text.lower().strip())
     return hashlib.md5(normalized.encode()).hexdigest()
 
 
@@ -3121,6 +3127,10 @@ def extract_answer_from_solution(solution, problem_type=None):
     Extract the mathematical answer from a solution with generalized pattern matching.
     (Tier 3: Answer Validation Generalization)
 
+    DEPRECATED: With structured JSON output, use extract_answer_simple() instead,
+    which reads the 'final_answer' field directly. This function is kept for
+    backward compatibility with legacy code and answer comparison in RLAC.
+
     Supports multiple answer types:
     - Set membership (k ∈ {0,1,...,n})
     - Equality (x = 5, n = 2^k)
@@ -3131,7 +3141,7 @@ def extract_answer_from_solution(solution, problem_type=None):
     - Range answers (0 ≤ x ≤ n)
 
     Args:
-        solution: Solution text
+        solution: Solution text (dict or string)
         problem_type: Optional hint about problem type (number_theory, geometry, combinatorics, etc.)
 
     Returns:
@@ -3141,6 +3151,9 @@ def extract_answer_from_solution(solution, problem_type=None):
         return None
 
     import re
+
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
 
     # Result structure for richer answer information
     result = {
@@ -3153,7 +3166,7 @@ def extract_answer_from_solution(solution, problem_type=None):
 
     # === Pattern 1: Generic variable ∈ {set} ===
     # Matches: k ∈ {0,1,...,n}, x ∈ {1,2,3}, n ∈ ℤ
-    match = re.search(r'([a-zA-Z_]\w*)\s*[∈∊∈]\s*\{([^}]+)\}', solution)
+    match = re.search(r'([a-zA-Z_]\w*)\s*[∈∊∈]\s*\{([^}]+)\}', solution_text)
     if match:
         result['raw'] = f"{match.group(1)} ∈ {{{match.group(2)}}}"
         result['type'] = 'set_membership'
@@ -3164,7 +3177,7 @@ def extract_answer_from_solution(solution, problem_type=None):
 
     # === Pattern 2: Generic variable = value ===
     # Matches: k = 5, n = 2^k, x = n/2, angle = 60
-    match = re.search(r'([a-zA-Z_]\w*)\s*=\s*([^.\n,;]+?)(?:\.|,|;|$|\n)', solution)
+    match = re.search(r'([a-zA-Z_]\w*)\s*=\s*([^.\n,;]+?)(?:\.|,|;|$|\n)', solution_text)
     if match:
         var = match.group(1).strip()
         val = match.group(2).strip()
@@ -3186,7 +3199,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'(yes|no),?\s+(?:because|since|as)'
     ]
     for pattern in yes_no_patterns:
-        match = re.search(pattern, solution, re.IGNORECASE | re.MULTILINE)
+        match = re.search(pattern, solution_text, re.IGNORECASE | re.MULTILINE)
         if match:
             result['raw'] = match.group(1).lower()
             result['type'] = 'yes_no'
@@ -3203,7 +3216,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'(\d+)\s+(?:solutions?|ways?|elements?|configurations?)'
     ]
     for pattern in count_patterns:
-        match = re.search(pattern, solution, re.IGNORECASE)
+        match = re.search(pattern, solution_text, re.IGNORECASE)
         if match:
             result['raw'] = f"count = {match.group(1)}"
             result['type'] = 'counting'
@@ -3221,7 +3234,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'(?:area|perimeter)\s*=\s*([^.\n,]+)'
     ]
     for pattern in geo_patterns:
-        match = re.search(pattern, solution, re.IGNORECASE)
+        match = re.search(pattern, solution_text, re.IGNORECASE)
         if match:
             if 'angle' in pattern.lower() or '∠' in pattern:
                 result['raw'] = f"angle = {match.group(1)}°"
@@ -3246,7 +3259,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'([a-zA-Z_]\w*)\s+is\s+at\s+(?:most|least)\s+(\d+|[a-zA-Z_]\w*)'
     ]
     for pattern in range_patterns:
-        match = re.search(pattern, solution)
+        match = re.search(pattern, solution_text)
         if match:
             result['raw'] = match.group(0)
             result['type'] = 'range'
@@ -3255,7 +3268,7 @@ def extract_answer_from_solution(solution, problem_type=None):
             return result
 
     # === Pattern 7: "Answer is" fallback ===
-    match = re.search(r'(?:the\s+)?answer\s+is\s*[:\s]*([^.\n]+)', solution, re.IGNORECASE)
+    match = re.search(r'(?:the\s+)?answer\s+is\s*[:\s]*([^.\n]+)', solution_text, re.IGNORECASE)
     if match:
         result['raw'] = match.group(1).strip()
         result['type'] = 'explicit_answer'
@@ -3264,7 +3277,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         return result
 
     # === Pattern 8: "Therefore" conclusion ===
-    match = re.search(r'(?:therefore|hence|thus|so)\s*,?\s*([a-zA-Z_]\w*)\s*=\s*([^.\n]+)', solution, re.IGNORECASE)
+    match = re.search(r'(?:therefore|hence|thus|so)\s*,?\s*([a-zA-Z_]\w*)\s*=\s*([^.\n]+)', solution_text, re.IGNORECASE)
     if match:
         result['raw'] = f"{match.group(1)} = {match.group(2).strip()}"
         result['type'] = 'conclusion'
@@ -3275,7 +3288,7 @@ def extract_answer_from_solution(solution, problem_type=None):
 
     # === Legacy Pattern for backward compatibility ===
     # Pattern: k ∈ {explicit set} (original IMO-specific pattern)
-    match = re.search(r'k\s*[∈∊∈]\s*\{([^}]+)\}', solution)
+    match = re.search(r'k\s*[∈∊∈]\s*\{([^}]+)\}', solution_text)
     if match:
         return {
             'raw': f"k ∈ {{{match.group(1)}}}",
@@ -3627,7 +3640,7 @@ def generator_self_verification(solution, verbose=True):
     before expensive adversarial testing or verification.
 
     Args:
-        solution: Raw solution text from generator
+        solution: Raw solution text from generator (dict or string)
         verbose: Print validation details
 
     Returns:
@@ -3637,14 +3650,17 @@ def generator_self_verification(solution, verbose=True):
     """
     issues = []
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Check 1: Minimum length (solutions should be substantive)
-    if len(solution) < 500:
-        issues.append(f"Solution too short: {len(solution)} chars (expected ≥500)")
+    if len(solution_text) < 500:
+        issues.append(f"Solution too short: {len(solution_text)} chars (expected ≥500)")
 
     # Check 2: Answer extraction
     import re
-    has_boxed = bool(re.search(r'\\boxed\{', solution, re.IGNORECASE))
-    has_answer_section = bool(re.search(r'(answer|solution|result)[:：]', solution, re.IGNORECASE))
+    has_boxed = bool(re.search(r'\\boxed\{', solution_text, re.IGNORECASE))
+    has_answer_section = bool(re.search(r'(answer|solution|result)[:：]', solution_text, re.IGNORECASE))
 
     if not (has_boxed or has_answer_section):
         issues.append("No clear answer found (missing \\boxed{} or answer section)")
@@ -3665,27 +3681,27 @@ def generator_self_verification(solution, verbose=True):
 
     math_content_count = sum(
         1 for indicator in math_indicators
-        if re.search(indicator, solution, re.IGNORECASE)
+        if re.search(indicator, solution_text, re.IGNORECASE)
     )
 
     if math_content_count < 3:
         issues.append(f"Insufficient mathematical content ({math_content_count}/8 indicators)")
 
     # Check 4: Format extraction check (verify no information loss)
-    extracted = extract_detailed_solution(solution)
-    extraction_loss = len(solution) - len(extracted)
+    extracted = extract_detailed_solution(solution_text)
+    extraction_loss = len(solution_text) - len(extracted)
 
-    if extracted and extraction_loss > len(solution) * 0.5:
+    if extracted and extraction_loss > len(solution_text) * 0.5:
         issues.append(
             f"Format extraction may lose information: "
-            f"{extraction_loss} chars lost ({extraction_loss*100//len(solution)}%)"
+            f"{extraction_loss} chars lost ({extraction_loss*100//len(solution_text)}%)"
         )
 
     is_valid = len(issues) == 0
 
     if verbose:
         if is_valid:
-            print(f"[SELF-VERIFY] ✅ Solution passed all pre-checks ({len(solution)} chars)")
+            print(f"[SELF-VERIFY] ✅ Solution passed all pre-checks ({len(solution_text)} chars)")
         else:
             print(f"[SELF-VERIFY] ⚠️  Found {len(issues)} issues:")
             for issue in issues:
@@ -3699,7 +3715,7 @@ def validate_solution_quality(solution, min_length=500, verbose=True):
     Validate that a solution has substantive content before RLAC refinement.
 
     Args:
-        solution: Solution text to validate
+        solution: Solution text to validate (dict or string)
         min_length: Minimum acceptable length (chars)
         verbose: Enable logging
 
@@ -3709,27 +3725,30 @@ def validate_solution_quality(solution, min_length=500, verbose=True):
     if solution is None:
         return False, "Solution is None"
 
-    if len(solution) < min_length:
-        return False, f"Solution too short ({len(solution)} < {min_length} chars)"
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
+    if len(solution_text) < min_length:
+        return False, f"Solution too short ({len(solution_text)} < {min_length} chars)"
 
     # Check for required structure markers
     required_markers = ['Summary', 'Solution']
-    found_markers = sum(1 for marker in required_markers if marker.lower() in solution.lower())
+    found_markers = sum(1 for marker in required_markers if marker.lower() in solution_text.lower())
     if found_markers == 0:
         return False, "Solution missing required structure (no Summary or Solution section)"
 
     # Check for substantive mathematical content
     math_indicators = ['$', '\\', 'proof', 'therefore', 'hence', 'thus', 'let', 'assume']
-    math_count = sum(1 for indicator in math_indicators if indicator.lower() in solution.lower())
+    math_count = sum(1 for indicator in math_indicators if indicator.lower() in solution_text.lower())
     if math_count < 3:
         return False, f"Solution lacks mathematical content (only {math_count} math indicators)"
 
     # Check it's not just a summary/answer
-    if len(solution) < 1000 and 'boxed' in solution.lower() and 'proof' not in solution.lower():
+    if len(solution_text) < 1000 and 'boxed' in solution_text.lower() and 'proof' not in solution_text.lower():
         return False, "Solution appears to be answer-only without proof"
 
     if verbose:
-        print(f">>>>>>> [VALIDATION] Solution passed quality check ({len(solution)} chars, {found_markers} structure markers, {math_count} math indicators)")
+        print(f">>>>>>> [VALIDATION] Solution passed quality check ({len(solution_text)} chars, {found_markers} structure markers, {math_count} math indicators)")
 
     return True, "Valid"
 
@@ -3739,7 +3758,7 @@ def extract_answer_key(solution):
     Extract a normalized answer key from solution for stability tracking.
 
     Args:
-        solution: Solution text
+        solution: Solution text (dict or string)
 
     Returns:
         Normalized answer string for comparison
@@ -3747,14 +3766,17 @@ def extract_answer_key(solution):
     if not solution:
         return ""
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Look for boxed answer first
     import re
-    boxed_match = re.search(r'\\boxed\{([^}]+)\}', solution)
+    boxed_match = re.search(r'\\boxed\{([^}]+)\}', solution_text)
     if boxed_match:
         return boxed_match.group(1).strip()
 
     # Look for "answer is" pattern
-    answer_match = re.search(r'(?:answer|result|conclude)\s+(?:is|:)\s*(.+?)(?:\.|$)', solution, re.IGNORECASE)
+    answer_match = re.search(r'(?:answer|result|conclude)\s+(?:is|:)\s*(.+?)(?:\.|$)', solution_text, re.IGNORECASE)
     if answer_match:
         return answer_match.group(1).strip()[:100]  # Limit length
 
