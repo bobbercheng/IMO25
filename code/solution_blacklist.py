@@ -45,9 +45,17 @@ class SolutionBlacklist:
             "last_updated": 0
         }
 
-        # Initialize file if doesn't exist
+        # Initialize file if doesn't exist, otherwise load existing entries
         if not self.blacklist_file.exists():
             self._save_blacklist([])
+            print(f"[BLACKLIST] Created new blacklist for {problem_id}")
+        else:
+            # FIX: Load existing entries into cache
+            self._load_blacklist()
+            print(f"[BLACKLIST] Loaded {len(self.cache['solutions'])} existing entries for {problem_id}")
+
+        # Show blacklist contents at initialization
+        self._print_blacklist_summary()
 
     def _save_blacklist(self, solutions: List[Dict]):
         """Save blacklist to file with locking."""
@@ -81,6 +89,37 @@ class SolutionBlacklist:
             }
 
             return self.cache["solutions"]
+
+    def _print_blacklist_summary(self):
+        """Print blacklist contents summary to log."""
+        solutions = self.cache["solutions"]
+
+        if not solutions:
+            print(f"[BLACKLIST] {self.problem_id}: Empty (no solutions blacklisted yet)")
+            return
+
+        print(f"[BLACKLIST] {self.problem_id}: {len(solutions)} entries")
+        print(f"[BLACKLIST] " + "=" * 70)
+
+        # Show all entries with details
+        for i, entry in enumerate(solutions, 1):
+            verdict_emoji = {
+                "FAIL": "❌",
+                "SUSPICIOUS_OPTIMALITY": "⚠️",
+                "CRITICAL_ERROR": "💀",
+                "PASS": "✓",
+                "UNKNOWN": "❓"
+            }.get(entry["verdict"], "❓")
+
+            print(f"[BLACKLIST] {i}. {verdict_emoji} Answer: {entry['answer']}, "
+                  f"Method: {entry['method']}, Verdict: {entry['verdict']}, "
+                  f"Run: {entry['run_id']}, Iterations: {entry['iterations']}")
+
+        print(f"[BLACKLIST] " + "=" * 70)
+
+        # Show unique answers
+        unique_answers = sorted(set(s["answer"] for s in solutions))
+        print(f"[BLACKLIST] Unique answers ({len(unique_answers)}): {', '.join(unique_answers)}")
 
     def refresh(self):
         """Refresh in-memory cache from disk (call before each use)."""
@@ -137,6 +176,18 @@ class SolutionBlacklist:
         # Update cache after successful save
         self.cache["solutions"] = solutions
         self.cache["last_updated"] = time.time()
+
+        # Log the addition
+        print(f"\n[BLACKLIST] ➕ Added new entry:")
+        print(f"[BLACKLIST]    Answer: {answer}")
+        print(f"[BLACKLIST]    Method: {method}")
+        print(f"[BLACKLIST]    Verdict: {verdict}")
+        print(f"[BLACKLIST]    Run ID: {run_id}")
+        print(f"[BLACKLIST]    Iterations: {iterations}")
+        print(f"[BLACKLIST]    Total entries now: {len(solutions)}\n")
+
+        # Show updated blacklist summary
+        self._print_blacklist_summary()
 
     def is_blacklisted(self, answer: str, method: Optional[str] = None) -> bool:
         """
