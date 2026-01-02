@@ -1,6 +1,15 @@
 {
   "problem_id": "imo06",
-  "solutions": [],
-  "last_updated": 1767330210.5256839,
-  "count": 0
+  "solutions": [
+    {
+      "answer": "4048",
+      "method": "ferrers_diagram",
+      "run_id": "manual_test",
+      "verdict": "FAIL",
+      "iterations": 0,
+      "timestamp": 1767365668.1410995
+    }
+  ],
+  "last_updated": 1767365668.1411033,
+  "count": 1
 }
