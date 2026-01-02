@@ -21,10 +21,11 @@ NUM_RUNS=3
 # Clean slate
 echo "Step 1: Clean slate"
 echo "-------------------"
-rm -rf blacklists/imo06_blacklist.json
+# Keep existing blacklist entries (commented out to preserve across test runs)
+# rm -rf blacklists/imo06_blacklist.json
 rm -rf "$TEST_DIR"
 mkdir -p "$TEST_DIR"
-echo "✓ Removed old blacklist and test directory"
+echo "✓ Removed old test directory (preserving blacklist)"
 echo ""
 
 # Run sequentially (MAX_PARALLEL=1)
