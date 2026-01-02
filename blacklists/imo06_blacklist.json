@@ -1,0 +1,103 @@
+{
+  "problem_id": "imo06",
+  "solutions": [
+    {
+      "answer": "n = 2025\\)) such that the uncovered square in row \\(i\\) is \\((i",
+      "method": "diagonal_permutation",
+      "run_id": "run3",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767312460.222006
+    },
+    {
+      "answer": "i = 1",
+      "method": "diagonal_permutation",
+      "run_id": "run1",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767312561.4604402
+    },
+    {
+      "answer": "n = 2025\\)) such that the unique uncovered",
+      "method": "diagonal_permutation",
+      "run_id": "run2",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767312833.7846148
+    },
+    {
+      "answer": "m = \\sum (h_k+w_k)\\ge4n-4\\quad\\Longrightarrow\\quad m\\ge2n-2",
+      "method": "diagonal_permutation",
+      "run_id": "run4",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767313244.299228
+    },
+    {
+      "answer": "n = 2025\\)",
+      "method": "diagonal_permutation",
+      "run_id": "run5",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767313942.0818071
+    },
+    {
+      "answer": "n = 2025\\)) such that",
+      "method": "diagonal_permutation",
+      "run_id": "run7",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767314254.767134
+    },
+    {
+      "answer": "n = 2025\\))",
+      "method": "diagonal_permutation",
+      "run_id": "run6",
+      "verdict": "PASS",
+      "iterations": 4,
+      "timestamp": 1767314333.07213
+    },
+    {
+      "answer": "n = 2025\\)) be the permutation defined by",
+      "method": "unknown_method",
+      "run_id": "run8",
+      "verdict": "PASS",
+      "iterations": 2,
+      "timestamp": 1767315174.896539
+    },
+    {
+      "answer": "i = 1",
+      "method": "diagonal_permutation",
+      "run_id": "run9",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767315239.784172
+    },
+    {
+      "answer": "n = 2025",
+      "method": "dilworth_decomposition",
+      "run_id": "run10",
+      "verdict": "PASS",
+      "iterations": 1,
+      "timestamp": 1767315797.3519502
+    },
+    {
+      "answer": "n = 2025\\))",
+      "method": "diagonal_permutation",
+      "run_id": "run11",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767316149.460725
+    },
+    {
+      "answer": "n = 2025\\)",
+      "method": "unknown_method",
+      "run_id": "run12",
+      "verdict": "PASS",
+      "iterations": 0,
+      "timestamp": 1767316421.166983
+    }
+  ],
+  "last_updated": 1767316421.16699,
+  "count": 12
+}
