@@ -943,9 +943,9 @@ def extract_solution(response_data):
     """
     Extracts the solution from the API response.
 
-    Expects unified format with ### markers:
-    - ### Summary ###
-    - ### Detailed Solution ###
+    Handles both structured (dict) and unstructured (string) formats:
+    - If response_data is a dict with 'solution', returns that directly
+    - Otherwise expects unified format with ### markers
 
     Returns:
         Solution text from ### Summary ### onwards, or empty string if not found
@@ -953,6 +953,14 @@ def extract_solution(response_data):
     if not response_data:
         return ""
 
+    # Handle structured output (dict with 'solution' key)
+    if isinstance(response_data, dict):
+        if 'solution' in response_data:
+            return response_data['solution']
+        # If dict but no 'solution' key, return empty
+        return ""
+
+    # Handle unstructured output (string) - look for markers
     # Pattern 1: Look for ### Summary ### marker (preferred unified format)
     summary_pattern = r'###\s*Summary\s*###'
     summary_match = re.search(summary_pattern, response_data, re.IGNORECASE)
@@ -1028,6 +1036,8 @@ def validate_solution_structure(solution):
     1. ### Summary ### - with Verdict and Method Sketch
     2. ### Detailed Solution ### - with full proof
 
+    Handles both structured (dict) and unstructured (string) formats.
+
     Returns:
         Tuple of (is_valid: bool, errors: List[str], sections: Dict)
     """
@@ -1042,45 +1052,48 @@ def validate_solution_structure(solution):
     if not solution:
         return False, ["Empty solution"], sections
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Check for ### Summary ### marker
     summary_pattern = r'###\s*Summary\s*###'
-    summary_match = re.search(summary_pattern, solution, re.IGNORECASE)
+    summary_match = re.search(summary_pattern, solution_text, re.IGNORECASE)
     if not summary_match:
         # Fallback: check for "Summary" without ### markers
-        if 'Summary' not in solution and 'summary' not in solution.lower():
+        if 'Summary' not in solution_text and 'summary' not in solution_text.lower():
             errors.append("Missing '### Summary ###' section marker")
 
     # Check for ### Detailed Solution ### marker
     detailed_pattern = r'###\s*Detailed\s+Solution\s*###'
-    detailed_match = re.search(detailed_pattern, solution, re.IGNORECASE)
+    detailed_match = re.search(detailed_pattern, solution_text, re.IGNORECASE)
     if not detailed_match:
         # Fallback: check for "Detailed Solution" without ### markers
-        if 'Detailed Solution' not in solution and 'detailed solution' not in solution.lower():
+        if 'Detailed Solution' not in solution_text and 'detailed solution' not in solution_text.lower():
             errors.append("Missing '### Detailed Solution ###' section marker")
         else:
             # Found without markers - extract it
-            idx = solution.lower().find('detailed solution')
+            idx = solution_text.lower().find('detailed solution')
             if idx != -1:
-                sections['detailed_solution'] = solution[idx:].strip()
+                sections['detailed_solution'] = solution_text[idx:].strip()
     else:
         # Extract detailed solution section
         start = detailed_match.end()
-        sections['detailed_solution'] = solution[start:].strip()
+        sections['detailed_solution'] = solution_text[start:].strip()
 
         # Update summary to be between Summary and Detailed Solution
         if summary_match and detailed_match.start() > summary_match.end():
-            sections['summary'] = solution[summary_match.end():detailed_match.start()].strip()
+            sections['summary'] = solution_text[summary_match.end():detailed_match.start()].strip()
 
     # Extract summary if we found the marker but haven't extracted yet
     if summary_match and sections['summary'] is None:
         if detailed_match:
-            sections['summary'] = solution[summary_match.end():detailed_match.start()].strip()
+            sections['summary'] = solution_text[summary_match.end():detailed_match.start()].strip()
         else:
-            sections['summary'] = solution[summary_match.end():].strip()
+            sections['summary'] = solution_text[summary_match.end():].strip()
 
     # Check for boxed answer
     boxed_pattern = r'\\boxed\{([^}]+)\}'
-    boxed_match = re.search(boxed_pattern, solution)
+    boxed_match = re.search(boxed_pattern, solution_text)
     if boxed_match:
         sections['has_boxed_answer'] = True
         sections['boxed_answer'] = boxed_match.group(1).strip()
@@ -1095,6 +1108,8 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     Returns the substring after the marker, stripped of leading/trailing whitespace.
     If the marker is not found, returns the full solution as fallback (BUGFIX).
 
+    Handles both structured (dict) and unstructured (string) formats.
+
     BUGFIX (2025-11-27): Previously returned empty string if marker not found,
     causing verification failures on valid RLAC solutions that use different formatting.
     Now returns full solution if it appears valid with smarter content-based validation.
@@ -1102,21 +1117,24 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     BUGFIX (2025-12-05): Improved content validation - check for mathematical markers
     instead of arbitrary 500-char threshold. Handles answer-only solutions better.
     """
-    idx = solution.find(marker)
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
+    idx = solution_text.find(marker)
     if idx == -1:
         # Check for mathematical content markers (not just length)
         import re
-        has_answer = bool(re.search(r'\\boxed\{|answer\s+is|final\s+answer', solution, re.IGNORECASE))
-        has_math = '\\[' in solution or '$$' in solution or '\\(' in solution
+        has_answer = bool(re.search(r'\\boxed\{|answer\s+is|final\s+answer', solution_text, re.IGNORECASE))
+        has_math = '\\[' in solution_text or '$$' in solution_text or '\\(' in solution_text
         has_reasoning = any([
-            'because' in solution.lower(),
-            'therefore' in solution.lower(),
-            'construction' in solution.lower(),
-            'proof' in solution.lower(),
-            'claim' in solution.lower(),
-            'lemma' in solution.lower(),
-            'hence' in solution.lower(),
-            'thus' in solution.lower()
+            'because' in solution_text.lower(),
+            'therefore' in solution_text.lower(),
+            'construction' in solution_text.lower(),
+            'proof' in solution_text.lower(),
+            'claim' in solution_text.lower(),
+            'lemma' in solution_text.lower(),
+            'hence' in solution_text.lower(),
+            'thus' in solution_text.lower()
         ])
 
         # Graduated validation based on content
@@ -1124,23 +1142,23 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
         # Accept if solution has answer OR reasoning, even without LaTeX math delimiters
         min_length = 100  # Reduced from 500 - allow shorter valid proofs
         is_valid = (
-            len(solution) >= min_length and
+            len(solution_text) >= min_length and
             (has_math or has_answer or has_reasoning)  # Accept plain text if has content
         )
 
         if is_valid:
-            print(f"[WARNING] Marker '{marker}' not found, using full solution ({len(solution)} chars)")
+            print(f"[WARNING] Marker '{marker}' not found, using full solution ({len(solution_text)} chars)")
             print(f"[INFO] Validation: answer={has_answer}, math={has_math}, reasoning={has_reasoning}")
-            return solution.strip()
+            return solution_text.strip()
 
         # More informative error message
-        print(f"[WARNING] Marker '{marker}' not found and solution looks invalid ({len(solution)} chars)")
+        print(f"[WARNING] Marker '{marker}' not found and solution looks invalid ({len(solution_text)} chars)")
         print(f"[DEBUG] Content check: answer={has_answer}, math={has_math}, reasoning={has_reasoning}")
         return ''
     if(after):
-        return solution[idx + len(marker):].strip()
+        return solution_text[idx + len(marker):].strip()
     else:
-        return solution[:idx].strip()
+        return solution_text[:idx].strip()
 
 
 def ensure_tier2_format_compatibility(solution, problem_statement):
