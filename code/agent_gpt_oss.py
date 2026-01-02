@@ -126,7 +126,7 @@ STRUCTURED_OUTPUT_SUFFIX = """
 Return your response as valid JSON with this exact structure:
 {
   "solution": "your complete mathematical reasoning, proof, and detailed solution here",
-  "final_answer": "the numerical answer only (e.g., 2112, without LaTeX formatting)"
+  "final_answer": "the numerical answer only (single value like 42, without LaTeX formatting)"
 }
 
 Ensure 'final_answer' contains ONLY the numerical value or expression, without \\boxed{} or other LaTeX.
@@ -944,19 +944,22 @@ def extract_solution(response_data):
     Extracts the solution from the API response.
 
     Handles both structured (dict) and unstructured (string) formats:
-    - If response_data is a dict with 'solution', returns that directly
+    - If response_data is a dict with 'solution', returns THE FULL DICT (preserves final_answer)
     - Otherwise expects unified format with ### markers
 
     Returns:
-        Solution text from ### Summary ### onwards, or empty string if not found
+        - Dict with 'solution' and 'final_answer' if structured output
+        - Solution text string from ### Summary ### onwards if unstructured
+        - Empty string if not found
     """
     if not response_data:
         return ""
 
     # Handle structured output (dict with 'solution' key)
+    # CRITICAL FIX: Return full dict to preserve final_answer field
     if isinstance(response_data, dict):
         if 'solution' in response_data:
-            return response_data['solution']
+            return response_data  # Return full dict, not just response_data['solution']
         # If dict but no 'solution' key, return empty
         return ""
 
@@ -3287,22 +3290,55 @@ def extract_answer_from_solution(solution, problem_type=None):
 
 def extract_answer_simple(solution):
     """
-    Simple string extraction for backward compatibility.
-    Returns just the raw answer string, not the full dict.
+    Extract final answer from structured JSON output.
 
-    Now also handles structured output format:
-    - If solution is a dict with 'final_answer', returns that directly
-    - Otherwise uses regex extraction as before
+    ENFORCES structured output - no regex fallback to prevent garbage extraction.
+
+    Args:
+        solution: Dict with 'final_answer' key (from structured JSON output)
+
+    Returns:
+        Clean answer string from 'final_answer' field
+
+    Raises:
+        ValueError: If solution is not a dict or missing 'final_answer' field
     """
-    # Handle structured output (dict with 'final_answer')
-    if isinstance(solution, dict) and 'final_answer' in solution:
-        return solution['final_answer']
+    # Enforce structured output (dict with 'final_answer')
+    if isinstance(solution, dict):
+        if 'final_answer' not in solution:
+            raise ValueError(
+                "Structured output missing 'final_answer' field. "
+                "Check LLM output format or STRUCTURED_OUTPUT_SUFFIX configuration."
+            )
 
-    # Handle unstructured output (string) - use regex extraction
-    result = extract_answer_from_solution(solution)
-    if result:
-        return result.get('raw')
-    return None
+        answer = solution['final_answer']
+
+        # Validate answer is clean (not LaTeX fragment or variable assignment)
+        if len(answer) > 50:
+            raise ValueError(
+                f"Answer too long ({len(answer)} chars): likely LaTeX fragment. "
+                f"Got: {answer[:100]}"
+            )
+
+        if '\\' in answer or '$' in answer:
+            raise ValueError(
+                f"Answer contains LaTeX symbols: {answer}"
+            )
+
+        # Check for variable assignments like "n = 2025"
+        if re.match(r'^[a-zA-Z_]\w*\s*=\s*', answer):
+            raise ValueError(
+                f"Answer looks like variable assignment, not final value: {answer}"
+            )
+
+        return answer
+    else:
+        # Not a dict - this means structured output failed
+        raise ValueError(
+            f"Expected structured output (dict), got {type(solution).__name__}. "
+            "ENABLE_STRUCTURED_OUTPUT may be disabled or JSON parsing failed. "
+            f"Solution preview: {str(solution)[:200]}"
+        )
 
 
 def get_solution_text(solution):
