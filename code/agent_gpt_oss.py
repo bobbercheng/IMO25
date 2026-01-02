@@ -115,6 +115,24 @@ except ImportError:
     print("[WARNING] Meta-prompted BFS module not available")
     META_PROMPTED_BFS_AVAILABLE = False
 
+# --- STRUCTURED OUTPUT CONFIGURATION ---
+# Enable structured JSON output for clean answer extraction (bypasses regex)
+ENABLE_STRUCTURED_OUTPUT = os.getenv("ENABLE_STRUCTURED_OUTPUT", "1") == "1"
+
+# Structured JSON prompt extension (appended to step1_prompt)
+STRUCTURED_OUTPUT_SUFFIX = """
+
+**IMPORTANT OUTPUT FORMAT:**
+Return your response as valid JSON with this exact structure:
+{
+  "solution": "your complete mathematical reasoning, proof, and detailed solution here",
+  "final_answer": "the numerical answer only (e.g., 2112, without LaTeX formatting)"
+}
+
+Ensure 'final_answer' contains ONLY the numerical value or expression, without \\boxed{} or other LaTeX.
+The 'solution' field should contain your full detailed mathematical proof and reasoning.
+"""
+
 # --- CONFIGURATION ---
 # Model name - supports OpenRouter prefixes (e.g., "openrouter/openai/gpt-oss-120b")
 MODEL_NAME = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
@@ -388,6 +406,10 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
     """
     # Use specified reasoning effort, or default to solution reasoning
     effort = reasoning_effort if reasoning_effort is not None else SOLUTION_REASONING_EFFORT
+
+    # Append structured output suffix if enabled
+    if ENABLE_STRUCTURED_OUTPUT:
+        system_prompt = system_prompt + STRUCTURED_OUTPUT_SUFFIX
 
     # Build base payload
     payload = {
@@ -813,6 +835,10 @@ def extract_text_from_response(response_data):
     Extracts the generated text from the API response JSON.
     Handles potential errors if the response format is unexpected.
     Cleans reasoning tags from the content before returning.
+
+    If ENABLE_STRUCTURED_OUTPUT is True, attempts to parse content as JSON
+    and returns a dict with {'solution': str, 'final_answer': str} structure.
+    Otherwise returns plain text content for backward compatibility.
     """
     # Type check: ensure response_data is a dictionary
     if not isinstance(response_data, dict):
@@ -831,9 +857,21 @@ def extract_text_from_response(response_data):
         # If there's a thinking field, combine it with content for display
         if 'thinking' in message:
             thinking = message['thinking']
-            return f"{thinking}\n\n{content}"
+            content_with_thinking = f"{thinking}\n\n{content}"
+        else:
+            content_with_thinking = content
 
-        return content
+        # Try to parse as structured JSON if enabled
+        if ENABLE_STRUCTURED_OUTPUT:
+            structured = parse_structured_solution(content)
+            if structured:
+                print(f">>>>>>> [STRUCTURED] Successfully parsed JSON solution")
+                print(f">>>>>>> [STRUCTURED] Answer: {structured['final_answer']}")
+                # Return structured dict for downstream processing
+                return structured
+
+        # Fallback: return content as string (backward compatibility)
+        return content_with_thinking
     except (KeyError, IndexError, TypeError) as e:
         print("Error: Could not extract text from the API response.")
         print(f"Reason: {e}")
@@ -934,6 +972,52 @@ def extract_solution(response_data):
         return response_data[summary_idx - 4:].strip()
     else:
         return response_data[summary_idx:].strip()
+
+
+def parse_structured_solution(content):
+    """
+    Parse structured JSON solution from API response.
+
+    Expected JSON format:
+    {
+      "solution": "detailed mathematical reasoning and proof",
+      "final_answer": "numerical answer only (e.g., 2112)"
+    }
+
+    Args:
+        content: String content from API response
+
+    Returns:
+        Dict with 'solution' and 'final_answer' keys if JSON parsing succeeds,
+        None if content is not valid JSON or missing required fields
+    """
+    if not content or not isinstance(content, str):
+        return None
+
+    try:
+        # Try to parse as JSON
+        parsed = json.loads(content.strip())
+
+        # Validate required fields
+        if not isinstance(parsed, dict):
+            return None
+
+        if 'solution' not in parsed or 'final_answer' not in parsed:
+            return None
+
+        # Validate field types
+        if not isinstance(parsed['solution'], str) or not isinstance(parsed['final_answer'], str):
+            return None
+
+        # Validate non-empty
+        if not parsed['solution'].strip() or not parsed['final_answer'].strip():
+            return None
+
+        return parsed
+
+    except (json.JSONDecodeError, TypeError, ValueError):
+        # Not valid JSON, return None
+        return None
 
 
 def validate_solution_structure(solution):
@@ -3187,11 +3271,35 @@ def extract_answer_simple(solution):
     """
     Simple string extraction for backward compatibility.
     Returns just the raw answer string, not the full dict.
+
+    Now also handles structured output format:
+    - If solution is a dict with 'final_answer', returns that directly
+    - Otherwise uses regex extraction as before
     """
+    # Handle structured output (dict with 'final_answer')
+    if isinstance(solution, dict) and 'final_answer' in solution:
+        return solution['final_answer']
+
+    # Handle unstructured output (string) - use regex extraction
     result = extract_answer_from_solution(solution)
     if result:
         return result.get('raw')
     return None
+
+
+def get_solution_text(solution):
+    """
+    Extract solution text from either structured or unstructured format.
+
+    Args:
+        solution: Either a string (unstructured) or dict with 'solution' field (structured)
+
+    Returns:
+        String containing the solution text
+    """
+    if isinstance(solution, dict) and 'solution' in solution:
+        return solution['solution']
+    return str(solution) if solution else ""
 
 def validate_answer_change(prev_solution, new_solution, iteration, verbose=True):
     """
@@ -7250,7 +7358,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                     if agent_blacklist:
                         save_solution_to_blacklist(agent_blacklist,
                                                    answer=extract_answer_simple(solution) or "UNKNOWN",
-                                                   solution_text=solution,
+                                                   solution_text=get_solution_text(solution),
                                                    run_id=agent_run_id,
                                                    verdict_dict=good_verify,
                                                    iterations=i)
@@ -7283,7 +7391,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                     if agent_blacklist:
                         save_solution_to_blacklist(agent_blacklist,
                                                    answer=extract_answer_simple(solution) or "UNKNOWN",
-                                                   solution_text=solution,
+                                                   solution_text=get_solution_text(solution),
                                                    run_id=agent_run_id,
                                                    verdict_dict=good_verify,
                                                    iterations=i)
@@ -7314,7 +7422,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                 if agent_blacklist and solution:
                     save_solution_to_blacklist(agent_blacklist,
                                                answer=extract_answer_simple(solution) or "UNKNOWN",
-                                               solution_text=solution,
+                                               solution_text=get_solution_text(solution),
                                                run_id=agent_run_id,
                                                verdict_dict=good_verify if 'good_verify' in locals() else {'verdict': 'FAIL'},
                                                iterations=i)
