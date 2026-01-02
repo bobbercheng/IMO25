@@ -2,14 +2,22 @@
   "problem_id": "imo06",
   "solutions": [
     {
+      "answer": "4050",
+      "method": "greedy_construction",
+      "run_id": "run3",
+      "verdict": "FAIL",
+      "iterations": 3,
+      "timestamp": 1767366804.7375188
+    },
+    {
       "answer": "4048",
       "method": "ferrers_diagram",
       "run_id": "manual_test",
       "verdict": "FAIL",
       "iterations": 0,
-      "timestamp": 1767365668.1410995
+      "timestamp": 1767366831.2389278
     }
   ],
-  "last_updated": 1767365668.1411033,
-  "count": 1
+  "last_updated": 1767366831.238994,
+  "count": 2
 }
