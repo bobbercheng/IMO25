@@ -224,3 +224,4 @@ test*_results.json
 shadow_mode_results*.json
 week2_results_fixed.json
 *.lock
+test_*.log
