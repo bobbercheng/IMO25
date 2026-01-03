@@ -288,6 +288,7 @@ def get_blacklist_constrained_schema(
                     "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
                 },
                 "final_answer": {
+                    "type": "integer",
                     "anyOf": anyof_ranges,
                     "description": f"Final numerical answer in range [{min_val}, {max_val}]. FORBIDDEN (proven incorrect): {blacklisted_nums}. You MUST use a different approach."
                 }

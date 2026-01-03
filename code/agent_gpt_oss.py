@@ -134,10 +134,14 @@ STRUCTURED_OUTPUT_SUFFIX = """
 Return your response as valid JSON with this exact structure:
 {
   "solution": "your complete mathematical reasoning, proof, and detailed solution here",
-  "final_answer": "the numerical answer only (single value like 42, without LaTeX formatting)"
+  "final_answer": 42
 }
 
-Ensure 'final_answer' contains ONLY the numerical value or expression, without \\boxed{} or other LaTeX.
+CRITICAL: 'final_answer' MUST be an INTEGER type (not a string).
+- Correct: "final_answer": 2025
+- WRONG: "final_answer": "2025"
+
+Ensure 'final_answer' contains ONLY the numerical value, without quotes, \\boxed{}, or LaTeX formatting.
 The 'solution' field should contain your full detailed mathematical proof and reasoning.
 """
 
@@ -1000,8 +1004,10 @@ def parse_structured_solution(content):
     Expected JSON format:
     {
       "solution": "detailed mathematical reasoning and proof",
-      "final_answer": "numerical answer only (e.g., 2112)"
+      "final_answer": 2112
     }
+
+    Note: final_answer must be an integer type, not a string.
 
     Args:
         content: String content from API response
