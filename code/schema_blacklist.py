@@ -102,7 +102,7 @@ def extract_blacklisted_numbers(blacklist: List[Dict[str, Any]]) -> List[int]:
     Handles:
     - Direct integers: "4048" → 4048
     - Formula answers: "n = 2025" → ignore (not numerical)
-    - FAIL verdicts only (ignore PASS entries)
+    - ALL entries (both PASS and FAIL) for maximum diversity
 
     Args:
         blacklist: List of blacklist entries
@@ -113,9 +113,8 @@ def extract_blacklisted_numbers(blacklist: List[Dict[str, Any]]) -> List[int]:
     blacklisted_nums = []
 
     for entry in blacklist:
-        # Only blacklist FAIL entries
-        if entry.get("verdict") != "FAIL":
-            continue
+        # Blacklist ALL entries (both PASS and FAIL) to enforce diversity
+        # This prevents the model from regenerating any previously tried answer
 
         answer = entry.get("answer", "")
 
