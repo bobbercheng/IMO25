@@ -54,19 +54,24 @@ def test_schema_generation():
     assert "anyOf" in final_answer, "Schema should use 'anyOf' constraint for compactness and OpenRouter compatibility"
 
     anyof_list = final_answer["anyOf"]
-    assert len(anyof_list) == 3, f"Expected 3 anyOf segments, got {len(anyof_list)}"
+    # Now blocks ALL answers (PASS + FAIL): 2025, 4048, 4050
+    # Expected segments: [1012-2024], [2026-4047], [4049], [4051-6075]
+    assert len(anyof_list) == 4, f"Expected 4 anyOf segments (blocking 2025, 4048, 4050), got {len(anyof_list)}"
 
     print(f"✅ Schema uses compact 'anyOf' constraint (OpenRouter compatible)")
     print(f"   anyOf segments: {len(anyof_list)}")
     print(f"   Segment 1: [{anyof_list[0]['minimum']}, {anyof_list[0]['maximum']}]")
-    print(f"   Segment 2: {anyof_list[1]['enum']}")
-    print(f"   Segment 3: [{anyof_list[2]['minimum']}, {anyof_list[2]['maximum']}]")
+    print(f"   Segment 2: [{anyof_list[1]['minimum']}, {anyof_list[1]['maximum']}]")
+    print(f"   Segment 3: {anyof_list[2]['enum']}")
+    print(f"   Segment 4: [{anyof_list[3]['minimum']}, {anyof_list[3]['maximum']}]")
     print(f"   Schema size: ~{len(json.dumps(schema))} bytes (vs ~30KB with enum approach)")
 
-    # Verify anyOf segments exclude 4048 and 4050
-    assert anyof_list[0]["maximum"] == 4047, "First segment should end before 4048"
-    assert anyof_list[1]["enum"] == [4049], "Middle segment should only allow 4049"
-    assert anyof_list[2]["minimum"] == 4051, "Last segment should start after 4050"
+    # Verify anyOf segments exclude 2025, 4048, and 4050
+    assert anyof_list[0]["maximum"] == 2024, "First segment should end before 2025"
+    assert anyof_list[1]["minimum"] == 2026, "Second segment should start after 2025"
+    assert anyof_list[1]["maximum"] == 4047, "Second segment should end before 4048"
+    assert anyof_list[2]["enum"] == [4049], "Third segment should only allow 4049"
+    assert anyof_list[3]["minimum"] == 4051, "Fourth segment should start after 4050"
 
     print(f"✅ Schema structure is correct\n")
 
@@ -86,8 +91,10 @@ def test_schema_metadata():
     # Check metadata
     assert metadata["constraint_type"] == "anyOf", "Should report 'anyOf' constraint type"
     assert metadata["has_anyof"] == True, "Should detect anyOf constraint"
-    assert metadata["anyof_segments"] == 3, "Should have 3 anyOf segments"
-    assert len(metadata["blacklisted_values"]) == 2, "Should detect 2 blacklisted values"
+    assert metadata["anyof_segments"] == 4, "Should have 4 anyOf segments (blocking 2025, 4048, 4050)"
+    # Blacklist has duplicates: [4050, 4048, 2025, 4048] -> unique: 2025, 4048, 4050
+    assert len(metadata["blacklisted_values"]) >= 3, f"Should detect at least 3 blacklisted values, got {len(metadata['blacklisted_values'])}"
+    assert 2025 in metadata["blacklisted_values"], "Should list 2025 as blacklisted (PASS answer)"
     assert 4048 in metadata["blacklisted_values"], "Should list 4048 as blacklisted"
     assert 4050 in metadata["blacklisted_values"], "Should list 4050 as blacklisted"
 
@@ -282,11 +289,12 @@ def test_answer_validation():
     blacklist = load_blacklist("problems/imo06.txt")
 
     # Test various answers
+    # Note: Now blocking ALL answers (PASS + FAIL), so 2025 is blacklisted
     test_cases = [
-        (4048, False, "blacklisted"),
-        (4050, False, "blacklisted"),
-        (2112, True, "correct answer"),
-        (2025, True, "alternative answer"),
+        (4048, False, "blacklisted (FAIL + PASS)"),
+        (4050, False, "blacklisted (FAIL)"),
+        (2025, False, "blacklisted (PASS - now blocked for diversity)"),
+        (2112, True, "valid answer (not in blacklist)"),
         (1500, True, "random valid"),
     ]
 
