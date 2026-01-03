@@ -12,6 +12,24 @@ import json
 from typing import Dict, List, Tuple, Optional
 
 # ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def get_solution_text(solution):
+    """
+    Extract solution text from either structured or unstructured format.
+
+    Args:
+        solution: Either dict with 'solution' key or string
+
+    Returns:
+        str: The solution text
+    """
+    if isinstance(solution, dict):
+        return solution.get('solution', '')
+    return solution if solution else ''
+
+# ============================================================================
 # AUTOMATED CHECKERS (prevent 40% of errors)
 # ============================================================================
 
@@ -24,7 +42,7 @@ class AutomatedCheckers:
     """
 
     @staticmethod
-    def check_coverage(solution: str, verbose: bool = False) -> Dict:
+    def check_coverage(solution, verbose: bool = False) -> Dict:
         """
         Check 1: Coverage Verification
 
@@ -41,10 +59,16 @@ class AutomatedCheckers:
             }
         """
         warnings = []
+        # Extract text from structured or unstructured format
+        solution_text = get_solution_text(solution)
+        
         suggestions = []
 
+        # Extract text from structured or unstructured format
+        solution_text = get_solution_text(solution)
+
         # Pattern 1: Claims about "all points" without verification
-        if re.search(r'(all points|every point|covers? .* points)', solution, re.IGNORECASE):
+        if re.search(r'(all points|every point|covers? .* points)', solution_text, re.IGNORECASE):
             # Check if there's explicit verification
             has_verification = bool(re.search(
                 r'(for each|for every|for all).*(verify|check|test|ensure)',
@@ -63,7 +87,7 @@ class AutomatedCheckers:
                 )
 
         # Pattern 2: Construction with lines but no coverage proof
-        if re.search(r'(construct|define|choose).*(line|family|set)', solution, re.IGNORECASE):
+        if re.search(r'(construct|define|choose).*(line|family|set)', solution_text, re.IGNORECASE):
             has_coverage_proof = bool(re.search(
                 r'(cover(s|ed|age)|contain(s|ed)|pass(es) through).*point',
                 solution,
@@ -93,7 +117,7 @@ class AutomatedCheckers:
         }
 
     @staticmethod
-    def check_integer_arithmetic(solution: str, verbose: bool = False) -> Dict:
+    def check_integer_arithmetic(solution, verbose: bool = False) -> Dict:
         """
         Check 2: Integer Arithmetic Validator
 
@@ -108,6 +132,9 @@ class AutomatedCheckers:
             }
         """
         warnings = []
+        # Extract text from structured or unstructured format
+        solution_text = get_solution_text(solution)
+        
         suggestions = []
 
         # Pattern 1: Rational slopes claimed to give lattice points
@@ -138,7 +165,7 @@ class AutomatedCheckers:
                     break  # Only warn once
 
         # Pattern 2: Claims about "integer coordinates" without proof
-        if re.search(r'integer (coordinate|point|intersection)', solution, re.IGNORECASE):
+        if re.search(r'integer (coordinate|point|intersection)', solution_text, re.IGNORECASE):
             # Check if there's explicit divisibility verification
             has_proof = bool(re.search(
                 r'(therefore|thus|hence).*(integer|divides)',
@@ -169,7 +196,7 @@ class AutomatedCheckers:
         }
 
     @staticmethod
-    def check_inclusion_exclusion(solution: str, verbose: bool = False) -> Dict:
+    def check_inclusion_exclusion(solution, verbose: bool = False) -> Dict:
         """
         Check 3: Inclusion-Exclusion Checker
 
@@ -184,10 +211,13 @@ class AutomatedCheckers:
             }
         """
         warnings = []
+        # Extract text from structured or unstructured format
+        solution_text = get_solution_text(solution)
+        
         suggestions = []
 
         # Pattern 1: Addition of sets/capacities
-        if re.search(r'(\d+\s*\+\s*\d+|\|.*\|\s*\+\s*\|.*\|)', solution):
+        if re.search(r'(\d+\s*\+\s*\d+|\|.*\|\s*\+\s*\|.*\|)', solution_text):
             # Check if overlaps are mentioned
             has_overlap_handling = bool(re.search(
                 r'(overlap|intersection|inclusion-exclusion|distinct|shared|common)',
@@ -206,7 +236,7 @@ class AutomatedCheckers:
                 )
 
         # Pattern 2: Claims about "total" or "at most" without overlap consideration
-        if re.search(r'(total|at most).*(point|element|line)', solution, re.IGNORECASE):
+        if re.search(r'(total|at most).*(point|element|line)', solution_text, re.IGNORECASE):
             has_overlap_mention = bool(re.search(
                 r'(overlap|shared|common|intersection)',
                 solution,
