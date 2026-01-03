@@ -18,7 +18,7 @@
       "timestamp": 1767366831.2389278
     },
     {
-      "answer": "n = 2025",
+      "answer": "2025",
       "method": "diagonal_permutation",
       "run_id": "run1",
       "verdict": "PASS",
@@ -26,15 +26,7 @@
       "timestamp": 1767368919.317104
     },
     {
-      "answer": "n = 2025$) binary matrix where a $1$ indicates a covered unit square and a $0$ indicates an uncovered one",
-      "method": "diagonal_permutation",
-      "run_id": "run2",
-      "verdict": "PASS",
-      "iterations": 1,
-      "timestamp": 1767370323.198138
-    },
-    {
-      "answer": "U = \\{(i",
+      "answer": "4048",
       "method": "diagonal_permutation",
       "run_id": "run3",
       "verdict": "PASS",
