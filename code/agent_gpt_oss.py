@@ -4171,7 +4171,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                max_adversarial_rounds=12, consecutive_robust_threshold=3,
                stuck_threshold=5, memory_file=None, verbose=True,
                defense_first=True, max_regeneration_attempts=2,
-               use_constructive_mode=True, max_cost=100.0):
+               use_constructive_mode=True, max_cost=100.0,
+               use_schema_blacklist=False, problem_file=None):
     """
     Main RLAC (Reinforcement Learning with Adversarial Critics) agent.
 
@@ -4400,7 +4401,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             p1, solution, verify, good_verify = init_explorations(
                 problem_statement, verbose, current_prompts,
                 sol_reasoning, self_imp_reasoning, ver_reasoning,
-                agent_problem_id, agent_run_id
+                agent_problem_id, agent_run_id, use_schema_blacklist, problem_file
             )
 
             if solution is None:
@@ -6739,7 +6740,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
           use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=2,
           rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True, rlac_critic_reasoning=None,
-          problem_file=None):
+          use_schema_blacklist=False, problem_file=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -6805,7 +6806,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             verbose=True,
             defense_first=rlac_defense_first,
             max_regeneration_attempts=rlac_max_regeneration,
-            use_constructive_mode=rlac_constructive_mode
+            use_constructive_mode=rlac_constructive_mode,
+            use_schema_blacklist=use_schema_blacklist,
+            problem_file=problem_file
         )
 
     if resume_from_memory and memory_file:
@@ -6972,7 +6975,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     p1, sol, ver, good_ver = init_explorations(
                         problem_statement, True, diverse_prompts,
                         sol_reasoning, self_imp_reasoning, ver_reasoning,
-                        agent_problem_id, agent_run_id
+                        agent_problem_id, agent_run_id, use_schema_blacklist, problem_file
                     )
 
                     if sol:
@@ -7106,7 +7109,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                                     p2, sol2, ver2, good_ver2 = init_explorations(
                                         problem_statement, True, diverse_prompts,
                                         sol_reasoning, self_imp_reasoning, ver_reasoning,
-                                        agent_problem_id, agent_run_id
+                                        agent_problem_id, agent_run_id, use_schema_blacklist, problem_file
                                     )
 
                                     if sol2:
@@ -7754,7 +7757,7 @@ if __name__ == "__main__":
                    num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
                    use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
                    rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning,
-                   problem_file=args.problem_file)
+                   use_schema_blacklist, args.problem_file)
         if(sol is not None):
             print(f">>>>>>> Found a correct solution.")
             print(json.dumps(sol, indent=4))
