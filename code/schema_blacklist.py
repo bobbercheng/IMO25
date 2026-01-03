@@ -137,27 +137,30 @@ def get_blacklist_constrained_schema(
     problem_file: str,
     problem_text: Optional[str] = None,
     blacklist: Optional[List[Dict[str, Any]]] = None,
-    use_enum: bool = True,
-    max_enum_size: int = 10000
+    use_enum: bool = False,  # Changed default to False to avoid context explosion
+    max_enum_size: int = 50   # Reduced from 10000 to 50 - only use enum for tiny blacklists
 ) -> Dict[str, Any]:
     """
     Generate JSON schema that excludes blacklisted answers.
 
     This is the main function that implements constrained decoding via JSON schema.
 
+    IMPORTANT: Uses compact "not" constraint instead of large enum to avoid context explosion.
+    For example, instead of listing 5000+ allowed values, we list 2-3 forbidden values.
+
     Args:
         problem_file: Path to problem file (for loading blacklist)
         problem_text: Problem statement text (for range estimation)
         blacklist: Pre-loaded blacklist (optional, will load if not provided)
-        use_enum: If True, use enum constraint; if False, use description only
-        max_enum_size: Maximum enum size before falling back to description
+        use_enum: If True, use enum constraint (ONLY for tiny ranges <50 values)
+        max_enum_size: Maximum enum size before falling back to "not" constraint
 
     Returns:
         JSON schema dict with blacklist constraints
 
     Example:
         >>> schema = get_blacklist_constrained_schema("problems/imo06.txt")
-        >>> # schema["properties"]["final_answer"]["enum"] excludes 4048, 4050
+        >>> # Uses "not": {"enum": [4048, 4050]} instead of huge allowed enum
     """
     # Load blacklist if not provided
     if blacklist is None:
@@ -175,8 +178,11 @@ def get_blacklist_constrained_schema(
     n = extract_problem_parameter(problem_text)
     min_val, max_val = estimate_answer_range(problem_text, n)
 
-    # Build enum excluding blacklist
-    if use_enum and (max_val - min_val) <= max_enum_size:
+    # Build schema based on size
+    range_size = max_val - min_val + 1
+
+    # OPTION 1: Use enum ONLY for very small ranges (< 50 values)
+    if use_enum and range_size <= max_enum_size:
         valid_answers = [
             x for x in range(min_val, max_val + 1)
             if x not in blacklisted_nums
@@ -201,8 +207,33 @@ def get_blacklist_constrained_schema(
             },
             "required": ["solution", "method", "final_answer"]
         }
+    # OPTION 2: Use "not" constraint for compact blacklist (RECOMMENDED)
+    elif blacklisted_nums:
+        schema = {
+            "type": "object",
+            "properties": {
+                "solution": {
+                    "type": "string",
+                    "description": "Detailed mathematical solution with step-by-step reasoning"
+                },
+                "method": {
+                    "type": "string",
+                    "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
+                },
+                "final_answer": {
+                    "type": "integer",
+                    "minimum": min_val,
+                    "maximum": max_val,
+                    "not": {
+                        "enum": blacklisted_nums  # Only lists forbidden values (2-3 items)
+                    },
+                    "description": f"Final numerical answer in range [{min_val}, {max_val}]. FORBIDDEN (proven incorrect): {blacklisted_nums}. You MUST use a different approach."
+                }
+            },
+            "required": ["solution", "method", "final_answer"]
+        }
+    # OPTION 3: Fallback to range + description only (no blacklist entries yet)
     else:
-        # Enum too large, fall back to range + description
         schema = {
             "type": "object",
             "properties": {
@@ -218,7 +249,7 @@ def get_blacklist_constrained_schema(
                     "type": "integer",
                     "minimum": min_val,
                     "maximum": max_val,
-                    "description": f"Final numerical answer. FORBIDDEN (proven incorrect): {blacklisted_nums}. You MUST use a different approach."
+                    "description": f"Final numerical answer in range [{min_val}, {max_val}]."
                 }
             },
             "required": ["solution", "method", "final_answer"]
@@ -235,13 +266,22 @@ def get_schema_metadata(schema: Dict[str, Any]) -> Dict[str, Any]:
         schema: JSON schema
 
     Returns:
-        Metadata dict with enum_size, blacklisted_values, etc.
+        Metadata dict with constraint type, blacklisted_values, etc.
     """
     final_answer = schema.get("properties", {}).get("final_answer", {})
 
+    # Check for "not" constraint
+    has_not_constraint = "not" in final_answer
+    blacklisted_values = []
+    if has_not_constraint:
+        blacklisted_values = final_answer.get("not", {}).get("enum", [])
+
     metadata = {
+        "constraint_type": "not" if has_not_constraint else ("enum" if "enum" in final_answer else "range"),
         "has_enum": "enum" in final_answer,
         "enum_size": len(final_answer.get("enum", [])),
+        "has_not_constraint": has_not_constraint,
+        "blacklisted_values": blacklisted_values,
         "has_range": "minimum" in final_answer and "maximum" in final_answer,
         "range": (final_answer.get("minimum"), final_answer.get("maximum")),
         "description": final_answer.get("description", "")

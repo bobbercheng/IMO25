@@ -3059,8 +3059,11 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
             metadata = get_schema_metadata(schema)
             if verbose:
                 print(f"[SCHEMA BLACKLIST] ✅ Enabled")
-                print(f"[SCHEMA BLACKLIST]   Constraint type: {'enum' if metadata['has_enum'] else 'range'}")
-                if metadata['has_enum']:
+                print(f"[SCHEMA BLACKLIST]   Constraint: {metadata['constraint_type']}")
+                if metadata['has_not_constraint']:
+                    print(f"[SCHEMA BLACKLIST]   Forbidden values: {metadata['blacklisted_values']}")
+                    print(f"[SCHEMA BLACKLIST]   Range: {metadata['range']}")
+                elif metadata['has_enum']:
                     print(f"[SCHEMA BLACKLIST]   Enum size: {metadata['enum_size']} valid values")
                 else:
                     print(f"[SCHEMA BLACKLIST]   Range: {metadata['range']}")
