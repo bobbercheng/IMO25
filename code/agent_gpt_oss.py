@@ -1268,15 +1268,17 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
     disable_p0_format_validation = _format_os.getenv('RLAC_DISABLE_P0_FORMAT_VALIDATION', 'false').lower() == 'true'
 
     if not disable_p0_format_validation:
+        # Extract text for validation (handles both dict and string)
+        solution_text = get_solution_text(solution)
         extracted_solution = extract_detailed_solution(solution)
 
         if len(extracted_solution) < 100:
             error_msg = (
                 f"[VERIFICATION BUG] Format extraction failed!\n"
-                f"  Input solution length: {len(solution)} chars\n"
+                f"  Input solution length: {len(solution_text)} chars\n"
                 f"  Extracted solution length: {len(extracted_solution)} chars\n"
                 f"  This indicates a format mismatch between generator and verifier.\n"
-                f"  Original solution preview: {solution[:200]}...\n"
+                f"  Original solution preview: {solution_text[:200]}...\n"
             )
             if verbose:
                 print(f"\n{'='*80}")
@@ -4370,7 +4372,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 failed_approaches.append("Generation returned None")
                 continue
 
-            print(f">>>>>>> [RLAC PHASE 1] Initial solution generated ({len(solution)} chars)")
+            print(f">>>>>>> [RLAC PHASE 1] Initial solution generated ({len(get_solution_text(solution))} chars)")
 
             # VALIDATION GATE: Check solution quality before proceeding
             is_valid, validation_reason = validate_solution_quality(solution, min_length=500, verbose=verbose)
@@ -5140,7 +5142,7 @@ Start completely fresh with a different mathematical approach.
                 'verdict': verdict,
                 'counterexamples': len(counterexamples),
                 'penalty': total_penalty,
-                'solution_length': len(solution),
+                'solution_length': len(get_solution_text(solution)),
                 'consecutive_robust': consecutive_robust,
                 'stuck_count': stuck_count,
                 'total_robust': total_robust_count,
@@ -5787,7 +5789,7 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     if problem_type == "prove":
                         # For "prove X" problems, use proof reconsideration (prevents "theorem is false" errors)
                         # Create failed approach summary from previous solution
-                        failed_approach_summary = f"Previous approach (failed):\n{solution[:1000]}..."
+                        failed_approach_summary = f"Previous approach (failed):\n{get_solution_text(solution)[:1000]}..."
 
                         defense_prompt = proof_reconsideration_prompt.format(
                             problem_statement=problem_statement,
@@ -6010,7 +6012,7 @@ Provide a corrected solution that passes validation for all small cases.
                         print(f"{'='*80}\n")
 
                         # Summarize failed approach
-                        approach_summary = solution[:500] if solution else "No solution"
+                        approach_summary = get_solution_text(solution)[:500] if solution else "No solution"
                         counterexample_summary = "\n".join([f"- {ce[:200]}" for ce in counterexamples[:3]]) if counterexamples else "None"
                         failed_approach_summaries.append(approach_summary[:200])
 
@@ -6116,7 +6118,7 @@ Provide a corrected solution that passes validation for all small cases.
                     solution = revised_solution
 
                     print(f">>>>>>> [RLAC GENERATOR] ✓ Solution revised")
-                    print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(solution)} chars)")
+                    print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(get_solution_text(solution))} chars)")
 
                     # P7 FIX: Check if answer actually changed after reconsideration
                     # P9 FIX: Use semantic fingerprinting for meaningful change detection
