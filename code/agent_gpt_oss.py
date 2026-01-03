@@ -89,6 +89,14 @@ except ImportError:
     print("[WARNING] Small-case verification module not available")
     SMALL_CASE_VERIFICATION_AVAILABLE = False
 
+# Import schema blacklist for constrained decoding
+try:
+    from schema_blacklist import get_blacklist_constrained_schema, get_schema_metadata
+    SCHEMA_BLACKLIST_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Schema blacklist module not available")
+    SCHEMA_BLACKLIST_AVAILABLE = False
+
 # Import dynamic BFS prompts module
 try:
     from dynamic_bfs_prompts import (
@@ -3015,10 +3023,12 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None, use_schema_blacklist=False, problem_file=None):
     # BFS DIVERSITY FIX: Load solution blacklist to avoid repeating failed attempts
     blacklist_prompt = ""
     blacklist = None
+    response_format = None  # For schema-based blacklist
+
     if BLACKLIST_AVAILABLE and problem_id:
         try:
             blacklist = SolutionBlacklist(problem_id)
@@ -3034,14 +3044,41 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
                 print(f"[BLACKLIST] Warning: Could not load blacklist: {e}")
             blacklist_prompt = ""
 
-    # Enrich problem with blacklist prompt for diversity
+    # SCHEMA BLACKLIST: Use JSON schema for hard constraint (100% compliance, 0% waste)
+    if use_schema_blacklist and SCHEMA_BLACKLIST_AVAILABLE and problem_file:
+        try:
+            schema = get_blacklist_constrained_schema(problem_file, problem_statement)
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "math_solution_with_blacklist",
+                    "schema": schema,
+                    "strict": True
+                }
+            }
+            metadata = get_schema_metadata(schema)
+            if verbose:
+                print(f"[SCHEMA BLACKLIST] ✅ Enabled")
+                print(f"[SCHEMA BLACKLIST]   Constraint type: {'enum' if metadata['has_enum'] else 'range'}")
+                if metadata['has_enum']:
+                    print(f"[SCHEMA BLACKLIST]   Enum size: {metadata['enum_size']} valid values")
+                else:
+                    print(f"[SCHEMA BLACKLIST]   Range: {metadata['range']}")
+                print(f"[SCHEMA BLACKLIST]   Model CANNOT generate blacklisted answers (hard constraint)")
+        except Exception as e:
+            if verbose:
+                print(f"[SCHEMA BLACKLIST] ⚠️  Warning: Could not generate schema: {e}")
+            response_format = None
+
+    # Enrich problem with blacklist prompt for diversity (complementary to schema)
     enriched_problem = f"{problem_statement}\n{blacklist_prompt}" if blacklist_prompt else problem_statement
 
     p1 = build_request_payload(
             system_prompt=step1_prompt,
             question_prompt=enriched_problem,  # ← Blacklist prompt visible during generation!
             other_prompts=other_prompts,
-            reasoning_effort=reasoning_effort
+            reasoning_effort=reasoning_effort,
+            response_format=response_format  # ← Schema constraint enforced at API level!
         )
 
     response1 = send_api_request_with_retry(get_api_key(), p1, request_label="Initial solution prompt")
@@ -7161,7 +7198,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 return None
         if not use_mcts and num_initial_attempts <= 1:
             # Original single-path initialization
-            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning, agent_problem_id, agent_run_id)
+            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning, agent_problem_id, agent_run_id, use_schema_blacklist, args.problem_file)
             if(solution is None):
                 print(">>>>>>> Failed in finding a complete solution.")
                 return None
@@ -7594,6 +7631,10 @@ if __name__ == "__main__":
     parser.add_argument('--rlac-critic-reasoning', type=str, choices=['low', 'medium', 'high'], default='medium',
                        help='Reasoning effort for RLAC adversarial critic attacks (default: medium). Higher = more rigorous attacks.')
 
+    # Schema Blacklist Arguments
+    parser.add_argument('--use-schema-blacklist', action='store_true',
+                       help='Use JSON schema to enforce blacklist constraints via constrained decoding (100%% compliance, 0%% waste)')
+
     args = parser.parse_args()
 
     max_runs = args.max_runs
@@ -7616,6 +7657,7 @@ if __name__ == "__main__":
     rlac_max_regeneration = args.rlac_max_regeneration
     rlac_constructive_mode = args.rlac_constructive_mode and not args.no_rlac_constructive_mode
     rlac_critic_reasoning = args.rlac_critic_reasoning
+    use_schema_blacklist = args.use_schema_blacklist
 
     # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
