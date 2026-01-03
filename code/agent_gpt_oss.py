@@ -6114,7 +6114,7 @@ Provide a corrected solution that passes validation for all small cases.
                     # This allows constructive mode to activate when the generator
                     # keeps trying but critic keeps finding issues.
                     # consecutive_broken is only reset on ROBUST verdict (line ~2313)
-                    solution_delta = len(revised_solution) - len(solution)
+                    solution_delta = len(get_solution_text(revised_solution)) - len(get_solution_text(solution))
                     solution = revised_solution
 
                     print(f">>>>>>> [RLAC GENERATOR] ✓ Solution revised")
@@ -7122,8 +7122,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                             reasoning_effort=sol_reasoning  # Use same reasoning as solution
                         )
 
-                        # Add small-case prompt to messages
-                        p1["messages"].append({"role": "assistant", "content": solution})
+                        # Add small-case prompt to messages (extract text from dict if needed)
+                        p1["messages"].append({"role": "assistant", "content": get_solution_text(solution)})
                         p1["messages"].append({"role": "user", "content": small_case_prompt})
 
                         # Generate with reasoning effort (needs rigor for all cases)
@@ -7221,10 +7221,10 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 )
 
                 # Append previous solution as assistant message
-                # Note: solution is extracted text, should not contain thinking tags
+                # Note: Extract text from dict if needed
                 p1["messages"].append(
                     {"role": "assistant",
-                    "content": solution
+                    "content": get_solution_text(solution)
                     }
                 )
 
@@ -7339,7 +7339,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                             other_prompts=other_prompts_with_diversity,
                             reasoning_effort=sol_reasoning
                         )
-                        p1["messages"].append({"role": "assistant", "content": solution})
+                        p1["messages"].append({"role": "assistant", "content": get_solution_text(solution)})
                         p1["messages"].append({"role": "user", "content": correction_prompt + "\n\n" + verify})
 
                         # Use higher temperature for exploration (override default 0.0)
