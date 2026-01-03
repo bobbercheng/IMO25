@@ -50,26 +50,24 @@ def test_schema_generation():
 
     final_answer = schema["properties"]["final_answer"]
 
-    # Verify uses "not" constraint (compact) not enum (huge)
-    assert "not" in final_answer, "Schema should use 'not' constraint for compactness"
-    assert "enum" in final_answer.get("not", {}), "Schema should have enum in 'not' clause"
+    # Verify uses "anyOf" constraint (compact, works on OpenRouter) not enum (huge)
+    assert "anyOf" in final_answer, "Schema should use 'anyOf' constraint for compactness and OpenRouter compatibility"
 
-    blacklisted = final_answer["not"]["enum"]
-    print(f"✅ Schema uses compact 'not' constraint")
-    print(f"   Blacklisted values: {blacklisted}")
+    anyof_list = final_answer["anyOf"]
+    assert len(anyof_list) == 3, f"Expected 3 anyOf segments, got {len(anyof_list)}"
+
+    print(f"✅ Schema uses compact 'anyOf' constraint (OpenRouter compatible)")
+    print(f"   anyOf segments: {len(anyof_list)}")
+    print(f"   Segment 1: [{anyof_list[0]['minimum']}, {anyof_list[0]['maximum']}]")
+    print(f"   Segment 2: {anyof_list[1]['enum']}")
+    print(f"   Segment 3: [{anyof_list[2]['minimum']}, {anyof_list[2]['maximum']}]")
     print(f"   Schema size: ~{len(json.dumps(schema))} bytes (vs ~30KB with enum approach)")
 
-    # Verify blacklisted values
-    assert 4048 in blacklisted, "4048 should be blacklisted"
-    assert 4050 in blacklisted, "4050 should be blacklisted"
+    # Verify anyOf segments exclude 4048 and 4050
+    assert anyof_list[0]["maximum"] == 4047, "First segment should end before 4048"
+    assert anyof_list[1]["enum"] == [4049], "Middle segment should only allow 4049"
+    assert anyof_list[2]["minimum"] == 4051, "Last segment should start after 4050"
 
-    # Verify range constraints
-    assert "minimum" in final_answer, "Should have minimum constraint"
-    assert "maximum" in final_answer, "Should have maximum constraint"
-    assert final_answer["minimum"] > 0, "Minimum should be positive"
-    assert final_answer["maximum"] < 10000, "Maximum should be reasonable"
-
-    print(f"   Range: [{final_answer['minimum']}, {final_answer['maximum']}]")
     print(f"✅ Schema structure is correct\n")
 
     return schema
@@ -86,14 +84,16 @@ def test_schema_metadata():
     metadata = get_schema_metadata(schema)
 
     # Check metadata
-    assert metadata["constraint_type"] == "not", "Should report 'not' constraint type"
-    assert metadata["has_not_constraint"] == True, "Should detect not constraint"
+    assert metadata["constraint_type"] == "anyOf", "Should report 'anyOf' constraint type"
+    assert metadata["has_anyof"] == True, "Should detect anyOf constraint"
+    assert metadata["anyof_segments"] == 3, "Should have 3 anyOf segments"
     assert len(metadata["blacklisted_values"]) == 2, "Should detect 2 blacklisted values"
     assert 4048 in metadata["blacklisted_values"], "Should list 4048 as blacklisted"
     assert 4050 in metadata["blacklisted_values"], "Should list 4050 as blacklisted"
 
     print(f"✅ Metadata extraction works")
     print(f"   Constraint type: {metadata['constraint_type']}")
+    print(f"   anyOf segments: {metadata['anyof_segments']}")
     print(f"   Blacklisted values: {metadata['blacklisted_values']}")
     print(f"   Range: {metadata['range']}")
     print(f"✅ Metadata is correct\n")
@@ -155,7 +155,8 @@ def test_llm_api_request(schema, num_attempts=3):
         payload["reasoning"] = {"effort": "low"}
 
     print(f"\n📤 Sending {num_attempts} test requests to LLM...")
-    print(f"   Schema: 'not' constraint with {len(schema['properties']['final_answer']['not']['enum'])} blacklisted values")
+    anyof_segments = len(schema['properties']['final_answer']['anyOf'])
+    print(f"   Schema: 'anyOf' constraint with {anyof_segments} range segments (OpenRouter compatible)")
 
     results = []
     for i in range(num_attempts):
@@ -179,7 +180,21 @@ def test_llm_api_request(schema, num_attempts=3):
                     solution_text = solution_data.get("solution", "")
 
                     # Check against blacklist
-                    blacklisted_values = schema["properties"]["final_answer"]["not"]["enum"]
+                    # Extract blacklisted values from description (for anyOf) or from not constraint
+                    final_answer_schema = schema["properties"]["final_answer"]
+                    if "not" in final_answer_schema:
+                        blacklisted_values = final_answer_schema["not"]["enum"]
+                    else:
+                        # For anyOf, extract from description
+                        import re
+                        desc = final_answer_schema.get("description", "")
+                        match = re.search(r'FORBIDDEN.*?:\s*\[([^\]]+)\]', desc)
+                        if match:
+                            blacklisted_str = match.group(1)
+                            blacklisted_values = [int(x.strip()) for x in blacklisted_str.split(",")]
+                        else:
+                            blacklisted_values = []
+
                     is_blacklisted = final_answer in blacklisted_values
 
                     results.append({

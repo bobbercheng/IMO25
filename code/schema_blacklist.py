@@ -181,6 +181,70 @@ def get_blacklist_constrained_schema(
     # Build schema based on size
     range_size = max_val - min_val + 1
 
+    # Helper function to generate anyOf ranges excluding blacklisted values
+    def build_anyof_ranges(min_val, max_val, blacklisted_nums):
+        """
+        Build anyOf constraint that excludes blacklisted values using range splits.
+
+        Example: range [1012, 6075], blacklist [4048, 4050]
+        Returns:
+            [
+                {"type": "integer", "minimum": 1012, "maximum": 4047},
+                {"type": "integer", "enum": [4049]},
+                {"type": "integer", "minimum": 4051, "maximum": 6075}
+            ]
+
+        This is compact (~200 bytes) and works on OpenRouter (unlike "not" constraint).
+        """
+        # Sort blacklisted numbers
+        sorted_blacklist = sorted(set(blacklisted_nums))
+
+        # Build ranges between blacklisted values
+        anyof_ranges = []
+        current_min = min_val
+
+        for blacklisted_val in sorted_blacklist:
+            if blacklisted_val < current_min or blacklisted_val > max_val:
+                # Blacklisted value is outside the range, ignore it
+                continue
+
+            # Add range before blacklisted value
+            if current_min < blacklisted_val:
+                if current_min == blacklisted_val - 1:
+                    # Single value - use enum
+                    anyof_ranges.append({
+                        "type": "integer",
+                        "enum": [current_min]
+                    })
+                else:
+                    # Range - use minimum/maximum
+                    anyof_ranges.append({
+                        "type": "integer",
+                        "minimum": current_min,
+                        "maximum": blacklisted_val - 1
+                    })
+
+            # Move current_min past blacklisted value
+            current_min = blacklisted_val + 1
+
+        # Add final range after last blacklisted value
+        if current_min <= max_val:
+            if current_min == max_val:
+                # Single value - use enum
+                anyof_ranges.append({
+                    "type": "integer",
+                    "enum": [current_min]
+                })
+            else:
+                # Range - use minimum/maximum
+                anyof_ranges.append({
+                    "type": "integer",
+                    "minimum": current_min,
+                    "maximum": max_val
+                })
+
+        return anyof_ranges
+
     # OPTION 1: Use enum ONLY for very small ranges (< 50 values)
     if use_enum and range_size <= max_enum_size:
         valid_answers = [
@@ -207,8 +271,11 @@ def get_blacklist_constrained_schema(
             },
             "required": ["solution", "method", "final_answer"]
         }
-    # OPTION 2: Use "not" constraint for compact blacklist (RECOMMENDED)
+    # OPTION 2: Use "anyOf" with range splits for compact blacklist (RECOMMENDED)
+    # This works on OpenRouter (unlike "not" constraint which is not supported)
     elif blacklisted_nums:
+        anyof_ranges = build_anyof_ranges(min_val, max_val, blacklisted_nums)
+
         schema = {
             "type": "object",
             "properties": {
@@ -221,12 +288,7 @@ def get_blacklist_constrained_schema(
                     "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
                 },
                 "final_answer": {
-                    "type": "integer",
-                    "minimum": min_val,
-                    "maximum": max_val,
-                    "not": {
-                        "enum": blacklisted_nums  # Only lists forbidden values (2-3 items)
-                    },
+                    "anyOf": anyof_ranges,
                     "description": f"Final numerical answer in range [{min_val}, {max_val}]. FORBIDDEN (proven incorrect): {blacklisted_nums}. You MUST use a different approach."
                 }
             },
@@ -270,20 +332,65 @@ def get_schema_metadata(schema: Dict[str, Any]) -> Dict[str, Any]:
     """
     final_answer = schema.get("properties", {}).get("final_answer", {})
 
-    # Check for "not" constraint
+    # Check for different constraint types
     has_not_constraint = "not" in final_answer
+    has_enum = "enum" in final_answer
+    has_anyof = "anyOf" in final_answer
+
+    # Extract blacklisted values (from "not" constraint in description)
     blacklisted_values = []
     if has_not_constraint:
         blacklisted_values = final_answer.get("not", {}).get("enum", [])
+    elif has_anyof:
+        # For anyOf, extract blacklisted values from description
+        # Example: "FORBIDDEN (proven incorrect): [4048, 4050]"
+        desc = final_answer.get("description", "")
+        import re
+        match = re.search(r'FORBIDDEN.*?:\s*\[([^\]]+)\]', desc)
+        if match:
+            blacklisted_str = match.group(1)
+            blacklisted_values = [int(x.strip()) for x in blacklisted_str.split(",")]
+
+    # Determine constraint type
+    if has_anyof:
+        constraint_type = "anyOf"
+    elif has_not_constraint:
+        constraint_type = "not"
+    elif has_enum:
+        constraint_type = "enum"
+    else:
+        constraint_type = "range"
+
+    # Extract range info
+    has_range = "minimum" in final_answer and "maximum" in final_answer
+    range_val = (final_answer.get("minimum"), final_answer.get("maximum"))
+
+    # For anyOf, extract range from first and last constraints
+    if has_anyof and not has_range:
+        anyof_list = final_answer.get("anyOf", [])
+        if anyof_list:
+            # Get min from first range
+            first_range = anyof_list[0]
+            min_val = first_range.get("minimum", first_range.get("enum", [None])[0])
+
+            # Get max from last range
+            last_range = anyof_list[-1]
+            max_val = last_range.get("maximum", last_range.get("enum", [None])[-1] if last_range.get("enum") else None)
+
+            if min_val is not None and max_val is not None:
+                has_range = True
+                range_val = (min_val, max_val)
 
     metadata = {
-        "constraint_type": "not" if has_not_constraint else ("enum" if "enum" in final_answer else "range"),
-        "has_enum": "enum" in final_answer,
+        "constraint_type": constraint_type,
+        "has_enum": has_enum,
         "enum_size": len(final_answer.get("enum", [])),
         "has_not_constraint": has_not_constraint,
+        "has_anyof": has_anyof,
+        "anyof_segments": len(final_answer.get("anyOf", [])),
         "blacklisted_values": blacklisted_values,
-        "has_range": "minimum" in final_answer and "maximum" in final_answer,
-        "range": (final_answer.get("minimum"), final_answer.get("maximum")),
+        "has_range": has_range,
+        "range": range_val,
         "description": final_answer.get("description", "")
     }
 
