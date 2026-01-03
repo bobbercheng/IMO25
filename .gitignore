@@ -203,7 +203,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Agent log files
-logs/
+# logs/
 
 # Test output directories
 test_baseline_logs/
@@ -223,3 +223,4 @@ test*_output.log
 test*_results.json
 shadow_mode_results*.json
 week2_results_fixed.json
+*.lock

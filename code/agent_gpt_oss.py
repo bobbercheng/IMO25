@@ -43,6 +43,33 @@ from agent_oai import (
     verification_remider
 )
 
+# Import solution blacklist for diversity enhancement
+try:
+    from solution_blacklist import SolutionBlacklist, extract_method_from_solution
+    from blacklist_integration import extract_problem_id_from_path, get_run_id_from_env, save_solution_to_blacklist
+    BLACKLIST_AVAILABLE = True
+except ImportError:
+    BLACKLIST_AVAILABLE = False
+    print("[WARNING] Solution blacklist not available - diversity enhancement disabled")
+
+    # Provide fallback implementations when import fails
+    def extract_problem_id_from_path(problem_path):
+        """Fallback: Extract problem ID from file path."""
+        if not problem_path:
+            return "unknown"
+        from pathlib import Path
+        return Path(problem_path).stem or "unknown"
+
+    def get_run_id_from_env():
+        """Fallback: Get run ID from environment."""
+        import os
+        run_id = os.environ.get("BFS_RUN_ID", "")
+        return f"run{run_id}" if run_id else "unknown"
+
+    def save_solution_to_blacklist(*args, **kwargs):
+        """Fallback: No-op when blacklist not available."""
+        pass
+
 # Import TIER 2 refinement module
 try:
     from tier2_refinement import tier2_refinement_loop, extract_boxed_answer, select_tier2_strategy
@@ -87,6 +114,24 @@ try:
 except ImportError:
     print("[WARNING] Meta-prompted BFS module not available")
     META_PROMPTED_BFS_AVAILABLE = False
+
+# --- STRUCTURED OUTPUT CONFIGURATION ---
+# Enable structured JSON output for clean answer extraction (bypasses regex)
+ENABLE_STRUCTURED_OUTPUT = os.getenv("ENABLE_STRUCTURED_OUTPUT", "1") == "1"
+
+# Structured JSON prompt extension (appended to step1_prompt)
+STRUCTURED_OUTPUT_SUFFIX = """
+
+**IMPORTANT OUTPUT FORMAT:**
+Return your response as valid JSON with this exact structure:
+{
+  "solution": "your complete mathematical reasoning, proof, and detailed solution here",
+  "final_answer": "the numerical answer only (single value like 42, without LaTeX formatting)"
+}
+
+Ensure 'final_answer' contains ONLY the numerical value or expression, without \\boxed{} or other LaTeX.
+The 'solution' field should contain your full detailed mathematical proof and reasoning.
+"""
 
 # --- CONFIGURATION ---
 # Model name - supports OpenRouter prefixes (e.g., "openrouter/openai/gpt-oss-120b")
@@ -361,6 +406,10 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
     """
     # Use specified reasoning effort, or default to solution reasoning
     effort = reasoning_effort if reasoning_effort is not None else SOLUTION_REASONING_EFFORT
+
+    # Append structured output suffix if enabled
+    if ENABLE_STRUCTURED_OUTPUT:
+        system_prompt = system_prompt + STRUCTURED_OUTPUT_SUFFIX
 
     # Build base payload
     payload = {
@@ -786,6 +835,10 @@ def extract_text_from_response(response_data):
     Extracts the generated text from the API response JSON.
     Handles potential errors if the response format is unexpected.
     Cleans reasoning tags from the content before returning.
+
+    If ENABLE_STRUCTURED_OUTPUT is True, attempts to parse content as JSON
+    and returns a dict with {'solution': str, 'final_answer': str} structure.
+    Otherwise returns plain text content for backward compatibility.
     """
     # Type check: ensure response_data is a dictionary
     if not isinstance(response_data, dict):
@@ -804,9 +857,21 @@ def extract_text_from_response(response_data):
         # If there's a thinking field, combine it with content for display
         if 'thinking' in message:
             thinking = message['thinking']
-            return f"{thinking}\n\n{content}"
+            content_with_thinking = f"{thinking}\n\n{content}"
+        else:
+            content_with_thinking = content
 
-        return content
+        # Try to parse as structured JSON if enabled
+        if ENABLE_STRUCTURED_OUTPUT:
+            structured = parse_structured_solution(content)
+            if structured:
+                print(f">>>>>>> [STRUCTURED] Successfully parsed JSON solution")
+                print(f">>>>>>> [STRUCTURED] Answer: {structured['final_answer']}")
+                # Return structured dict for downstream processing
+                return structured
+
+        # Fallback: return content as string (backward compatibility)
+        return content_with_thinking
     except (KeyError, IndexError, TypeError) as e:
         print("Error: Could not extract text from the API response.")
         print(f"Reason: {e}")
@@ -878,16 +943,27 @@ def extract_solution(response_data):
     """
     Extracts the solution from the API response.
 
-    Expects unified format with ### markers:
-    - ### Summary ###
-    - ### Detailed Solution ###
+    Handles both structured (dict) and unstructured (string) formats:
+    - If response_data is a dict with 'solution', returns THE FULL DICT (preserves final_answer)
+    - Otherwise expects unified format with ### markers
 
     Returns:
-        Solution text from ### Summary ### onwards, or empty string if not found
+        - Dict with 'solution' and 'final_answer' if structured output
+        - Solution text string from ### Summary ### onwards if unstructured
+        - Empty string if not found
     """
     if not response_data:
         return ""
 
+    # Handle structured output (dict with 'solution' key)
+    # CRITICAL FIX: Return full dict to preserve final_answer field
+    if isinstance(response_data, dict):
+        if 'solution' in response_data:
+            return response_data  # Return full dict, not just response_data['solution']
+        # If dict but no 'solution' key, return empty
+        return ""
+
+    # Handle unstructured output (string) - look for markers
     # Pattern 1: Look for ### Summary ### marker (preferred unified format)
     summary_pattern = r'###\s*Summary\s*###'
     summary_match = re.search(summary_pattern, response_data, re.IGNORECASE)
@@ -909,6 +985,52 @@ def extract_solution(response_data):
         return response_data[summary_idx:].strip()
 
 
+def parse_structured_solution(content):
+    """
+    Parse structured JSON solution from API response.
+
+    Expected JSON format:
+    {
+      "solution": "detailed mathematical reasoning and proof",
+      "final_answer": "numerical answer only (e.g., 2112)"
+    }
+
+    Args:
+        content: String content from API response
+
+    Returns:
+        Dict with 'solution' and 'final_answer' keys if JSON parsing succeeds,
+        None if content is not valid JSON or missing required fields
+    """
+    if not content or not isinstance(content, str):
+        return None
+
+    try:
+        # Try to parse as JSON
+        parsed = json.loads(content.strip())
+
+        # Validate required fields
+        if not isinstance(parsed, dict):
+            return None
+
+        if 'solution' not in parsed or 'final_answer' not in parsed:
+            return None
+
+        # Validate field types
+        if not isinstance(parsed['solution'], str) or not isinstance(parsed['final_answer'], str):
+            return None
+
+        # Validate non-empty
+        if not parsed['solution'].strip() or not parsed['final_answer'].strip():
+            return None
+
+        return parsed
+
+    except (json.JSONDecodeError, TypeError, ValueError):
+        # Not valid JSON, return None
+        return None
+
+
 def validate_solution_structure(solution):
     """
     Validate that solution has required unified format structure.
@@ -916,6 +1038,8 @@ def validate_solution_structure(solution):
     Required sections (in order):
     1. ### Summary ### - with Verdict and Method Sketch
     2. ### Detailed Solution ### - with full proof
+
+    Handles both structured (dict) and unstructured (string) formats.
 
     Returns:
         Tuple of (is_valid: bool, errors: List[str], sections: Dict)
@@ -931,45 +1055,48 @@ def validate_solution_structure(solution):
     if not solution:
         return False, ["Empty solution"], sections
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Check for ### Summary ### marker
     summary_pattern = r'###\s*Summary\s*###'
-    summary_match = re.search(summary_pattern, solution, re.IGNORECASE)
+    summary_match = re.search(summary_pattern, solution_text, re.IGNORECASE)
     if not summary_match:
         # Fallback: check for "Summary" without ### markers
-        if 'Summary' not in solution and 'summary' not in solution.lower():
+        if 'Summary' not in solution_text and 'summary' not in solution_text.lower():
             errors.append("Missing '### Summary ###' section marker")
 
     # Check for ### Detailed Solution ### marker
     detailed_pattern = r'###\s*Detailed\s+Solution\s*###'
-    detailed_match = re.search(detailed_pattern, solution, re.IGNORECASE)
+    detailed_match = re.search(detailed_pattern, solution_text, re.IGNORECASE)
     if not detailed_match:
         # Fallback: check for "Detailed Solution" without ### markers
-        if 'Detailed Solution' not in solution and 'detailed solution' not in solution.lower():
+        if 'Detailed Solution' not in solution_text and 'detailed solution' not in solution_text.lower():
             errors.append("Missing '### Detailed Solution ###' section marker")
         else:
             # Found without markers - extract it
-            idx = solution.lower().find('detailed solution')
+            idx = solution_text.lower().find('detailed solution')
             if idx != -1:
-                sections['detailed_solution'] = solution[idx:].strip()
+                sections['detailed_solution'] = solution_text[idx:].strip()
     else:
         # Extract detailed solution section
         start = detailed_match.end()
-        sections['detailed_solution'] = solution[start:].strip()
+        sections['detailed_solution'] = solution_text[start:].strip()
 
         # Update summary to be between Summary and Detailed Solution
         if summary_match and detailed_match.start() > summary_match.end():
-            sections['summary'] = solution[summary_match.end():detailed_match.start()].strip()
+            sections['summary'] = solution_text[summary_match.end():detailed_match.start()].strip()
 
     # Extract summary if we found the marker but haven't extracted yet
     if summary_match and sections['summary'] is None:
         if detailed_match:
-            sections['summary'] = solution[summary_match.end():detailed_match.start()].strip()
+            sections['summary'] = solution_text[summary_match.end():detailed_match.start()].strip()
         else:
-            sections['summary'] = solution[summary_match.end():].strip()
+            sections['summary'] = solution_text[summary_match.end():].strip()
 
     # Check for boxed answer
     boxed_pattern = r'\\boxed\{([^}]+)\}'
-    boxed_match = re.search(boxed_pattern, solution)
+    boxed_match = re.search(boxed_pattern, solution_text)
     if boxed_match:
         sections['has_boxed_answer'] = True
         sections['boxed_answer'] = boxed_match.group(1).strip()
@@ -984,6 +1111,8 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     Returns the substring after the marker, stripped of leading/trailing whitespace.
     If the marker is not found, returns the full solution as fallback (BUGFIX).
 
+    Handles both structured (dict) and unstructured (string) formats.
+
     BUGFIX (2025-11-27): Previously returned empty string if marker not found,
     causing verification failures on valid RLAC solutions that use different formatting.
     Now returns full solution if it appears valid with smarter content-based validation.
@@ -991,21 +1120,24 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
     BUGFIX (2025-12-05): Improved content validation - check for mathematical markers
     instead of arbitrary 500-char threshold. Handles answer-only solutions better.
     """
-    idx = solution.find(marker)
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
+    idx = solution_text.find(marker)
     if idx == -1:
         # Check for mathematical content markers (not just length)
         import re
-        has_answer = bool(re.search(r'\\boxed\{|answer\s+is|final\s+answer', solution, re.IGNORECASE))
-        has_math = '\\[' in solution or '$$' in solution or '\\(' in solution
+        has_answer = bool(re.search(r'\\boxed\{|answer\s+is|final\s+answer', solution_text, re.IGNORECASE))
+        has_math = '\\[' in solution_text or '$$' in solution_text or '\\(' in solution_text
         has_reasoning = any([
-            'because' in solution.lower(),
-            'therefore' in solution.lower(),
-            'construction' in solution.lower(),
-            'proof' in solution.lower(),
-            'claim' in solution.lower(),
-            'lemma' in solution.lower(),
-            'hence' in solution.lower(),
-            'thus' in solution.lower()
+            'because' in solution_text.lower(),
+            'therefore' in solution_text.lower(),
+            'construction' in solution_text.lower(),
+            'proof' in solution_text.lower(),
+            'claim' in solution_text.lower(),
+            'lemma' in solution_text.lower(),
+            'hence' in solution_text.lower(),
+            'thus' in solution_text.lower()
         ])
 
         # Graduated validation based on content
@@ -1013,23 +1145,23 @@ def extract_detailed_solution(solution, marker='Detailed Solution', after=True):
         # Accept if solution has answer OR reasoning, even without LaTeX math delimiters
         min_length = 100  # Reduced from 500 - allow shorter valid proofs
         is_valid = (
-            len(solution) >= min_length and
+            len(solution_text) >= min_length and
             (has_math or has_answer or has_reasoning)  # Accept plain text if has content
         )
 
         if is_valid:
-            print(f"[WARNING] Marker '{marker}' not found, using full solution ({len(solution)} chars)")
+            print(f"[WARNING] Marker '{marker}' not found, using full solution ({len(solution_text)} chars)")
             print(f"[INFO] Validation: answer={has_answer}, math={has_math}, reasoning={has_reasoning}")
-            return solution.strip()
+            return solution_text.strip()
 
         # More informative error message
-        print(f"[WARNING] Marker '{marker}' not found and solution looks invalid ({len(solution)} chars)")
+        print(f"[WARNING] Marker '{marker}' not found and solution looks invalid ({len(solution_text)} chars)")
         print(f"[DEBUG] Content check: answer={has_answer}, math={has_math}, reasoning={has_reasoning}")
         return ''
     if(after):
-        return solution[idx + len(marker):].strip()
+        return solution_text[idx + len(marker):].strip()
     else:
-        return solution[:idx].strip()
+        return solution_text[:idx].strip()
 
 
 def ensure_tier2_format_compatibility(solution, problem_statement):
@@ -1045,7 +1177,7 @@ def ensure_tier2_format_compatibility(solution, problem_statement):
     This prevents format mismatch errors when RLAC solutions lack required markers.
 
     Args:
-        solution: The RLAC solution (may lack format markers)
+        solution: The RLAC solution (may lack format markers) - dict or string
         problem_statement: Original problem
 
     Returns:
@@ -1053,9 +1185,12 @@ def ensure_tier2_format_compatibility(solution, problem_statement):
     """
     import re
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Check if already has required markers
-    has_summary = bool(re.search(r'###\s*Summary\s*###', solution, re.IGNORECASE))
-    has_detailed = bool(re.search(r'###\s*Detailed\s+Solution\s*###', solution, re.IGNORECASE))
+    has_summary = bool(re.search(r'###\s*Summary\s*###', solution_text, re.IGNORECASE))
+    has_detailed = bool(re.search(r'###\s*Detailed\s+Solution\s*###', solution_text, re.IGNORECASE))
 
     if has_detailed:
         # Already formatted correctly
@@ -1063,15 +1198,15 @@ def ensure_tier2_format_compatibility(solution, problem_statement):
         return solution
 
     print(f"[FORMAT CHECK] Solution missing required markers - reconstructing...")
-    print(f"[FORMAT CHECK] Input length: {len(solution)} chars")
+    print(f"[FORMAT CHECK] Input length: {len(solution_text)} chars")
 
     # Extract answer if present
-    answer_match = re.search(r'\\boxed\{([^}]+)\}', solution)
+    answer_match = re.search(r'\\boxed\{([^}]+)\}', solution_text)
     answer_text = answer_match.group(0) if answer_match else "See solution below"
 
     # If solution is very short (<300 chars), it's likely answer-only or truncated
-    if len(solution) < 300:
-        print(f"[FORMAT WARNING] Solution appears to be answer-only or truncated ({len(solution)} chars)")
+    if len(solution_text) < 300:
+        print(f"[FORMAT WARNING] Solution appears to be answer-only or truncated ({len(solution_text)} chars)")
         print(f"[FORMAT WARNING] This will likely fail TIER 2 verification")
         print(f"[FORMAT WARNING] Wrapping in required format anyway...")
 
@@ -1083,7 +1218,7 @@ However, the proof details were truncated or not generated during RLAC processin
 
 ### Detailed Solution ###
 
-{solution}
+{solution_text}
 
 **Note:** This solution passed TIER 1 adversarial testing (3 consecutive ROBUST verdicts),
 meaning the answer is mathematically correct. However, intermediate proof steps may need
@@ -1101,7 +1236,7 @@ to be filled in during TIER 2 refinement.
 
 ### Detailed Solution ###
 
-{solution}
+{solution_text}
 """
 
     print(f"[FORMAT CHECK] Reformatted solution length: {len(formatted)} chars")
@@ -1133,22 +1268,39 @@ def verify_solution_safe(problem_statement, solution, verbose=True, reasoning_ef
     disable_p0_format_validation = _format_os.getenv('RLAC_DISABLE_P0_FORMAT_VALIDATION', 'false').lower() == 'true'
 
     if not disable_p0_format_validation:
+        # Extract text for validation (handles both dict and string)
+        solution_text = get_solution_text(solution)
         extracted_solution = extract_detailed_solution(solution)
 
         if len(extracted_solution) < 100:
             error_msg = (
                 f"[VERIFICATION BUG] Format extraction failed!\n"
-                f"  Input solution length: {len(solution)} chars\n"
+                f"  Input solution length: {len(solution_text)} chars\n"
                 f"  Extracted solution length: {len(extracted_solution)} chars\n"
                 f"  This indicates a format mismatch between generator and verifier.\n"
-                f"  Original solution preview: {solution[:200]}...\n"
+                f"  Original solution preview: {solution_text[:200]}...\n"
             )
             if verbose:
                 print(f"\n{'='*80}")
                 print(error_msg)
                 print(f"{'='*80}\n")
             # Return error result instead of calling verifier with invalid input
-            return error_msg, "no"
+            # Return proper verdict dictionary structure for test compatibility
+            format_fail_verdict = {
+                "verdict": "FAIL",
+                "confidence": 1.0,
+                "issues": [
+                    {
+                        "type": "CRITICAL_ERROR",
+                        "location": "Solution format",
+                        "description": error_msg,
+                        "severity": 10
+                    }
+                ],
+                "answer_correctness": "UNKNOWN",
+                "reasoning": "Format extraction failed - solution does not match expected format"
+            }
+            return error_msg, format_fail_verdict
 
     # Use global defaults if not specified
     if max_attempts is None:
@@ -1393,9 +1545,9 @@ def validate_verdict_schema(verdict_obj):
         if field not in verdict_obj:
             return False, f"Missing required field: '{field}'"
 
-    # Validate verdict enum
-    if verdict_obj["verdict"] not in ["PASS", "FAIL"]:
-        return False, f"Invalid verdict value: '{verdict_obj['verdict']}' (expected PASS or FAIL)"
+    # Validate verdict enum (2025-12-30: Added SUSPICIOUS_OPTIMALITY for TIER 1)
+    if verdict_obj["verdict"] not in ["PASS", "FAIL", "SUSPICIOUS_OPTIMALITY"]:
+        return False, f"Invalid verdict value: '{verdict_obj['verdict']}' (expected PASS, FAIL, or SUSPICIOUS_OPTIMALITY)"
 
     # Validate confidence range
     if not isinstance(verdict_obj["confidence"], (int, float)):
@@ -1784,7 +1936,7 @@ If solution is analyzing k≥4 case:
 
 Please return ONLY valid JSON matching this exact schema:
 {{
-  "verdict": "PASS" or "FAIL",
+  "verdict": "PASS" or "FAIL" or "SUSPICIOUS_OPTIMALITY",
   "confidence": number between 0.0 and 1.0,
   "issues": [
     {{
@@ -1840,7 +1992,7 @@ Return ONLY the JSON, no other text."""
 
 Return your verdict as VALID JSON matching this schema (no extra text, no reasoning prefix):
 {
-  "verdict": "PASS" or "FAIL",
+  "verdict": "PASS" or "FAIL" or "SUSPICIOUS_OPTIMALITY",
   "confidence": 0.0 to 1.0,
   "issues": [],
   "answer_correctness": "CORRECT" or "INCORRECT" or "INCOMPLETE" or "UNKNOWN",
@@ -2084,7 +2236,8 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
             print(">>>>>>> [PRESCRIPTIVE FEEDBACK] Disabled for A/B testing (DISABLE_PRESCRIPTIVE_FEEDBACK=1)")
 
     # BUG FIX (2025-12-29): Return answer_is_correct and problem_id for success detection
-    return bug_report, o, answer_is_correct, problem_id
+    # BUG FIX (2025-12-30): Return verdict_obj (dict) instead of o (string) for test compatibility
+    return bug_report, verdict_obj, answer_is_correct, problem_id
 
 def translate_verification_feedback(bug_report, problem_statement, solution,
                                    translation_reasoning="medium", verbose=True):
@@ -2514,7 +2667,7 @@ Please revise the proof outline to fix these structural issues while keeping the
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Phase 4: Verifying mathematics")
     verify_result, good_verify, _, _ = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
 
-    success = "yes" in good_verify.lower()
+    success = good_verify.get('verdict') == 'PASS'
 
     print(f"\n{'='*80}")
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Pipeline complete")
@@ -2720,13 +2873,16 @@ def hash_solution(solution: str) -> str:
     Normalizes whitespace to catch semantically identical solutions.
 
     Args:
-        solution: The solution text to hash
+        solution: The solution text to hash (dict or string)
 
     Returns:
         MD5 hash of normalized solution content
     """
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Normalize: lowercase, collapse whitespace, strip
-    normalized = re.sub(r'\s+', ' ', solution.lower().strip())
+    normalized = re.sub(r'\s+', ' ', solution_text.lower().strip())
     return hashlib.md5(normalized.encode()).hexdigest()
 
 
@@ -2859,10 +3015,31 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None):
+    # BFS DIVERSITY FIX: Load solution blacklist to avoid repeating failed attempts
+    blacklist_prompt = ""
+    blacklist = None
+    if BLACKLIST_AVAILABLE and problem_id:
+        try:
+            blacklist = SolutionBlacklist(problem_id)
+            blacklist.refresh()  # Load latest blacklist from disk
+            blacklist_prompt = blacklist.get_blacklist_prompt(max_entries=5)
+            if verbose and blacklist_prompt:
+                stats = blacklist.get_statistics()
+                print(f"[BLACKLIST] Loaded {stats['total_attempts']} previous attempts")
+                print(f"[BLACKLIST] Unique answers tried: {stats['unique_answers']}")
+                print(f"[BLACKLIST] Injecting diversity prompt")
+        except Exception as e:
+            if verbose:
+                print(f"[BLACKLIST] Warning: Could not load blacklist: {e}")
+            blacklist_prompt = ""
+
+    # Enrich problem with blacklist prompt for diversity
+    enriched_problem = f"{problem_statement}\n{blacklist_prompt}" if blacklist_prompt else problem_statement
+
     p1 = build_request_payload(
             system_prompt=step1_prompt,
-            question_prompt=problem_statement,
+            question_prompt=enriched_problem,  # ← Blacklist prompt visible during generation!
             other_prompts=other_prompts,
             reasoning_effort=reasoning_effort
         )
@@ -2926,7 +3103,10 @@ def calculate_solution_score(verify, good_verify):
     score = 0.0
 
     # Perfect verification
-    if "yes" in good_verify.lower():
+    if isinstance(good_verify, dict) and good_verify.get('verdict') == 'PASS':
+        score += 100.0
+    elif isinstance(good_verify, str) and "yes" in good_verify.lower():
+        # Legacy support for string verdicts
         score += 100.0
 
     # Penalize by number of errors
@@ -2949,6 +3129,10 @@ def extract_answer_from_solution(solution, problem_type=None):
     Extract the mathematical answer from a solution with generalized pattern matching.
     (Tier 3: Answer Validation Generalization)
 
+    DEPRECATED: With structured JSON output, use extract_answer_simple() instead,
+    which reads the 'final_answer' field directly. This function is kept for
+    backward compatibility with legacy code and answer comparison in RLAC.
+
     Supports multiple answer types:
     - Set membership (k ∈ {0,1,...,n})
     - Equality (x = 5, n = 2^k)
@@ -2959,7 +3143,7 @@ def extract_answer_from_solution(solution, problem_type=None):
     - Range answers (0 ≤ x ≤ n)
 
     Args:
-        solution: Solution text
+        solution: Solution text (dict or string)
         problem_type: Optional hint about problem type (number_theory, geometry, combinatorics, etc.)
 
     Returns:
@@ -2969,6 +3153,9 @@ def extract_answer_from_solution(solution, problem_type=None):
         return None
 
     import re
+
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
 
     # Result structure for richer answer information
     result = {
@@ -2981,7 +3168,7 @@ def extract_answer_from_solution(solution, problem_type=None):
 
     # === Pattern 1: Generic variable ∈ {set} ===
     # Matches: k ∈ {0,1,...,n}, x ∈ {1,2,3}, n ∈ ℤ
-    match = re.search(r'([a-zA-Z_]\w*)\s*[∈∊∈]\s*\{([^}]+)\}', solution)
+    match = re.search(r'([a-zA-Z_]\w*)\s*[∈∊∈]\s*\{([^}]+)\}', solution_text)
     if match:
         result['raw'] = f"{match.group(1)} ∈ {{{match.group(2)}}}"
         result['type'] = 'set_membership'
@@ -2992,7 +3179,7 @@ def extract_answer_from_solution(solution, problem_type=None):
 
     # === Pattern 2: Generic variable = value ===
     # Matches: k = 5, n = 2^k, x = n/2, angle = 60
-    match = re.search(r'([a-zA-Z_]\w*)\s*=\s*([^.\n,;]+?)(?:\.|,|;|$|\n)', solution)
+    match = re.search(r'([a-zA-Z_]\w*)\s*=\s*([^.\n,;]+?)(?:\.|,|;|$|\n)', solution_text)
     if match:
         var = match.group(1).strip()
         val = match.group(2).strip()
@@ -3014,7 +3201,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'(yes|no),?\s+(?:because|since|as)'
     ]
     for pattern in yes_no_patterns:
-        match = re.search(pattern, solution, re.IGNORECASE | re.MULTILINE)
+        match = re.search(pattern, solution_text, re.IGNORECASE | re.MULTILINE)
         if match:
             result['raw'] = match.group(1).lower()
             result['type'] = 'yes_no'
@@ -3031,7 +3218,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'(\d+)\s+(?:solutions?|ways?|elements?|configurations?)'
     ]
     for pattern in count_patterns:
-        match = re.search(pattern, solution, re.IGNORECASE)
+        match = re.search(pattern, solution_text, re.IGNORECASE)
         if match:
             result['raw'] = f"count = {match.group(1)}"
             result['type'] = 'counting'
@@ -3049,7 +3236,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'(?:area|perimeter)\s*=\s*([^.\n,]+)'
     ]
     for pattern in geo_patterns:
-        match = re.search(pattern, solution, re.IGNORECASE)
+        match = re.search(pattern, solution_text, re.IGNORECASE)
         if match:
             if 'angle' in pattern.lower() or '∠' in pattern:
                 result['raw'] = f"angle = {match.group(1)}°"
@@ -3074,7 +3261,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         r'([a-zA-Z_]\w*)\s+is\s+at\s+(?:most|least)\s+(\d+|[a-zA-Z_]\w*)'
     ]
     for pattern in range_patterns:
-        match = re.search(pattern, solution)
+        match = re.search(pattern, solution_text)
         if match:
             result['raw'] = match.group(0)
             result['type'] = 'range'
@@ -3083,7 +3270,7 @@ def extract_answer_from_solution(solution, problem_type=None):
             return result
 
     # === Pattern 7: "Answer is" fallback ===
-    match = re.search(r'(?:the\s+)?answer\s+is\s*[:\s]*([^.\n]+)', solution, re.IGNORECASE)
+    match = re.search(r'(?:the\s+)?answer\s+is\s*[:\s]*([^.\n]+)', solution_text, re.IGNORECASE)
     if match:
         result['raw'] = match.group(1).strip()
         result['type'] = 'explicit_answer'
@@ -3092,7 +3279,7 @@ def extract_answer_from_solution(solution, problem_type=None):
         return result
 
     # === Pattern 8: "Therefore" conclusion ===
-    match = re.search(r'(?:therefore|hence|thus|so)\s*,?\s*([a-zA-Z_]\w*)\s*=\s*([^.\n]+)', solution, re.IGNORECASE)
+    match = re.search(r'(?:therefore|hence|thus|so)\s*,?\s*([a-zA-Z_]\w*)\s*=\s*([^.\n]+)', solution_text, re.IGNORECASE)
     if match:
         result['raw'] = f"{match.group(1)} = {match.group(2).strip()}"
         result['type'] = 'conclusion'
@@ -3103,7 +3290,7 @@ def extract_answer_from_solution(solution, problem_type=None):
 
     # === Legacy Pattern for backward compatibility ===
     # Pattern: k ∈ {explicit set} (original IMO-specific pattern)
-    match = re.search(r'k\s*[∈∊∈]\s*\{([^}]+)\}', solution)
+    match = re.search(r'k\s*[∈∊∈]\s*\{([^}]+)\}', solution_text)
     if match:
         return {
             'raw': f"k ∈ {{{match.group(1)}}}",
@@ -3118,13 +3305,70 @@ def extract_answer_from_solution(solution, problem_type=None):
 
 def extract_answer_simple(solution):
     """
-    Simple string extraction for backward compatibility.
-    Returns just the raw answer string, not the full dict.
+    Extract final answer from structured JSON output.
+
+    ENFORCES structured output - no regex fallback to prevent garbage extraction.
+
+    Args:
+        solution: Dict with 'final_answer' key (from structured JSON output)
+
+    Returns:
+        Clean answer string from 'final_answer' field
+
+    Raises:
+        ValueError: If solution is not a dict or missing 'final_answer' field
     """
-    result = extract_answer_from_solution(solution)
-    if result:
-        return result.get('raw')
-    return None
+    # Enforce structured output (dict with 'final_answer')
+    if isinstance(solution, dict):
+        if 'final_answer' not in solution:
+            raise ValueError(
+                "Structured output missing 'final_answer' field. "
+                "Check LLM output format or STRUCTURED_OUTPUT_SUFFIX configuration."
+            )
+
+        answer = solution['final_answer']
+
+        # Validate answer is clean (not LaTeX fragment or variable assignment)
+        if len(answer) > 50:
+            raise ValueError(
+                f"Answer too long ({len(answer)} chars): likely LaTeX fragment. "
+                f"Got: {answer[:100]}"
+            )
+
+        if '\\' in answer or '$' in answer:
+            raise ValueError(
+                f"Answer contains LaTeX symbols: {answer}"
+            )
+
+        # Check for variable assignments like "n = 2025"
+        if re.match(r'^[a-zA-Z_]\w*\s*=\s*', answer):
+            raise ValueError(
+                f"Answer looks like variable assignment, not final value: {answer}"
+            )
+
+        return answer
+    else:
+        # Not a dict - this means structured output failed
+        raise ValueError(
+            f"Expected structured output (dict), got {type(solution).__name__}. "
+            "ENABLE_STRUCTURED_OUTPUT may be disabled or JSON parsing failed. "
+            f"Solution preview: {str(solution)[:200]}"
+        )
+
+
+def get_solution_text(solution):
+    """
+    Extract solution text from either structured or unstructured format.
+
+    Args:
+        solution: Either a string (unstructured) or dict with 'solution' field (structured)
+
+    Returns:
+        String containing the solution text
+    """
+    if isinstance(solution, dict) and 'solution' in solution:
+        return solution['solution']
+    return str(solution) if solution else ""
 
 def validate_answer_change(prev_solution, new_solution, iteration, verbose=True):
     """
@@ -3398,7 +3642,7 @@ def generator_self_verification(solution, verbose=True):
     before expensive adversarial testing or verification.
 
     Args:
-        solution: Raw solution text from generator
+        solution: Raw solution text from generator (dict or string)
         verbose: Print validation details
 
     Returns:
@@ -3408,14 +3652,17 @@ def generator_self_verification(solution, verbose=True):
     """
     issues = []
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Check 1: Minimum length (solutions should be substantive)
-    if len(solution) < 500:
-        issues.append(f"Solution too short: {len(solution)} chars (expected ≥500)")
+    if len(solution_text) < 500:
+        issues.append(f"Solution too short: {len(solution_text)} chars (expected ≥500)")
 
     # Check 2: Answer extraction
     import re
-    has_boxed = bool(re.search(r'\\boxed\{', solution, re.IGNORECASE))
-    has_answer_section = bool(re.search(r'(answer|solution|result)[:：]', solution, re.IGNORECASE))
+    has_boxed = bool(re.search(r'\\boxed\{', solution_text, re.IGNORECASE))
+    has_answer_section = bool(re.search(r'(answer|solution|result)[:：]', solution_text, re.IGNORECASE))
 
     if not (has_boxed or has_answer_section):
         issues.append("No clear answer found (missing \\boxed{} or answer section)")
@@ -3436,27 +3683,27 @@ def generator_self_verification(solution, verbose=True):
 
     math_content_count = sum(
         1 for indicator in math_indicators
-        if re.search(indicator, solution, re.IGNORECASE)
+        if re.search(indicator, solution_text, re.IGNORECASE)
     )
 
     if math_content_count < 3:
         issues.append(f"Insufficient mathematical content ({math_content_count}/8 indicators)")
 
     # Check 4: Format extraction check (verify no information loss)
-    extracted = extract_detailed_solution(solution)
-    extraction_loss = len(solution) - len(extracted)
+    extracted = extract_detailed_solution(solution_text)
+    extraction_loss = len(solution_text) - len(extracted)
 
-    if extracted and extraction_loss > len(solution) * 0.5:
+    if extracted and extraction_loss > len(solution_text) * 0.5:
         issues.append(
             f"Format extraction may lose information: "
-            f"{extraction_loss} chars lost ({extraction_loss*100//len(solution)}%)"
+            f"{extraction_loss} chars lost ({extraction_loss*100//len(solution_text)}%)"
         )
 
     is_valid = len(issues) == 0
 
     if verbose:
         if is_valid:
-            print(f"[SELF-VERIFY] ✅ Solution passed all pre-checks ({len(solution)} chars)")
+            print(f"[SELF-VERIFY] ✅ Solution passed all pre-checks ({len(solution_text)} chars)")
         else:
             print(f"[SELF-VERIFY] ⚠️  Found {len(issues)} issues:")
             for issue in issues:
@@ -3470,7 +3717,7 @@ def validate_solution_quality(solution, min_length=500, verbose=True):
     Validate that a solution has substantive content before RLAC refinement.
 
     Args:
-        solution: Solution text to validate
+        solution: Solution text to validate (dict or string)
         min_length: Minimum acceptable length (chars)
         verbose: Enable logging
 
@@ -3480,27 +3727,30 @@ def validate_solution_quality(solution, min_length=500, verbose=True):
     if solution is None:
         return False, "Solution is None"
 
-    if len(solution) < min_length:
-        return False, f"Solution too short ({len(solution)} < {min_length} chars)"
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
+    if len(solution_text) < min_length:
+        return False, f"Solution too short ({len(solution_text)} < {min_length} chars)"
 
     # Check for required structure markers
     required_markers = ['Summary', 'Solution']
-    found_markers = sum(1 for marker in required_markers if marker.lower() in solution.lower())
+    found_markers = sum(1 for marker in required_markers if marker.lower() in solution_text.lower())
     if found_markers == 0:
         return False, "Solution missing required structure (no Summary or Solution section)"
 
     # Check for substantive mathematical content
     math_indicators = ['$', '\\', 'proof', 'therefore', 'hence', 'thus', 'let', 'assume']
-    math_count = sum(1 for indicator in math_indicators if indicator.lower() in solution.lower())
+    math_count = sum(1 for indicator in math_indicators if indicator.lower() in solution_text.lower())
     if math_count < 3:
         return False, f"Solution lacks mathematical content (only {math_count} math indicators)"
 
     # Check it's not just a summary/answer
-    if len(solution) < 1000 and 'boxed' in solution.lower() and 'proof' not in solution.lower():
+    if len(solution_text) < 1000 and 'boxed' in solution_text.lower() and 'proof' not in solution_text.lower():
         return False, "Solution appears to be answer-only without proof"
 
     if verbose:
-        print(f">>>>>>> [VALIDATION] Solution passed quality check ({len(solution)} chars, {found_markers} structure markers, {math_count} math indicators)")
+        print(f">>>>>>> [VALIDATION] Solution passed quality check ({len(solution_text)} chars, {found_markers} structure markers, {math_count} math indicators)")
 
     return True, "Valid"
 
@@ -3510,7 +3760,7 @@ def extract_answer_key(solution):
     Extract a normalized answer key from solution for stability tracking.
 
     Args:
-        solution: Solution text
+        solution: Solution text (dict or string)
 
     Returns:
         Normalized answer string for comparison
@@ -3518,14 +3768,17 @@ def extract_answer_key(solution):
     if not solution:
         return ""
 
+    # Extract text from structured or unstructured format
+    solution_text = get_solution_text(solution)
+
     # Look for boxed answer first
     import re
-    boxed_match = re.search(r'\\boxed\{([^}]+)\}', solution)
+    boxed_match = re.search(r'\\boxed\{([^}]+)\}', solution_text)
     if boxed_match:
         return boxed_match.group(1).strip()
 
     # Look for "answer is" pattern
-    answer_match = re.search(r'(?:answer|result|conclude)\s+(?:is|:)\s*(.+?)(?:\.|$)', solution, re.IGNORECASE)
+    answer_match = re.search(r'(?:answer|result|conclude)\s+(?:is|:)\s*(.+?)(?:\.|$)', solution_text, re.IGNORECASE)
     if answer_match:
         return answer_match.group(1).strip()[:100]  # Limit length
 
@@ -4109,7 +4362,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
             p1, solution, verify, good_verify = init_explorations(
                 problem_statement, verbose, current_prompts,
-                sol_reasoning, self_imp_reasoning, ver_reasoning
+                sol_reasoning, self_imp_reasoning, ver_reasoning,
+                agent_problem_id, agent_run_id
             )
 
             if solution is None:
@@ -4118,7 +4372,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                 failed_approaches.append("Generation returned None")
                 continue
 
-            print(f">>>>>>> [RLAC PHASE 1] Initial solution generated ({len(solution)} chars)")
+            print(f">>>>>>> [RLAC PHASE 1] Initial solution generated ({len(get_solution_text(solution))} chars)")
 
             # VALIDATION GATE: Check solution quality before proceeding
             is_valid, validation_reason = validate_solution_quality(solution, min_length=500, verbose=verbose)
@@ -4158,7 +4412,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
     # Initialize best solution tracking
     best_solution = solution
-    best_solution_score = 0 if "yes" in good_verify.lower() else -10
+    best_solution_score = 0 if good_verify.get('verdict') == 'PASS' else -10
     best_solution_round = 0
     print(f">>>>>>> [RLAC TRACKING] Initial best solution score: {best_solution_score}")
 
@@ -4888,7 +5142,7 @@ Start completely fresh with a different mathematical approach.
                 'verdict': verdict,
                 'counterexamples': len(counterexamples),
                 'penalty': total_penalty,
-                'solution_length': len(solution),
+                'solution_length': len(get_solution_text(solution)),
                 'consecutive_robust': consecutive_robust,
                 'stuck_count': stuck_count,
                 'total_robust': total_robust_count,
@@ -5083,9 +5337,9 @@ Start completely fresh with a different mathematical approach.
                 else:
                     # STRATEGIC FIX #2: Skip verification for adaptive exit
                     print(">>>>>>> [RLAC FINAL] Skipping verification for adaptive exit (no progress)")
-                    verify, good_verify = "", "no"
+                    verify, good_verify = "", {"verdict": "FAIL", "reasoning": "Skipped for adaptive exit"}
 
-                cooperative_verified = "yes" in good_verify.lower()
+                cooperative_verified = good_verify.get('verdict') == 'PASS'
 
                 if cooperative_verified:
                     print(">>>>>>> [RLAC FINAL] ✓ TIER 2 ACHIEVED: Passed both adversarial AND cooperative verification!")
@@ -5535,7 +5789,7 @@ If you believe the answer must change, you must provide OVERWHELMING evidence wi
                     if problem_type == "prove":
                         # For "prove X" problems, use proof reconsideration (prevents "theorem is false" errors)
                         # Create failed approach summary from previous solution
-                        failed_approach_summary = f"Previous approach (failed):\n{solution[:1000]}..."
+                        failed_approach_summary = f"Previous approach (failed):\n{get_solution_text(solution)[:1000]}..."
 
                         defense_prompt = proof_reconsideration_prompt.format(
                             problem_statement=problem_statement,
@@ -5758,7 +6012,7 @@ Provide a corrected solution that passes validation for all small cases.
                         print(f"{'='*80}\n")
 
                         # Summarize failed approach
-                        approach_summary = solution[:500] if solution else "No solution"
+                        approach_summary = get_solution_text(solution)[:500] if solution else "No solution"
                         counterexample_summary = "\n".join([f"- {ce[:200]}" for ce in counterexamples[:3]]) if counterexamples else "None"
                         failed_approach_summaries.append(approach_summary[:200])
 
@@ -5860,11 +6114,11 @@ Provide a corrected solution that passes validation for all small cases.
                     # This allows constructive mode to activate when the generator
                     # keeps trying but critic keeps finding issues.
                     # consecutive_broken is only reset on ROBUST verdict (line ~2313)
-                    solution_delta = len(revised_solution) - len(solution)
+                    solution_delta = len(get_solution_text(revised_solution)) - len(get_solution_text(solution))
                     solution = revised_solution
 
                     print(f">>>>>>> [RLAC GENERATOR] ✓ Solution revised")
-                    print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(solution)} chars)")
+                    print(f">>>>>>> [RLAC GENERATOR] Length change: {solution_delta:+d} chars (now {len(get_solution_text(solution))} chars)")
 
                     # P7 FIX: Check if answer actually changed after reconsideration
                     # P9 FIX: Use semantic fingerprinting for meaningful change detection
@@ -6365,7 +6619,7 @@ Provide a corrected solution that passes validation for all small cases.
             reasoning_effort=ver_reasoning
         )
 
-        cooperative_verified = "yes" in good_verify.lower()
+        cooperative_verified = good_verify.get('verdict') == 'PASS'
 
         if cooperative_verified:
             print(">>>>>>> [SUSPICIOUS CONVERGENCE] ✓ Final verification: Answer correct!")
@@ -6447,7 +6701,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
           solution_reasoning=None, self_improvement_reasoning=None, verification_reasoning=None,
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
           use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=2,
-          rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True, rlac_critic_reasoning=None):
+          rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True, rlac_critic_reasoning=None,
+          problem_file=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -6477,6 +6732,17 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
     sol_reasoning = solution_reasoning or SOLUTION_REASONING_EFFORT
     self_imp_reasoning = self_improvement_reasoning or SELF_IMPROVEMENT_REASONING_EFFORT
     ver_reasoning = verification_reasoning or VERIFICATION_REASONING_EFFORT
+
+    # BFS DIVERSITY FIX: Extract problem_id and run_id for solution blacklist
+    agent_problem_id = extract_problem_id_from_path(problem_file) if problem_file else "unknown"
+    agent_run_id = get_run_id_from_env()
+    agent_blacklist = None
+    if BLACKLIST_AVAILABLE and agent_problem_id != "unknown":
+        try:
+            agent_blacklist = SolutionBlacklist(agent_problem_id)
+            print(f"[BLACKLIST] Initialized for problem: {agent_problem_id}, run: {agent_run_id}")
+        except Exception as e:
+            print(f"[BLACKLIST] Warning: Could not initialize blacklist: {e}")
 
     # RLAC MODE: Use adversarial critic instead of standard agent loop
     if use_rlac:
@@ -6618,8 +6884,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             if DYNAMIC_BFS_PROMPTS_AVAILABLE:
                 use_dynamic = should_use_dynamic_prompts(problem_statement, num_initial_attempts)
                 if use_dynamic:
-                    dynamic_prompts_list = generate_bfs_prompts(problem_statement, num_initial_attempts)
+                    # BFS Diversity Fix (2025-12-30): Generate larger prompt pool for rotation
+                    # Need enough prompts for all parallel runs to use different sequences
+                    # Generate at least 20 prompts to enable diverse rotation across runs
+                    min_prompt_pool_size = max(20, num_initial_attempts * 5)
+                    dynamic_prompts_list = generate_bfs_prompts(problem_statement, min_prompt_pool_size)
                     print(f">>>>>>> BFS: Using dynamic prompts (explicit parameter exploration)")
+                    print(f">>>>>>> BFS: Generated {len(dynamic_prompts_list)} prompts for diversity pool")
                 else:
                     print(f">>>>>>> BFS: Using generic diversity hints (parameter parsing failed)")
 
@@ -6627,6 +6898,12 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             best_score = -999999
             best_verify = None
             best_good_verify = None
+
+            # BFS Diversity Fix (2025-12-30): Use run-specific prompt rotation
+            # Each parallel run gets different prompts to ensure exploration diversity
+            run_id = int(os.getenv('BFS_RUN_ID', '0'))  # 0-indexed run identifier
+            if run_id > 0:
+                print(f">>>>>>> BFS: Run ID = {run_id} (enables diverse prompt selection)")
 
             for attempt in range(num_initial_attempts):
                 print(f">>>>>>> BFS: Initial attempt {attempt+1}/{num_initial_attempts}...")
@@ -6636,9 +6913,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
 
                 # Use dynamic BFS prompts if available, otherwise fall back to generic diversity
                 if use_dynamic and attempt < len(dynamic_prompts_list):
-                    explicit_prompt = dynamic_prompts_list[attempt]
+                    # Rotate prompts based on run_id to ensure diversity across parallel runs
+                    # Formula: (run_id * num_attempts + attempt) % total_prompts
+                    # Example: Run 1 with 3 attempts uses prompts [1,2,3], Run 2 uses [2,3,4], etc.
+                    prompt_idx = (run_id * num_initial_attempts + attempt) % len(dynamic_prompts_list)
+                    explicit_prompt = dynamic_prompts_list[prompt_idx]
                     diverse_prompts.append(f"\n{explicit_prompt}")
-                    print(f">>>>>>> BFS: Explicit prompt: {explicit_prompt[:100]}...")
+                    print(f">>>>>>> BFS: Prompt [{prompt_idx}/{len(dynamic_prompts_list)}]: {explicit_prompt[:100]}...")
                 elif attempt > 0:
                     # Fallback: generic diversity hints
                     diversity_hints = [
@@ -6653,7 +6934,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 try:
                     p1, sol, ver, good_ver = init_explorations(
                         problem_statement, True, diverse_prompts,
-                        sol_reasoning, self_imp_reasoning, ver_reasoning
+                        sol_reasoning, self_imp_reasoning, ver_reasoning,
+                        agent_problem_id, agent_run_id
                     )
 
                     if sol:
@@ -6786,7 +7068,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                                 try:
                                     p2, sol2, ver2, good_ver2 = init_explorations(
                                         problem_statement, True, diverse_prompts,
-                                        sol_reasoning, self_imp_reasoning, ver_reasoning
+                                        sol_reasoning, self_imp_reasoning, ver_reasoning,
+                                        agent_problem_id, agent_run_id
                                     )
 
                                     if sol2:
@@ -6839,8 +7122,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                             reasoning_effort=sol_reasoning  # Use same reasoning as solution
                         )
 
-                        # Add small-case prompt to messages
-                        p1["messages"].append({"role": "assistant", "content": solution})
+                        # Add small-case prompt to messages (extract text from dict if needed)
+                        p1["messages"].append({"role": "assistant", "content": get_solution_text(solution)})
                         p1["messages"].append({"role": "user", "content": small_case_prompt})
 
                         # Generate with reasoning effort (needs rigor for all cases)
@@ -6878,7 +7161,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 return None
         if not use_mcts and num_initial_attempts <= 1:
             # Original single-path initialization
-            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning)
+            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning, agent_problem_id, agent_run_id)
             if(solution is None):
                 print(">>>>>>> Failed in finding a complete solution.")
                 return None
@@ -6922,7 +7205,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"{'='*80}\n")
 
         try:
-            if("yes" not in good_verify.lower()):
+            if good_verify.get('verdict') != 'PASS':
                 # clear
                 correct_count = 0
                 error_count += 1
@@ -6938,10 +7221,10 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 )
 
                 # Append previous solution as assistant message
-                # Note: solution is extracted text, should not contain thinking tags
+                # Note: Extract text from dict if needed
                 p1["messages"].append(
                     {"role": "assistant",
-                    "content": solution
+                    "content": get_solution_text(solution)
                     }
                 )
 
@@ -7056,7 +7339,7 @@ Do not simply rephrase or polish the previous approach - create something new.
                             other_prompts=other_prompts_with_diversity,
                             reasoning_effort=sol_reasoning
                         )
-                        p1["messages"].append({"role": "assistant", "content": solution})
+                        p1["messages"].append({"role": "assistant", "content": get_solution_text(solution)})
                         p1["messages"].append({"role": "user", "content": correction_prompt + "\n\n" + verify})
 
                         # Use higher temperature for exploration (override default 0.0)
@@ -7103,7 +7386,7 @@ Do not simply rephrase or polish the previous approach - create something new.
             score_history.append(current_score)
             print(f">>>>>>> [SCORE] Iteration {i} score: {current_score:.2f}")
 
-            if("yes" in good_verify.lower()):
+            if good_verify.get('verdict') == 'PASS':
                 print(">>>>>>> Solution verification PASSED")
                 correct_count += 1
                 error_count = 0
@@ -7148,6 +7431,16 @@ Do not simply rephrase or polish the previous approach - create something new.
                     if memory_file:
                         save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
                                    sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+                    # BFS DIVERSITY FIX: Save successful solution to blacklist
+                    if agent_blacklist:
+                        save_solution_to_blacklist(agent_blacklist,
+                                                   answer=extract_answer_simple(solution) or "UNKNOWN",
+                                                   solution_text=get_solution_text(solution),
+                                                   run_id=agent_run_id,
+                                                   verdict_dict=good_verify,
+                                                   iterations=i)
+
                     print(">>>>>>> ✅ CORRECT SOLUTION FOUND (HIGH CONFIDENCE)")
                     print(f"    Verification: PASSED (iteration {i})")
                     print(f"    Answer: CORRECT (matches ground truth)")
@@ -7171,6 +7464,16 @@ Do not simply rephrase or polish the previous approach - create something new.
                     if memory_file:
                         save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
                                    sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+                    # BFS DIVERSITY FIX: Save successful solution to blacklist
+                    if agent_blacklist:
+                        save_solution_to_blacklist(agent_blacklist,
+                                                   answer=extract_answer_simple(solution) or "UNKNOWN",
+                                                   solution_text=get_solution_text(solution),
+                                                   run_id=agent_run_id,
+                                                   verdict_dict=good_verify,
+                                                   iterations=i)
+
                     print(">>>>>>> ✅ VERIFICATION PASSED (NO GROUND TRUTH)")
                     print(f"    Verification: PASSED (iteration {i})")
                     print(f"    Answer: Not validated (no ground truth available)")
@@ -7192,6 +7495,16 @@ Do not simply rephrase or polish the previous approach - create something new.
                 if memory_file:
                     save_memory(memory_file, problem_statement, other_prompts, i, MAX_ITERATIONS, solution, verify,
                                sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+                # BFS DIVERSITY FIX: Save failed solution to blacklist to avoid repeating same mistakes
+                if agent_blacklist and solution:
+                    save_solution_to_blacklist(agent_blacklist,
+                                               answer=extract_answer_simple(solution) or "UNKNOWN",
+                                               solution_text=get_solution_text(solution),
+                                               run_id=agent_run_id,
+                                               verdict_dict=good_verify if 'good_verify' in locals() else {'verdict': 'FAIL'},
+                                               iterations=i)
+
                 return None
 
         except Exception as e:
@@ -7204,6 +7517,16 @@ Do not simply rephrase or polish the previous approach - create something new.
         if memory_file:
             save_memory(memory_file, problem_statement, other_prompts, MAX_ITERATIONS, MAX_ITERATIONS, solution, verify,
                        sol_reasoning, self_imp_reasoning, ver_reasoning)
+
+        # BFS DIVERSITY FIX: Save failed solution to blacklist
+        if agent_blacklist and solution:
+            save_solution_to_blacklist(agent_blacklist,
+                                       answer=extract_answer_simple(solution) or "UNKNOWN",
+                                       solution_text=solution,
+                                       run_id=agent_run_id,
+                                       verdict_dict=good_verify if 'good_verify' in locals() else {'verdict': 'FAIL'},
+                                       iterations=MAX_ITERATIONS)
+
         return None
 
 if __name__ == "__main__":
@@ -7388,7 +7711,8 @@ if __name__ == "__main__":
                    solution_reasoning, self_improvement_reasoning, verification_reasoning,
                    num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
                    use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
-                   rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning)
+                   rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning,
+                   problem_file=args.problem_file)
         if(sol is not None):
             print(f">>>>>>> Found a correct solution.")
             print(json.dumps(sol, indent=4))

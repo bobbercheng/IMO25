@@ -1,0 +1,23 @@
+======================================================================
+RAG INTEGRATION TEST: IMO Problem 6
+======================================================================
+
+1. PROBLEM TEXT (first 200 chars):
+*** Problem Statement ***
+
+Consider a $2025\times2025$ grid of unit squares. Matilda wishes to place on the grid some rectangular tiles, possibly of difference sizes, such that each side of every tile...
+
+2. EXTRACTING CHARACTERISTICS...
+Problem Type: optimization
+Domain: combinatorics
+Parameters: none
+Constraints: grid, coverage, cardinality, intersection, quadratic
+Special Structures: none
+
+3. VERIFYING STRUCTURE DETECTION...
+  ✅ Problem Type: True
+  ✅ Domain: True
+  ❌ Perfect Square Detected: False
+  ✅ Grid Constraint: True
+
+❌ Structure detection FAILED

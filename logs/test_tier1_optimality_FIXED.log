@@ -1,0 +1,15 @@
+[CONFIG] GPT_OSS API URL: http://localhost:30000/v1/chat/completions
+[CONFIG] Model Name: openai/gpt-oss-120b
+[CONFIG] Solution Reasoning Effort: medium
+[CONFIG] Self-Improvement Reasoning Effort: high
+[CONFIG] Verification Reasoning Effort: medium
+
+================================================================================
+TIER 1 OPTIMALITY CHALLENGE - UNIT TESTS
+================================================================================
+Testing enhanced verification system's ability to detect suboptimal solutions
+Date: 2025-12-30
+
+❌ ERROR: GPT_OSS_API_KEY not set
+Please set the API key:
+export GPT_OSS_API_KEY=your_key

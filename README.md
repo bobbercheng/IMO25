@@ -1,240 +1,252 @@
-# IMO 2025 Problem Solver
-An AI agent system for solving International Mathematical Olympiad (IMO) problems using Google's Gemini, OpenAI, and XAI APIs.
-
-```
-MIT License
-
-Copyright (c) 2025 Lin Yang, Yichen Huang
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+# RLAC Enhancement Research: Bridging the Generator-Verifier Gap
 
 ## Overview
 
-This project consists of the following components:
-- `code/agent.py`: A single AI agent that attempts to solve IMO problems with default base model: Google Gemini 2.5 Pro
-- `code/agent_oai.py`: A single AI agent that uses OpenAI GPT-5 model (same CLI/usage as `agent.py`)
-- `code/agent_xai.py`: A single AI agent that uses XAI Grok-4-0709 models (same CLI/usage as `agent.py`)
-- `code/run_parallel.py`: A parallel execution system that runs multiple agents simultaneously
-- `code/res2md.py`: A small utility to parse a result file that contains JSON (e.g., JSONL) and print the last JSON object
+This research addresses a critical finding in the IMO25 mathematical reasoning system: **solutions generated with low reasoning effort consistently fail high-reasoning verification**, despite appearing correct during generation.
 
-These agents have successfully solved IMO 2025 problems 1–5 in internal runs (logs attached), indicative of gold-medal performance.
+**Core Problem:** The system achieves 0% verification pass rate because solutions sound good but contain subtle logical errors that only emerge under rigorous checking.
 
-## Run logs
+**Research Solution:** RLAC (Reinforcement Learning with Adversarial Critics) enhancements that insert adversarial feedback **during generation**, not just after completion.
 
-- `run_logs/`: initial runs using Google Gemini 2.5 Pro as the base model
-- `run_logs_gpt5/`: runs using OpenAI GPT-5 as the base model
-- `run_logs_grok4/`: runs using XAI Grok-4 as the base model
+---
 
-These folders contain example successful run logs demonstrating end-to-end solutions produced by the respective base models.
+## Documents in This Research
 
-## Prerequisites
+### 1. **rlac_summary.txt** - Executive Overview
+Start here for a quick understanding of the problem and proposed solution.
 
-1. **Python 3.7+** installed on your system
-2. **API key(s) for your chosen provider(s)**:
-   - Google Gemini: https://aistudio.google.com/app/apikey
-   - OpenAI: https://platform.openai.com/api-keys
-   - XAI: Refer to your XAI account portal for API key issuance
-3. **Required Python packages**:
-   ```bash
-   pip install requests
-   ```
+**Contents:**
+- Problem analysis with specific examples from IMO-02
+- Current RLAC implementation status (what exists in codebase)
+- 6 key enhancement proposals (compact format)
+- Expected outcomes and success metrics
+- Research conclusion
 
-## Setup
+**Reading time:** 10-15 minutes  
+**Best for:** Getting oriented with the gap and high-level solutions
 
-1. **Clone or download the project files**
-2. **Set up your API key(s)**:
-   - Set environment variables in your shell for the providers you plan to use, for example:
-     - `export GOOGLE_API_KEY=your_google_api_key`
-     - `export OPENAI_API_KEY=your_openai_api_key`
-     - `export XAI_API_KEY=your_xai_api_key`
+---
 
-## Usage
+### 2. **rlac_gap_analysis.md** - Detailed Research Analysis
+Comprehensive technical analysis of the generator-verifier gap and proposed solutions.
 
-### Single Agent (`agent.py`, `agent_oai.py`, `agent_xai.py`)
+**Contents:**
+- Problem analysis with root cause explanation
+- RLAC enhancement strategy (6 core improvements)
+  1. Critic-Assisted Solution Generation (CASG)
+  2. Structured Flaw Reporting with Severity & Location
+  3. Geometry-Specific Attack Curriculum
+  4. Counterexample Generation for Geometric Claims
+  5. Defense and Concession Tracking
+  6. Confidence Calibration through Adversarial Feedback
+- Multi-stage verification pipeline (4 stages)
+- Specific enhancements for IMO-02 (tailored critic prompts)
+- Implementation roadmap (5 research phases)
+- Risk analysis and mitigations
+- Theoretical justification
+- Example scenario comparison (without vs. with RLAC)
 
-Run a single agent to solve an IMO problem (usage and flags are the same for all three agents):
+**Reading time:** 30-45 minutes  
+**Best for:** Deep technical understanding and implementation planning
 
-```bash
-python agent.py problem.txt [options]
+---
+
+### 3. **rlac_architecture_comparison.md** - Visual Architecture Guide
+Side-by-side comparison of current vs. proposed architectures with detailed workflow examples.
+
+**Contents:**
+- Current architecture diagram (sequential pipeline)
+- Proposed architecture diagram (integrated with RLAC)
+- Side-by-side feature comparison table
+- Detailed example from IMO-02 (current vs. proposed approach)
+- Attack intensity progression (current vs. geometry-specific)
+- Confidence calibration mechanism (with examples)
+- Implementation roadmap with 5 phases
+- Key architectural principles
+- Success criteria for RLAC enhancement
+
+**Reading time:** 20-30 minutes  
+**Best for:** Understanding the architectural shift and practical implementation
+
+---
+
+## Key Findings Summary
+
+### The Gap
+- **Generator confidence:** "This is a rigorous, complete solution" (99%)
+- **Verification finding:** "This has critical errors" (verification fails)
+- **Calibration error:** 100%
+
+### Root Cause
+No mechanism during generation to challenge weak assumptions. Verification feedback arrives too late—after the solution is already committed to a potentially flawed approach.
+
+### The Fix
+Insert adversarial critics **during generation** (outline phase) that:
+- Actively try to break solutions
+- Provide specific feedback (structured flaws, not binary verdicts)
+- Use domain-specific attacks (geometry patterns, theorem preconditions)
+- Track how generators respond (defense vs. concession)
+- Calibrate confidence (penalize overconfidence)
+
+### Expected Impact
+- Verification pass rate: 0% → 40-60%
+- Confidence calibration error: 100% → 5-10%
+- Early error detection: 0% → 50%+
+
+---
+
+## Quick Reference: 6 Core Enhancements
+
+| # | Enhancement | Current | Proposed | Benefit |
+|---|------------|---------|----------|---------|
+| 1 | **Timing** | After full solution | During outline phase | Early pivot possible |
+| 2 | **Feedback** | Binary (correct/wrong) | Structured (location/fix) | Targeted improvements |
+| 3 | **Attacks** | Generic patterns | Geometry-specific | Better error detection |
+| 4 | **Examples** | Sometimes vague | Explicit constructions | Clear why claim fails |
+| 5 | **Tracking** | Verdict only | Defense vs. concession | Learning signals |
+| 6 | **Confidence** | Not tracked | Required + calibration | Better reliability |
+
+---
+
+## Implementation Phases (Research Roadmap)
+
+### Phase 1: Enhanced Critic Module
+- Structured flaw reporting with location
+- Geometry-specific attack patterns
+- Counterexample generation
+- Confidence scoring
+
+### Phase 2: Integrated Generation-Criticism
+- Outline generation step
+- Insert critic after outline
+- Generator revision before full proof
+
+### Phase 3: Confidence Calibration
+- Require confidence statements
+- Test claims explicitly
+- Penalty/reward system
+
+### Phase 4: Curriculum Learning
+- Geometry-specific progression
+- Track attack effectiveness
+- Adapt difficulty
+
+### Phase 5: Analytics & Feedback
+- Success rate metrics by attack type
+- Systematic weakness identification
+- Prompt optimization feedback
+
+---
+
+## How to Use This Research
+
+### For Understanding the Problem
+1. Read **rlac_summary.txt** (executive overview)
+2. Review problem example in **rlac_gap_analysis.md**
+3. Look at current architecture in **rlac_architecture_comparison.md**
+
+### For Implementation Planning
+1. Read **rlac_gap_analysis.md** (detailed analysis)
+2. Review implementation roadmap sections
+3. Check **rlac_architecture_comparison.md** for architectural guidance
+4. Use Phase 1-5 roadmap for sprint planning
+
+### For Specific Technical Details
+- Structured flaw reporting format: **rlac_gap_analysis.md**, Section 2
+- Geometry-specific attacks: **rlac_gap_analysis.md**, Section 3
+- Confidence calibration: **rlac_architecture_comparison.md**, Confidence Calibration section
+- Multi-stage pipeline: **rlac_gap_analysis.md**, section on Multi-Stage Verification
+
+---
+
+## Key Technical Insights
+
+### 1. Timing Matters More Than Quality
+A good critic running during generation beats an excellent critic running after completion, because feedback can reshape the generation process while it's still flexible.
+
+### 2. Specificity Enables Learning
+Structured flaws with location and suggested fixes enable targeted improvements, while binary verdicts force trial-and-error.
+
+### 3. Domain Expertise Improves Attacks
+Geometry-specific attack patterns (theorem preconditions, configuration properties) are more effective than generic reasoning checks.
+
+### 4. Confidence Is a Vulnerability
+Overconfident claims that fail verification are worse than careful partial claims. Penalizing miscalibration improves solution quality.
+
+### 5. Defense vs. Concession Signals Learning
+Tracking whether generators defend against or concede to attacks provides insight into what they've learned.
+
+---
+
+## Related Codebase Files
+
+### Existing RLAC Implementation (in /home/user/IMO25/code/)
+- `adversarial_critic.py` - Current adversarial critic implementation
+- `adversarial_prompts.py` - Current attack prompt templates
+- `agent_rlac.py` - RLAC orchestration agent
+
+### Agent Architecture
+- `agent_gpt_oss.py` - GPT-OSS agent with asymmetric reasoning
+- `agent_oai.py` - OpenAI agent
+- `agent_xai.py` - XAI Grok agent
+
+### Test Case for This Research
+- Problem: `/home/user/IMO25/problems/imo02.txt` (Geometry problem - circles and tangent)
+- Log: `/home/user/IMO25/agent_gpt_oss_2_mcts_low_bfs.log` (Shows the gap)
+- MCTS tree: `/home/user/IMO25/agent_gpt_oss_2_mcts_low_bfs_mcts_tree.json`
+
+---
+
+## Research Status
+
+**Current Phase:** Analysis and Design (COMPLETE)
+- Problem identified and analyzed
+- Proposed solutions developed
+- Architecture designed
+- Implementation roadmap defined
+
+**Next Phase:** Phase 1 Enhancement Implementation
+- Enhanced critic module with structured feedback
+- Geometry-specific attack patterns
+- Ready for development
+
+---
+
+## Contact & Questions
+
+This is research documentation only. For implementation discussions or questions, refer to:
+- CLAUDE.md (system architecture overview)
+- Code comments in agent files
+- Git commit history for context
+
+---
+
+## Citation (for research purposes)
+
+**RLAC Enhancement Research: Bridging the Generator-Verifier Gap in Mathematical Reasoning**
+- Analysis: IMO25 Problem 02 (Geometry - circles and tangency)
+- Gap: 0% verification pass rate despite apparent solution quality
+- Solution: RLAC with during-generation adversarial feedback
+- Timeline: Research document created 2025-11-22
+
+---
+
+## Document Index
+
+```
+/home/user/IMO25/docs/
+├── README.md (this file)
+│   └── Overview and navigation guide
+├── rlac_summary.txt
+│   └── Executive summary (10-15 min read)
+├── rlac_gap_analysis.md
+│   └── Detailed technical analysis (30-45 min read)
+└── rlac_architecture_comparison.md
+    └── Architecture diagrams and examples (20-30 min read)
 ```
 
-**Arguments:**
-- `problem.txt`: Path to the problem statement file (required); imo2025 problems are in `problems`
+---
 
-**Options:**
-- `--log LOG_FILE`: Specify a log file for output (default: prints to console)
-- `--other_prompts PROMPTS`: Additional prompts separated by commas
-
-**Example:**
-```bash
-python agent.py imo2025_p1.txt --log agent_output.log
-```
-
-To run with OpenAI or XAI instead, simply invoke the corresponding script with the same options:
-
-```bash
-python agent_oai.py imo2025_p1.txt --log agent_output_oai.log
-python agent_xai.py imo2025_p1.txt --log agent_output_xai.log
-```
-
-### Parallel Execution (`code/run_parallel.py`)
-
-Run multiple agents in parallel to increase the chance of finding a solution:
-
-```bash
-python IMO25/code/run_parallel.py <problem_file> [options]
-```
-
-**Arguments:**
-- `problem.txt`: Path to the problem statement file (required). Use an absolute path or ensure the path is valid from within `IMO25/code/` (the script runs the agent with its working directory set to `IMO25/code/`).
-
-**Options:**
-- `--num-agents N` or `-n N`: Number of parallel agents (default: 10)
-- `--log-dir DIR` or `-d DIR`: Directory for log files (default: logs)
-- `--timeout SECONDS` or `-t SECONDS`: Timeout per agent in seconds (default: no timeout)
-- `--max-workers N` or `-w N`: Maximum worker processes (default: number of agents)
-- `--other_prompts PROMPTS` or `-o PROMPTS`: Additional prompts separated by commas
-- `--agent-file PATH` or `-a PATH`: Path to the agent file to run (default: `agent.py` inside `IMO25/code/`)
-- `--exit-immediately` or `-e`: Exit the whole run as soon as any agent finds a correct solution (otherwise, all agents run to completion)
-
-**Examples:**
-```bash
-# Run 20 agents with 5-minute timeout each
-python IMO25/code/run_parallel.py problems/imo2025_p1.txt -n 20 -t 300
-
-# Run 5 agents with custom log directory and exit immediately on first success
-python IMO25/code/run_parallel.py problems/imo2025_p1.txt -n 5 -d logs/p1_run -e
-
-# Run with additional prompts and a custom agent file
-python IMO25/code/run_parallel.py problems/imo2025_p1.txt -n 15 -o "focus_on_geometry,use_induction" -a agent.py
-
-# Run OpenAI/XAI variants by pointing to the agent file
-python IMO25/code/run_parallel.py problems/imo2025_p1.txt -n 10 -a agent_oai.py
-python IMO25/code/run_parallel.py problems/imo2025_p1.txt -n 10 -a agent_xai.py
-```
-
-### Result extractor (`code/res2md.py`)
-
-Parse a result file that contains JSON (for example, a `.jsonl` file where each line is a JSON object), and print the last JSON object in the file. Useful for quickly extracting the final structured result produced by some runs.
-
-```bash
-python IMO25/code/res2md.py <result_file>
-```
-
-**Example:**
-```bash
-python IMO25/code/res2md.py logs/results.jsonl
-```
-
-## Problem File Format
-See the `problems` folder.
-
-## Output and Logging
-
-### Single Agent
-- Output is printed to console by default
-- Use `--log` to save output to a file
-- The agent will indicate if a complete solution was found
-
-### Parallel Execution
-- Each agent creates a separate log file in the specified directory
-- Progress is shown in real-time
-- Final summary shows:
-  - Total execution time
-  - Number of successful/failed agents
-  - Success rate
-  - Which agent found a solution (if any)
-  - Location of log files
-- Each log entry includes a timestamp
-
-## Understanding the Output
-
-### Solution Detection
-The system looks for the phrase "Found a correct solution in run" to identify successful solutions.
-
-### Agent Behavior
-- Agents can use Google's Gemini 2.5 Pro, OpenAI, or XAI models depending on the chosen script
-- Each agent follows a structured approach with multiple attempts
-- Solutions are verified for completeness and correctness
-- Agents can provide partial solutions if complete solutions aren't found
-
-## Tips for Best Results
-
-1. **Problem Formatting**: Ensure your problem file is clear and well-formatted
-2. **Parallel Execution**: Use more agents for harder problems (10-20 agents recommended)
-3. **Timeout Settings**: Set reasonable timeouts (you may set no timeout)
-4. **API Limits**: Be aware of Google/OpenAI/XAI API rate limits and costs
-5. **Log Analysis**: Check individual agent logs for detailed reasoning
-
-## Troubleshooting
-
-### Common Issues
-
-1. **API Key Error**: Ensure the relevant API key(s) are properly set (Google/OpenAI/XAI)
-2. **Timeout Issues**: Increase timeout or reduce number of agents
-3. **Memory Issues**: Reduce max-workers if running out of memory
-4. **No Solutions Found**: Try running more agents or check problem clarity
-
-### Debug Mode
-Add verbose logging by modifying the agent code or check individual log files for detailed output.
-
-## Changelog 
-
-### 08/18/2025
-
-- Added `code/agent_oai.py` and `code/agent_xai.py` (usage identical to `agent.py`).
-- Logs now record timestamps.
-- Parallel runs no longer exit by default when a solution is found; use `--exit-immediately` to stop at the first complete solution.
-- Adding running logs from grok-4 and gpt-5
-
-### 07/24/2025 
-
-- Initial code release
-
-## License
-
-MIT License - Copyright (c) 2025 Lin Yang, Yichen Huang
-
-This software is provided as-is. Users are free to copy, modify, and distribute the code with proper attribution.
-
-## Contributing
-
-Feel free to submit issues, feature requests, or pull requests to improve the system.
-
-### Community Codes
-
-Community contributions are located in `code/community_codes/`. These have not been thoroughly tested, so please use them at your own risk. 
-
-## Disclaimer
-
-This tool is for educational and research purposes. 
-
-## Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@article{huang2025gemini,
-  title={Gemini 2.5 Pro Capable of Winning Gold at IMO 2025},
-  author={Huang, Yichen and Yang, Lin F},
-  journal={arXiv preprint arXiv:2507.15855},
-  year={2025}
-}
-``` 
+**Document Version:** 1.0  
+**Created:** 2025-11-22  
+**Status:** Research Analysis Complete, Ready for Implementation Planning

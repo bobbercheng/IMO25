@@ -163,7 +163,7 @@ wait_for_slot() {
                 report_job_completion $pid
             fi
         done
-        PIDS=("${new_pids[@]}")
+        PIDS=("${new_pids[@]+"${new_pids[@]}"}")
 
         # If still at capacity, wait a bit
         if [ ${#PIDS[@]} -ge $MAX_PARALLEL ]; then
@@ -192,7 +192,9 @@ run_bfs_async() {
         # Run BFS agent
         # FIX (2025-12-23): Removed "> /dev/null" which was discarding all output
         # All output now goes to both progress_file (via tee) and log_file (via --log)
-        if python code/agent_gpt_oss.py "$PROBLEM" \
+        # BFS Diversity Fix (2025-12-30): Pass run number as environment variable
+        # This enables run-specific prompt selection for true diversity
+        if BFS_RUN_ID=$run_num python code/agent_gpt_oss.py "$PROBLEM" \
             --log "$log_file" \
             --memory "$json_file" \
             --num-initial-attempts $NUM_INITIAL_ATTEMPTS \

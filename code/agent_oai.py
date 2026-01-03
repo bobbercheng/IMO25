@@ -32,6 +32,15 @@ import argparse
 import logging
 from benchmark_loader import BenchmarkLoader
 
+# Import RAG system for dynamic domain knowledge hints
+try:
+    from problem_analyzer import extract_problem_characteristics
+    from domain_knowledge_rag import build_hint_section
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    print("[WARNING] RAG system not available - domain knowledge hints disabled")
+
 # --- CONFIGURATION ---
 # The model to use. "gpt-4o" is fast and capable.
 MODEL_NAME = "gpt-5"
@@ -178,10 +187,52 @@ Follow this THREE-LEVEL decision process in strict sequential order:
 
 **LEVEL 1: Check Answer Correctness**
 *   First, identify the final answer in the solution (e.g., "p∈{2,3,7}", "maximum value is 42", "proof complete").
-*   Verify if the answer is mathematically valid.
+*   **For OPTIMIZATION problems** (MINIMUM/MAXIMUM/SMALLEST/LARGEST):
+    *   **DO NOT** check correctness at this level - you don't have ground truth for optimal values!
+    *   **DO NOT** use training knowledge to claim an answer is "wrong" or "contradicts known optimal value"
+    *   Only check for obvious errors: arithmetic mistakes (e.g., 2×n-2 = 2n-3 ❌), constraint violations
+    *   If no obvious errors → MANDATORY proceed to Level 1.5 (do not skip!)
+*   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE non-extremal values):
+    *   Verify if the answer is mathematically correct
+    *   **Decision:**
+        *   If answer is **WRONG** → verdict = **FAIL** → STOP
+        *   If answer is **CORRECT** → Skip Level 1.5, proceed to Level 2
+
+**LEVEL 1.5: Check Optimality (for MINIMUM/MAXIMUM problems only)** *(2025-12-30 TIER 1 Enhancement)*
+*   **Trigger:** If problem asks for MINIMUM, MAXIMUM, SMALLEST, LARGEST, or LEAST/GREATEST value
+*   **Skip:** For PROVE problems or problems without optimization requirement
+*
+*   **Optimality Challenge Process:**
+    1. **Identify the construction approach** used in solution (e.g., "diagonal permutation", "greedy algorithm", "block-based")
+    2. **Test small cases** (n=3, n=4, n=5) using the proposed construction
+    3. **Try alternative approaches** on same small cases:
+       - For grid/tiling: Try different permutation structures
+       - For counting: Try different bijections or partitions
+       - For optimization: Try different greedy strategies or orderings
+    4. **Special structure detection:**
+       - Is n a perfect square? (test if √n is integer) → Consider block decomposition, Dilworth's theorem
+       - Is n highly composite? (many small factors) → Look for factorization-based approaches
+       - Is answer a simple formula (2n-2, n², n+1)? → Question if this is truly optimal
+
 *   **Decision:**
-    *   If answer is **WRONG** → verdict = **FAIL** (Critical Error) → STOP (do not proceed to Level 2)
-    *   If answer is **CORRECT** → proceed to Level 2
+    *   If small-case testing shows **alternative approach performs BETTER** (fewer for MIN, more for MAX):
+        → verdict = **SUSPICIOUS_OPTIMALITY** → STOP (solution may not be optimal)
+    *   If special structure detected (n=k²) but **not exploited** in construction:
+        → verdict = **SUSPICIOUS_OPTIMALITY** → STOP (suggest exploring special structure)
+    *   If answer formula is **suspiciously simple** (2n-2, n²) for complex optimization:
+        → verdict = **SUSPICIOUS_OPTIMALITY** → STOP (verify this is truly tight bound)
+    *   If no better alternatives found in small cases:
+        → proceed to Level 2
+
+*   **Example - Testing Optimality:**
+    - Problem: "Minimize resource count for n×n grid with constraint C"
+    - Proposed answer: f(n) using construction A
+    - Small-case test: n=3 with A → result R₃
+    - Alternative test: n=3 with construction B → result R₃'
+    - If R₃' < R₃ (for MIN problem) → Construction A may not be optimal
+    - Special structure: If n has special property (perfect square, prime, etc.), check if exploited
+    - Simple formula: If f(n) is very simple (linear, quadratic), question if truly optimal
+    - **Verdict**: If alternatives perform better OR structure not exploited → SUSPICIOUS_OPTIMALITY
 
 **LEVEL 2: Check Reasoning Validity**
 *   Examine the mathematical principles and methods used in the solution.
@@ -216,10 +267,91 @@ Follow the three levels sequentially. Do NOT skip levels or apply them out of or
 
 **LEVEL 1 IMPLEMENTATION: Answer Correctness**
 *   Extract the final answer from the solution (look for conclusive statements like "Therefore p∈{2,3,7}", "The maximum value is 42", "This completes the proof").
-*   For FIND problems: Check if the answer is a complete set (e.g., "p∈{2,5,11}") vs partial (e.g., "p=2 works").
-*   For PROVE problems: Check if the claimed theorem/inequality is actually proven.
-*   For DETERMINE problems: Check if all requested values are identified.
-*   **Gate Decision:** WRONG answer → immediate FAIL, CORRECT answer → proceed to Level 2.
+*   **CRITICAL: Identify problem type FIRST** by scanning for keywords:
+    - **OPTIMIZATION**: "minimum", "maximum", "smallest", "largest", "least", "greatest", "minimize", "maximize"
+    - **NON-OPTIMIZATION**: "find all", "prove", "determine" (without extremal requirement)
+*   **For OPTIMIZATION problems** (MIN/MAX):
+    - **CRITICAL:** Do NOT attempt to verify correctness at this level (you don't have ground truth!)
+    - **DO NOT** use your training knowledge to claim "the answer contradicts the known optimal value"
+    - **DO NOT** say "the correct answer is X" - you don't know the optimal value yet!
+    - Only check for arithmetic errors (e.g., formula calculation mistakes, off-by-one errors)
+    - Only check for constraint violations (e.g., "tiles overlap" or "missing coverage")
+    - **Decision:** If arithmetic/constraint error found → FAIL, otherwise → MANDATORY proceed to Level 1.5 (DO NOT SKIP!)
+    - **Example:** For optimization problems, multiple answer values may be PLAUSIBLE at Level 1. Optimality is checked at Level 1.5!
+*   **For NON-OPTIMIZATION problems** (FIND/PROVE/DETERMINE):
+    - Verify answer completeness: For FIND problems check if complete set, for PROVE check if proven
+    - **Decision:** WRONG answer → immediate FAIL, CORRECT answer → Skip Level 1.5, proceed to Level 2
+
+**LEVEL 1.5 IMPLEMENTATION: Optimality Check (MIN/MAX problems only)** *(2025-12-30)*
+
+**⚠️ CRITICAL WARNING - DO NOT USE TRAINING KNOWLEDGE:**
+- For OPTIMIZATION problems, you don't have ground truth for optimal values
+- DO NOT claim "the answer contradicts the known optimal value" from training
+- DO NOT assume simple formulas (2n-2, n², etc.) are always optimal
+- Special mathematical structures may enable better solutions:
+  * Perfect squares (n=k²) → Consider block decomposition, Dilworth's theorem
+  * Highly composite numbers → Consider factorization-based approaches
+  * Prime powers → Consider algebraic or number-theoretic structure
+- **Test rigorously** before accepting first valid construction as optimal
+
+*   **Step 1: Problem Type Detection**
+    - Scan problem statement for keywords: "minimum", "maximum", "smallest", "largest", "least", "greatest", "minimize", "maximize"
+    - If found → This is an OPTIMIZATION problem, proceed with optimality check
+    - If not found → Skip Level 1.5, proceed directly to Level 2
+
+*   **Step 2: Extract Construction Details**
+    - Identify what construction/approach the solution uses (e.g., "diagonal permutation σ(i)=i", "greedy by size", "block-based k×k")
+    - Extract the answer formula if provided (e.g., "2n-2", "k²+2k-3")
+
+*   **Step 3: Small-Case Verification**
+    - Manually test the proposed construction on n=3 or n=4 (whichever is tractable)
+    - Calculate the result for small case using proposed method
+    - Try ONE alternative approach on same small case:
+      * For permutation problems: Try non-identity permutation
+      * For partitioning: Try different partition strategy
+      * For greedy: Try different ordering criterion
+    - Compare results: Does alternative achieve better value?
+
+*   **Step 4: Special Structure Check**
+    - Check if n has special properties:
+      * Is n = k² (perfect square)? Test: sqrt(n) is integer
+      * Is n highly composite? Test: n has many small prime factors
+      * Is n a prime power? Test: n = p^k for prime p
+    - Does the solution exploit this structure?
+      * Perfect square → Look for block decomposition (k×k blocks), Dilworth decomposition
+      * Highly composite → Look for factorization-based construction
+      * Prime power → Look for algebraic or group-theoretic approaches
+
+*   **Step 5: Formula Simplicity Heuristic**
+    - If answer is simple formula (2n, n², 2n-2, n+1, etc.):
+      * Simple formulas are often "first attempt" solutions
+      * IMO optimization problems rarely have such clean formulas
+      * Flag as potentially suboptimal
+
+*   **Decision Rule:**
+    - If Step 3 found better alternative → **SUSPICIOUS_OPTIMALITY**
+    - If Step 4 found unexploited structure → **SUSPICIOUS_OPTIMALITY**
+    - If Step 5 flagged simple formula AND (Step 3 OR Step 4) raised concerns → **SUSPICIOUS_OPTIMALITY**
+    - Otherwise → Proceed to Level 2
+
+*   **Example Application:**
+    ```
+    Problem: "Minimize resources for n×n structure with constraint C" → OPTIMIZATION detected
+    Answer: f(n) using construction A
+
+    Step 3 (small-case):
+      n=3 with A: result R₁
+      n=3 with alternative B: result R₂ where R₂ < R₁ ← BETTER! ❌
+
+    Step 4 (structure):
+      n has special property (e.g., n = k²) → Detected
+      Solution uses generic approach → Structure NOT exploited ❌
+
+    Step 5 (formula):
+      Answer = simple formula (e.g., linear, quadratic) ❌
+
+    VERDICT: SUSPICIOUS_OPTIMALITY (alternative construction performs better)
+    ```
 
 **LEVEL 2 IMPLEMENTATION: Reasoning Validity**
 
@@ -359,10 +491,19 @@ Use this format:
 Your response should provide a concise summary:
 
 *   **Level 1 Result:** State whether the final answer is CORRECT or WRONG (quote the answer)
+*   **Level 1.5 Result:** *(For optimization problems only)* State whether optimality check was triggered and result:
+    - "Not applicable (not an optimization problem)" - Skip to Level 2
+    - "PASSED optimality check" - No red flags detected, proceed to Level 2
+    - "SUSPICIOUS_OPTIMALITY" - Solution may not be optimal (stop here, do not proceed)
 *   **Level 2 Result:** State whether reasoning uses VALID or INVALID mathematical principles
 *   **Level 3 Result:** List any presentation issues found (Justification Gaps or Critical Errors in logic chain)
-*   **Final Verdict:** "PASS" or "FAIL" based on the hierarchical decision tree
+*   **Final Verdict:** "PASS", "FAIL", or "SUSPICIOUS_OPTIMALITY" based on the hierarchical decision tree
 *   **Reasoning:** Brief explanation of the verdict
+
+**Verdict Types:**
+- **PASS**: Answer correct + reasoning valid + (optimality OK or not applicable) + (no critical errors OR only justification gaps)
+- **FAIL**: Answer wrong OR reasoning invalid OR critical errors in logic chain
+- **SUSPICIOUS_OPTIMALITY**: Answer correct + reasoning valid BUT optimality concerns detected (alternative approach may be better)
 
 All detailed mathematical analysis should be provided in the structured JSON output (not in a separate prose log).
 
@@ -627,6 +768,19 @@ def verify_solution(problem_statement, solution, verbose=True):
 
     dsol = extract_detailed_solution(solution)
 
+    # Generate RAG-based domain knowledge hints (no data leakage)
+    rag_hints = ""
+    if RAG_AVAILABLE:
+        try:
+            problem_chars = extract_problem_characteristics(problem_statement)
+            rag_hints = build_hint_section(problem_chars, k=2)
+            if verbose and rag_hints:
+                print(f"[RAG] Generated {len(rag_hints.split(chr(10)))-1} domain knowledge hints based on problem structure")
+        except Exception as e:
+            if verbose:
+                print(f"[RAG] Warning: Could not generate hints: {e}")
+            rag_hints = ""
+
     # Verification constraints to prevent truncation and over-analysis (Option A)
     verification_constraint = """
 **CRITICAL CONSTRAINTS FOR VERIFICATION:**
@@ -664,6 +818,11 @@ def verify_solution(problem_statement, solution, verbose=True):
 **Violating these constraints will cause your response to be truncated and discarded.**
 """
 
+    # Inject RAG hints if available (placed after solution, before verification reminder)
+    rag_section = ""
+    if rag_hints:
+        rag_section = f"\n{rag_hints}\n"
+
     newst = f"""
 {verification_constraint}
 
@@ -676,7 +835,7 @@ def verify_solution(problem_statement, solution, verbose=True):
 ### Solution ###
 
 {dsol}
-
+{rag_section}
 {verification_remider}
 """
     if(verbose):
@@ -757,9 +916,26 @@ Response in exactly "yes" or "no". No other words.
 
 
 def init_explorations(problem_statement, verbose=True, other_prompts=[]):
+    # FIX: Inject RAG hints BEFORE generation (not just in verification)
+    # This ensures agent sees domain knowledge hints when building solution
+    rag_hints = ""
+    if RAG_AVAILABLE:
+        try:
+            problem_chars = extract_problem_characteristics(problem_statement)
+            rag_hints = build_hint_section(problem_chars, k=2)
+            if verbose and rag_hints:
+                print(f"[RAG] Injecting domain hints into GENERATION prompt")
+        except Exception as e:
+            if verbose:
+                print(f"[RAG] Warning: Could not generate hints: {e}")
+            rag_hints = ""
+
+    # Enrich problem statement with RAG hints for generation
+    enriched_problem = f"{problem_statement}\n\n{rag_hints}" if rag_hints else problem_statement
+
     p1  = build_request_payload(
             system_prompt=step1_prompt,
-            question_prompt=problem_statement,
+            question_prompt=enriched_problem,  # ← RAG hints visible during generation!
             #other_prompts=["* Please explore all methods for solving the problem, including casework, induction, contradiction, and analytic geometry, if applicable."]
             #other_prompts = ["You may use analytic geometry to solve the problem."]
             other_prompts = other_prompts

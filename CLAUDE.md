@@ -138,10 +138,16 @@ export GPT_OSS_API_KEY=your_gpt_oss_api_key  # Optional for local deployments
 export GPT_OSS_API_URL=http://localhost:30000/v1/chat/completions  # API endpoint
 export GPT_OSS_MODEL_NAME=openai/gpt-oss-120b  # Model name (default)
 
-# Using OpenRouter (faster for medium/high reasoning)
+# Using OpenRouter (faster for medium/high reasoning, RECOMMENDED for testing)
 export GPT_OSS_API_URL=https://openrouter.ai/api/v1/chat/completions
-export GPT_OSS_MODEL_NAME=openrouter/openai/gpt-oss-120b
-export GPT_OSS_API_KEY=your_openrouter_api_key
+export GPT_OSS_MODEL_NAME="openai/gpt-oss-120b"
+export GPT_OSS_API_KEY=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
+
+# OpenRouter is recommended for development/testing:
+# - Faster inference for medium/high reasoning
+# - No local deployment needed
+# - Automatic failover and load balancing
+# - Supports structured JSON output with all reasoning levels
 ```
 
 ### OpenRouter Support
@@ -365,10 +371,52 @@ Real-time monitoring tracks:
 
 ## Development Guidelines
 
+### Code Quality Requirements
+
+**CRITICAL: All code changes MUST pass lint and compile checks before committing.**
+
+#### Python Files
+All Python files must pass `py_compile` without errors:
+```bash
+# Check single file
+python -m py_compile code/agent_gpt_oss.py
+
+# Check all Python files in code/
+python -m compileall code/
+
+# Expected output: No errors, silent success or "Compiling..." messages
+```
+
+#### Common Issues to Avoid
+1. **Dict/String Type Mismatches**
+   - Always use `get_solution_text(solution)` before string operations
+   - Never assume `solution` is a string - it may be `{"solution": "...", "final_answer": "..."}`
+   - Example: `len(solution)` → `len(get_solution_text(solution))`
+   - Example: `solution[:100]` → `get_solution_text(solution)[:100]`
+   - Example: `re.search(pattern, solution)` → `re.search(pattern, get_solution_text(solution))`
+
+2. **Import Errors**
+   - Verify all imports are available: `from module import function`
+   - Check for circular imports
+   - Ensure relative imports use correct paths
+
+3. **Syntax Errors**
+   - Missing colons, parentheses, brackets
+   - Incorrect indentation (use 4 spaces, not tabs)
+   - F-string syntax errors
+
+#### Pre-Commit Checklist
+Before committing code changes:
+- [ ] Run `python -m py_compile <file>` on all modified Python files
+- [ ] Verify no `TypeError: expected string or bytes-like object, got 'dict'` errors
+- [ ] Check that structured output (`dict`) and legacy output (`string`) both work
+- [ ] Test with sample inputs if modifying critical paths (agent, verification, RLAC)
+- [ ] Update this file (CLAUDE.md) if adding new patterns or requirements
+
 ### Configuration Management
 The GPT-OSS agent supports environment-based configuration. Always check current config on startup:
 ```
-[CONFIG] GPT_OSS API URL: http://localhost:30000/v1/chat/completions  
+[CONFIG] GPT_OSS API URL: http://localhost:30000/v1/chat/completions
 [CONFIG] Solution Reasoning Effort: low
 [CONFIG] Self-Improvement Reasoning Effort: high
 [CONFIG] Verification Reasoning Effort: high

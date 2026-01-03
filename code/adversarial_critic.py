@@ -162,7 +162,11 @@ class AdversarialCritic:
                 )
 
                 # Check if verification found issues
-                verification_passed = "yes" in good_verify.lower()
+                # Support both dict (new format) and string (legacy format)
+                if isinstance(good_verify, dict):
+                    verification_passed = good_verify.get('verdict') == 'PASS'
+                else:
+                    verification_passed = "yes" in good_verify.lower()
 
                 if not verification_passed:
                     # Verification found issues - use them for attack
