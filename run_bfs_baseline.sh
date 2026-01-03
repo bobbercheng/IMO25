@@ -36,9 +36,9 @@ N_RUNS=${N_RUNS:-12} # Active jobs number, default 12
 #   - LOW reasoning insufficient for mixed constructions (k=1,3)
 #   - Need MEDIUM reasoning to execute algebraic verification
 #   - Expected: 30-50% success rate, 5-15 iterations if successful
-SOLUTION_REASONING="${GPT_OSS_SOLUTION_REASONING:-medium}"        # ↑ from "low" - enables mixed constructions
+SOLUTION_REASONING="${GPT_OSS_SOLUTION_REASONING:-high}"        # ↑ from "low" - enables mixed constructions
 VERIFICATION_REASONING="high"      # ↑ from "medium" - catch semantic errors (Runs 1-6 review)
-SELF_IMPROVEMENT_REASONING="${SELF_IMPROVEMENT_REASONING_EFFORT:-medium}"  # ↑ from "low" - enables rigorous exploration
+SELF_IMPROVEMENT_REASONING="${SELF_IMPROVEMENT_REASONING_EFFORT:-high}"  # ↑ from "low" - enables rigorous exploration
 NUM_INITIAL_ATTEMPTS="${NUM_INITIAL_ATTEMPTS:-3}"            # Generate 3 initial solution attempts (BFS exploration)
 
 # Agent configuration
@@ -197,6 +197,7 @@ run_bfs_async() {
         if BFS_RUN_ID=$run_num python code/agent_gpt_oss.py "$PROBLEM" \
             --log "$log_file" \
             --memory "$json_file" \
+            --use-schema-blacklist \
             --num-initial-attempts $NUM_INITIAL_ATTEMPTS \
             --max_runs $MAX_RUNS \
             --solution-reasoning "$SOLUTION_REASONING" \
