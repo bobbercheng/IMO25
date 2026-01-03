@@ -72,7 +72,7 @@ class AutomatedCheckers:
             # Check if there's explicit verification
             has_verification = bool(re.search(
                 r'(for each|for every|for all).*(verify|check|test|ensure)',
-                solution,
+                solution_text,
                 re.IGNORECASE
             ))
 
@@ -90,7 +90,7 @@ class AutomatedCheckers:
         if re.search(r'(construct|define|choose).*(line|family|set)', solution_text, re.IGNORECASE):
             has_coverage_proof = bool(re.search(
                 r'(cover(s|ed|age)|contain(s|ed)|pass(es) through).*point',
-                solution,
+                solution_text,
                 re.IGNORECASE
             ))
 
