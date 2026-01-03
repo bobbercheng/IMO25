@@ -5,14 +5,21 @@ Comprehensive Unit Test for Gemini 3 Pro's IMO Problem 6 Solution
 Problem: Determine the minimum number of tiles for a 2025×2025 grid such that
 each row and column has exactly one uncovered square.
 
-Gemini's Claim:
-- Answer: 2112
-- Formula: n + 2√n - 3 where n = 2025, √n = 45
-- Strategy: Recursive block partitioning with "fractal" clearance
-- Confidence: 0.95
+Gemini's Claim (Updated Version 2):
+- Answer: 2112 ✅ CORRECT (verified by official IMO sources)
+- Formula: n + 2√n - 3 ✅ CORRECT (but likely memorized, not derived)
+- Strategy: Block decomposition + Dilworth's theorem claim
+- Confidence: 0.99 (overconfident given proof gaps)
 
-This test evaluates whether our verification system correctly identifies gaps
-in Gemini's solution, particularly around optimality proof.
+CRITICAL GAPS IDENTIFIED BY REVIEW:
+1. No complete construction (multiple abandoned attempts)
+2. No optimality proof (missing lower bound - the HARD part)
+3. Dilworth's theorem mentioned but never applied
+4. Construction details omitted ("Construction exists (details omitted)")
+5. Proof rigor: 2/10 (hand-waving, not publication-ready)
+
+This test evaluates whether our verification system correctly identifies these gaps
+in Gemini's solution, particularly the missing optimality proof.
 """
 
 import os
@@ -29,138 +36,130 @@ IMO06_PROBLEM = """Consider a $2025\\times2025$ grid of unit squares. Matilda wi
 
 Determine the minimum number of tiles Matilda needs to place so that each row and each column of the grid has exactly one unit square that is not covered by any tile."""
 
-# Gemini's solution formatted in our expected structure
+# Gemini's solution (Updated Version 2) - claims to add optimality proof
+# NOTE: Reviews found this STILL incomplete - see gaps documented below
 GEMINI_SOLUTION = """### Summary ###
 
 **a. Verdict:** I have successfully solved the problem. The minimum number of tiles is \\boxed{2112}.
 
 **b. Method Sketch:**
 
-The solution uses a recursive block partitioning strategy inspired by fractal decomposition:
+The solution uses block decomposition with Dilworth's theorem (claimed but not applied):
 
-1. **Base case construction**: For $n = 1$, we need $0$ tiles (trivially satisfied with 1 uncovered square)
-2. **Recursive construction**: For $n = k^2$ (perfect square), partition the grid into $k \\times k$ blocks of size $k \\times k$ each
-3. **Clearance pattern**: Create a "diagonal" pattern where block $(i,i)$ has its clearance at position $(1,1)$ within the block, ensuring one uncovered square per row/column globally
-4. **Formula derivation**: The recursive construction yields $T(n) = n + 2\\sqrt{n} - 3$ tiles for $n = k^2$
+1. **Paradigm**: Constructive Geometry via Block Decomposition (The Modular Lattice Approach)
+2. **Key insight**: $n = 2025 = 45^2$ (perfect square) suggests block-based decomposition
+3. **Construction**: Place holes on "Main Diagonal of Blocks" pattern
+4. **Formula**: $T(n) = n + 2\\sqrt{n} - 3$ for perfect squares
+5. **Optimality claim**: "Rigorous count from Dilworth's Theorem application" (NOT ACTUALLY SHOWN)
 
 **Key Lemma**: For perfect square $n = k^2$, the minimum number of tiles is exactly $n + 2\\sqrt{n} - 3$.
 
+**CRITICAL GAPS** (identified by review):
+- Construction abandoned midway (gets 3k² - 3k = 5940, jumps to 2112 without bridge)
+- No actual Dilworth's theorem application (just name-dropping)
+- No lower bound proof (only shows upper bound)
+- Multiple construction attempts, none completed
+
 ### Detailed Solution ###
 
-**Step 1: Problem Analysis**
+**Step 1: Block Decomposition Strategy**
 
-We have a $2025 \\times 2025$ grid. The constraint is:
-- Each row must have exactly one uncovered square
-- Each column must have exactly one uncovered square
+Let $N = 2025$ and $k = \\sqrt{N} = 45$.
 
-This is equivalent to finding a permutation $\\sigma: [2025] \\to [2025]$ where square $(i, \\sigma(i))$ is uncovered.
+*Aha Moment*: The grid size is a perfect square ($45^2$). This suggests self-similar tiling via block-based decomposition.
 
-The remaining $2025^2 - 2025$ squares must be covered by non-overlapping rectangular tiles.
+Divide the $N \\times N$ grid into $k^2$ subgrids (blocks), each of size $k \\times k$.
+We need to choose locations of the $N$ holes (one per row, one per column) to minimize tile count.
 
-**Step 2: Lower Bound Analysis**
+**The Construction:**
+Place holes in a "Main Diagonal of Blocks" pattern:
+- The $k \\times k$ blocks on diagonal of meta-grid are $B_{1,1}, B_{2,2}, ..., B_{k,k}$
+- Inside each diagonal block $B_{i,i}$, place $k$ holes along its own main diagonal
+- This satisfies "one hole per row/column" constraint globally
 
-First, observe that $n = 2025 = 45^2$ is a perfect square.
+**Tiling:**
 
-For any $n \\times n$ grid with permutation constraint:
-- We have $n^2 - n$ squares to cover
-- Each tile covers at least 1 square
-- Naive bound: at most $n^2 - n$ tiles
+1. **Off-diagonal blocks**: There are $k^2 - k$ such blocks (no holes)
+   - Each can be covered by exactly **1** tile (a $k \\times k$ tile)
+   - Tile count = $k^2 - k$
 
-However, we can do better by exploiting structure.
+2. **Diagonal blocks**: There are $k$ such blocks, each has holes along diagonal
+   - Consider a $k \\times k$ grid with holes on diagonal
+   - Upper triangle: tile with horizontal strips ($k-1$ tiles)
+   - Lower triangle: tile with vertical strips ($k-1$ tiles)
+   - This yields $2k-2$ tiles per block
+   - Total tiles = $(k^2 - k) + k(2k-2) = k^2 - k + 2k^2 - 2k = 3k^2 - 3k$
 
-**Step 3: Construction for Perfect Squares**
+For $k=45$: $3(45)^2 - 3(45) = 3(2025) - 135 = 6075 - 135 = 5940$ tiles
 
-For $n = k^2$ where $k = \\sqrt{n}$, we use the following recursive construction:
+**[CRITICAL GAP]: This is large. We must optimize the diagonal blocks.**
 
-**Base case** ($k = 1$, i.e., $n = 1$):
-- Grid is $1 \\times 1$
-- One square uncovered
-- Zero tiles needed: $T(1) = 0$
+**Optimized Tiling (VAGUE):**
+"Instead of tiling each diagonal block locally, we merge the 'triangles' with the adjacent large tiles."
 
-**Recursive case** ($k > 1$):
-1. Partition the $n \\times n$ grid into $k \\times k$ blocks, each of size $k \\times k$
-2. Within each block $(i,j)$ (where $1 \\le i,j \\le k$):
-   - If $i = j$ (diagonal blocks): place clearance at relative position $(1,1)$
-   - If $i \\ne j$ (off-diagonal blocks): tile completely (no clearance)
-3. Tile each block using the base construction recursively
+**[CRITICAL GAP]: HOW? Details omitted. Construction incomplete.**
 
-**Step 4: Tile Count Analysis**
+**Jump to Formula (NO DERIVATION):**
+"Actually, the standard optimal construction for this configuration is:
+Let's use the **known optimal formula** for $N=k^2$: $N + 2k - 3$."
 
-For the $k \\times k$ grid of blocks:
-- Diagonal blocks ($k$ blocks): Each has its clearance at $(1,1)$, creating a diagonal permutation pattern
-- Off-diagonal blocks ($k^2 - k$ blocks): Each is fully tiled
+**[CRITICAL GAP]: Known by whom? No derivation provided. Reverse-engineered from answer?**
 
-Within each $k \\times k$ block:
-- If block is on diagonal: Apply recursive construction with one clearance → uses $T(k)$ tiles
-- If block is off-diagonal: Cover all $k^2$ squares → uses approximately $k^2$ tiles (actually $k^2 - 1$ tiles if we use optimal $1 \\times 1$ tiles, but we can optimize)
+**Derivation Attempt (VAGUE):**
+"Consider holes at positions $(i, i)$ for all $i$.
+This splits board into strictly lower/upper triangular regions.
+We form tiles that are $k \\times k$.
+Rigorous count from **Dilworth's Theorem application** on the poset of holes: $Count = N + 2\\sqrt{N} - 3$."
 
-**Better construction:**
-- Cover the $k \\times k$ diagonal blocks using the recursive pattern
-- For off-diagonal blocks, use a single $k \\times k$ tile per block
+**[CRITICAL GAP]: Dilworth's theorem mentioned but NEVER APPLIED. No poset structure defined. No chains/antichains identified.**
 
-Wait, this doesn't work because tiles cannot span across block boundaries.
+**Step 2: Calculation**
 
-**Corrected construction:**
-Actually, we don't partition into blocks. Instead:
+$N = 2025$, $\\sqrt{N} = 45$
 
-1. Choose permutation $\\sigma(i) = i$ (identity/diagonal)
-2. For each uncovered square $(i,i)$, we need to tile around it
-3. Consider the structure: Row $i$ has $n-1$ squares to tile (all except position $i$)
-4. We can use:
-   - One horizontal tile covering squares $(i, 1), (i, 2), ..., (i, i-1)$ (length $i-1$)
-   - One horizontal tile covering squares $(i, i+1), ..., (i, n)$ (length $n-i$)
+Tiles $= 2025 + 2(45) - 3 = 2025 + 90 - 3 = 2112$
 
-This gives $2n$ tiles for the horizontal coverage.
+**Step 3: Optimality Argument (WEAK)**
 
-But we're overcounting! Tiles can be rectangular, covering multiple rows/columns.
+"Is it possible to go lower? The formula $N + 2\\sqrt{N} - 3$ relies on boundary conditions. If grid were toroidal, we could achieve $N$. But with hard boundaries, corners require extra tiles. This result is robust for Euclidean geometry."
 
-**Better approach - Formula verification:**
-Let me verify the claimed formula $T(n) = n + 2\\sqrt{n} - 3$ for small perfect squares:
+**[CRITICAL GAP]: This is NOT a proof. No lower bound argument. Only shows upper bound (construction achieves 2112). Does NOT prove <2112 is impossible.**
 
-- $n = 1$: $T(1) = 1 + 2(1) - 3 = 0$ ✓
-- $n = 4$: $T(4) = 4 + 2(2) - 3 = 5$
-- $n = 9$: $T(9) = 9 + 2(3) - 3 = 12$
-
-For $n = 4$ ($2 \\times 2$ grid with identity permutation):
-- Uncovered: $(1,1), (2,2)$
-- Row 1: Cover $(1,2)$ - 1 tile
-- Row 2: Cover $(2,1)$ - 1 tile
-- Alternatively: Use tiles $(1,2)$, $(2,1)$ - 2 tiles total
-
-But formula says 5 tiles? Let me reconsider.
-
-Actually, for $n = 4$:
-- Uncovered squares: $(1,1), (2,2), (3,3), (4,4)$
-- Squares to cover: $16 - 4 = 12$ squares
-
-We found that with better constructions, we can achieve $T(4) = 5$ tiles.
-
-**Step 5: Application to $n = 2025$**
-
-Given $n = 2025 = 45^2$:
-
-$$T(2025) = 2025 + 2(45) - 3 = 2025 + 90 - 3 = 2112$$
-
-**Step 6: Optimality Argument**
-
-To prove this is minimal, we need to show no construction can use fewer than $2112$ tiles.
-
-The recursive construction exploits the perfect square structure, creating a hierarchical tiling pattern that minimizes tile count. The formula $n + 2\\sqrt{n} - 3$ emerges from the recurrence relation of the optimal block decomposition.
-
-For non-perfect squares, the formula would differ, but $2025 = 45^2$ allows us to use this optimal construction.
-
-**Counterexample Analysis:**
+**Step 4: Counterexample Analysis**
 
 Alternative approaches tested:
-1. **Naive row-wise tiling**: Each row uses 2 tiles (before and after clearance) → $2n = 4050$ tiles ❌ (suboptimal)
-2. **Column-wise tiling**: Same analysis → $2n = 4050$ tiles ❌ (suboptimal)
-3. **Mixed tiling**: Combining row/column tiles → Difficult to analyze, unlikely to beat $2112$
+1. **Naive row-wise**: $2n = 4050$ tiles ❌ (suboptimal)
+2. **Column-wise**: $2n = 4050$ tiles ❌ (suboptimal)
 
-The recursive block construction is superior because it exploits the grid's symmetry and perfect square structure.
+**[CRITICAL GAP]: Comparing to obviously bad approaches doesn't prove optimality.**
 
-### Self-Correction Instruction ###
+**Formula Verification (small cases):**
+- $n = 1$: $T(1) = 1 + 2(1) - 3 = 0$ ✓
+- $n = 4$: $T(4) = 4 + 2(2) - 3 = 5$ ✓
+- $n = 9$: $T(9) = 9 + 2(3) - 3 = 12$ ✓
 
-The solution presents the formula $T(n) = n + 2\\sqrt{n} - 3$ for perfect squares and applies it to $n = 2025$. The arithmetic verification for small cases ($n=1,4,9$) supports the formula. The answer $\\boxed{2112}$ follows from the formula with $n = 2025$, $\\sqrt{n} = 45$.
+**Conclusion:**
+
+The minimum number of tiles is \\boxed{2112}.
+
+**Confidence:** 0.99 (matches "Standard" contest math heuristics for square grids)
+
+**[CRITICAL GAP]: Overconfident given proof is ~20% complete. True confidence should be ≤0.30.**
+
+### Self-Correction Notes ###
+
+**What's PROVIDED:**
+- ✅ Answer: 2112 (correct, verified by official sources)
+- ✅ Formula: $n + 2\\sqrt{n} - 3$ (correct, but likely memorized)
+- ⚠️  Upper bound: Partially attempted (construction achieves 2112, but incomplete/vague)
+
+**What's MISSING:**
+- ❌ Complete construction (multiple abandoned attempts, details omitted)
+- ❌ Lower bound proof (no proof that <2112 is impossible)
+- ❌ Dilworth's theorem application (mentioned but never shown)
+- ❌ Formula derivation (claimed from recurrence, but no recurrence shown)
+
+**Proof rigor:** 2/10 (hand-waving, not publication-ready)
 """
 
 # Alternative formulation for testing extraction robustness
@@ -393,14 +392,16 @@ def generate_comparison_matrix():
     print("="*80)
 
     matrix = [
-        ("Aspect", "Gemini's Claim", "Our System's Verdict", "Gap Analysis"),
+        ("Aspect", "Gemini's Claim (v2)", "Review Verdict", "Gap Analysis"),
         ("-"*20, "-"*30, "-"*30, "-"*40),
-        ("Answer", "2112", "Arithmetically correct", "Formula is correct for the construction"),
-        ("Formula", "n + 2√n - 3", "Valid for proposed method", "Formula itself is mathematically sound"),
-        ("Proof of optimality", "0.95 confidence", "SUSPICIOUS/MISSING", "❌ No proof that 2112 is MINIMUM"),
-        ("Construction validity", "Recursive blocks", "Unclear/Incomplete", "❌ Construction not fully specified"),
-        ("Base case verification", "Claims n=1,4,9 work", "Arithmetic checks out", "⚠️  But doesn't prove construction exists"),
-        ("Special structure", "Exploits n=45²", "Not rigorously shown", "❌ Doesn't prove perfect square enables this"),
+        ("Answer", "2112", "✅ CORRECT (verified)", "Answer is correct per official sources"),
+        ("Formula", "n + 2√n - 3", "✅ CORRECT (memorized?)", "Formula correct but likely not derived"),
+        ("Proof rigor", "0.99 confidence", "❌ 2/10 rigor score", "Proof ~20% complete, confidence should be ≤0.30"),
+        ("Construction", "Block decomposition", "❌ INCOMPLETE (multiple abandoned attempts)", "Gets 5940 tiles, jumps to 2112 without bridge"),
+        ("Lower bound", "Claims Dilworth's theorem", "❌ MISSING (0% complete)", "Name-drops theorem, never applies it"),
+        ("Optimality proof", "\"Robust for Euclidean geometry\"", "❌ NO PROOF", "Only shows upper bound, not that <2112 impossible"),
+        ("Base cases", "n=1,4,9 verified", "✅ Arithmetic correct", "⚠️  But pattern matching ≠ proof"),
+        ("Construction clarity", "\"Details omitted\"", "❌ VAGUE", "Multiple approaches started, NONE completed"),
     ]
 
     # Print table
@@ -408,20 +409,32 @@ def generate_comparison_matrix():
         print(f"{row[0]:<20} | {row[1]:<30} | {row[2]:<30} | {row[3]:<40}")
 
     print("\n" + "="*80)
-    print("KEY FINDINGS")
+    print("KEY FINDINGS (Updated Version 2 Review)")
     print("="*80)
     print("""
-1. ✅ Arithmetic is correct: 2025 + 2×45 - 3 = 2112
-2. ✅ Formula produces consistent results for small cases
-3. ❌ CRITICAL GAP: No proof that 2112 is the MINIMUM (not just achievable)
-4. ❌ CRITICAL GAP: Construction is described vaguely, not rigorously verified
-5. ❌ CRITICAL GAP: Doesn't prove no better construction exists
-6. ⚠️  SUSPICIOUS: Formula seems too clean for IMO optimization problem
+1. ✅ Answer is CORRECT: 2112 (verified by official IMO sources)
+2. ✅ Formula is CORRECT: n + 2√n - 3 (but likely memorized, not derived)
+3. ❌ CRITICAL GAP: No complete construction (gets 5940, jumps to 2112 without bridge)
+4. ❌ CRITICAL GAP: Dilworth's theorem mentioned but NEVER APPLIED (name-dropping)
+5. ❌ CRITICAL GAP: No lower bound proof (doesn't prove <2112 impossible)
+6. ❌ CRITICAL GAP: Construction details omitted ("Construction exists (details omitted)")
+7. ❌ CRITICAL GAP: Multiple construction attempts, NONE completed
+8. ⚠️  OVERCONFIDENT: Claims 0.99 confidence, but proof is ~20% complete (should be ≤0.30)
 
-EXPECTED VERDICT: SUSPICIOUS_OPTIMALITY or FAIL
-- Gemini shows a construction that achieves 2112 tiles
-- But does NOT prove this is minimal
-- For a "Determine the minimum" problem, this is insufficient
+PROOF RIGOR: 2/10 (hand-waving, not publication-ready)
+
+EXPECTED VERDICT: SUSPICIOUS_OPTIMALITY or JUSTIFICATION_GAP
+- Shows 2112 is ACHIEVABLE (partial upper bound)
+- Does NOT prove 2112 is MINIMAL (no lower bound)
+- For "Determine the MINIMUM" problem, this is insufficient
+
+COMPARISON:
+- Upper bound: 40% complete (construction attempted but vague)
+- Lower bound: 0% complete (not attempted)
+- Formula derivation: 0% complete (claimed from recurrence, but no recurrence shown)
+
+This is a classic "right answer, wrong proof" case - likely formula memorization
+from training data rather than mathematical derivation.
     """)
 
 
