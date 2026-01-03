@@ -107,9 +107,9 @@ def test_llm_api_request(schema, num_attempts=3):
     print("TEST 3: LLM API Request")
     print("=" * 70)
 
-    # Get API configuration
-    api_url = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
-    api_key = os.getenv("GPT_OSS_API_KEY", "")
+    # Get API configuration - default to OpenRouter from CLAUDE.md
+    api_url = os.getenv("GPT_OSS_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+    api_key = os.getenv("GPT_OSS_API_KEY", "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")
     model_name = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
 
     print(f"API URL: {api_url}")
@@ -128,7 +128,7 @@ def test_llm_api_request(schema, num_attempts=3):
         "messages": [
             {
                 "role": "system",
-                "content": "You are a mathematical problem solver. Provide rigorous solutions."
+                "content": "You are a mathematical problem solver. Provide rigorous solutions in valid JSON format."
             },
             {
                 "role": "user",
@@ -143,8 +143,8 @@ def test_llm_api_request(schema, num_attempts=3):
                 "strict": True
             }
         },
-        "temperature": 0.7,
-        "max_tokens": 2000
+        "temperature": 0.3,  # Lower temperature for more deterministic JSON
+        "max_tokens": 4000   # Increased to avoid truncation
     }
 
     # Check if model uses extra_body for reasoning
@@ -169,12 +169,14 @@ def test_llm_api_request(schema, num_attempts=3):
             if response.status_code == 200:
                 data = response.json()
                 content = data["choices"][0]["message"]["content"]
+                finish_reason = data["choices"][0].get("finish_reason", "unknown")
 
                 # Parse JSON response
                 try:
                     solution_data = json.loads(content)
                     final_answer = solution_data.get("final_answer")
                     method = solution_data.get("method", "unknown")
+                    solution_text = solution_data.get("solution", "")
 
                     # Check against blacklist
                     blacklisted_values = schema["properties"]["final_answer"]["not"]["enum"]
@@ -185,17 +187,33 @@ def test_llm_api_request(schema, num_attempts=3):
                         "final_answer": final_answer,
                         "method": method,
                         "is_blacklisted": is_blacklisted,
+                        "finish_reason": finish_reason,
                         "success": True
                     })
 
                     status = "❌ BLACKLISTED" if is_blacklisted else "✅ VALID"
-                    print(f"   Attempt {i+1}: answer={final_answer}, method={method[:30]}... → {status}")
+                    truncated = " (truncated)" if finish_reason == "length" else ""
+                    print(f"   Attempt {i+1}: answer={final_answer}, method={method[:30]}...{truncated} → {status}")
 
                 except json.JSONDecodeError as e:
+                    # Show what went wrong
                     print(f"   Attempt {i+1}: ⚠️  JSON parse error: {e}")
+                    print(f"      Raw response length: {len(content)} chars")
+                    print(f"      Finish reason: {finish_reason}")
+                    if finish_reason == "length":
+                        print(f"      ⚠️  Response was TRUNCATED - increase max_tokens")
+                    # Show first and last 100 chars to debug
+                    if len(content) > 200:
+                        print(f"      First 100 chars: {content[:100]}")
+                        print(f"      Last 100 chars: ...{content[-100:]}")
+                    else:
+                        print(f"      Content: {content}")
                     results.append({
                         "attempt": i + 1,
                         "error": "json_parse_error",
+                        "error_detail": str(e),
+                        "finish_reason": finish_reason,
+                        "content_length": len(content),
                         "success": False
                     })
             else:
