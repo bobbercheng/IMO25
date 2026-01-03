@@ -3,17 +3,29 @@
 Unit test for schema blacklist with actual LLM API.
 
 This script tests that:
-1. Schema generation works correctly (compact "not" constraint)
-2. LLM API accepts the schema format
-3. Model physically cannot generate blacklisted values
-4. Model can generate other valid values
+1. Schema generation works correctly (compact anyOf constraint)
+2. Schema metadata extraction works
+3. Answer validation works correctly
+4. LLM API respects the schema blacklist (100% compliance expected)
+
+Configuration:
+    Uses OpenRouter by default (from CLAUDE.md):
+    - API URL: https://openrouter.ai/api/v1/chat/completions
+    - Model: openai/gpt-oss-120b
+    - API Key: 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
+
+    Override with environment variables:
+    - GPT_OSS_API_URL
+    - GPT_OSS_MODEL_NAME
+    - GPT_OSS_API_KEY
 
 Usage:
+    # Run with OpenRouter defaults
     python test_schema_blacklist_llm.py
 
-Requirements:
-    - GPT_OSS_API_URL and GPT_OSS_API_KEY environment variables set
-    - OpenRouter or local GPT-OSS deployment running
+    # Or override with environment variables
+    export GPT_OSS_API_URL=http://localhost:30000/v1/chat/completions
+    python test_schema_blacklist_llm.py
 """
 
 import os
@@ -334,17 +346,9 @@ def main():
         # Test 3: Answer validation
         validation_ok = test_answer_validation()
 
-        # Test 4: LLM API request (only if API is available)
-        api_url = os.getenv("GPT_OSS_API_URL")
-        if api_url:
-            results = test_llm_api_request(schema, num_attempts=3)
-        else:
-            print("\n" + "=" * 70)
-            print("TEST 3: LLM API Request")
-            print("=" * 70)
-            print("⚠️  SKIPPED: GPT_OSS_API_URL not set")
-            print("   Set environment variable to test with actual LLM")
-            results = []
+        # Test 4: LLM API request
+        # Always runs with OpenRouter defaults from CLAUDE.md
+        results = test_llm_api_request(schema, num_attempts=3)
 
         # Summary
         print("\n" + "=" * 70)
