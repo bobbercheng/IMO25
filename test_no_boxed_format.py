@@ -143,21 +143,22 @@ class TestNoBoxedFormat(unittest.TestCase):
         print("LLM INTEGRATION TEST: No \\boxed{} in solution field")
         print("="*80)
 
-        # Simple math problem for testing
+        # Simple math problem for testing (answer is 24)
         problem_statement = """
 Find the smallest positive integer n such that n^2 + n is divisible by 100.
-
-This is a test problem - the answer should be a small integer.
 """
 
         # Create schema with blacklist (to test anyOf constraint too)
         import tempfile
 
+        # Use blacklist that doesn't create weird ranges
+        # Correct answer is 24, so blacklist nearby wrong values
         blacklist = {
             "problem_id": "test_simple",
             "solutions": [
-                {"answer": "10", "method": "guess", "verdict": "FAIL"},
-                {"answer": "25", "method": "wrong_calculation", "verdict": "FAIL"}
+                {"answer": "20", "method": "guess", "verdict": "FAIL"},
+                {"answer": "25", "method": "wrong_calculation", "verdict": "FAIL"},
+                {"answer": "50", "method": "wrong_approach", "verdict": "FAIL"}
             ]
         }
 
@@ -187,24 +188,27 @@ CRITICAL FORMAT REQUIREMENTS:
 1. The 'solution' field contains ONLY your mathematical reasoning and proof.
    - DO NOT include the final numerical answer in \\boxed{{}} format
    - Focus on explaining WHY your answer is correct
+   - Keep your solution concise but complete
 
 2. The 'final_answer' field contains ONLY the integer value.
    - This is the conclusive result from your reasoning
 
-3. FORBIDDEN answers (proven incorrect): [10, 25]
+3. FORBIDDEN answers (proven incorrect): [20, 25, 50]
    - You MUST arrive at a different answer
 """
 
             # Make API request
             print("\n[API REQUEST] Generating solution with new format...")
+            print(f"[API CONFIG] Using model: {os.getenv('GPT_OSS_MODEL_NAME', 'openai/gpt-oss-120b')}")
+            print(f"[API CONFIG] Using endpoint: {os.getenv('GPT_OSS_API_URL', 'http://localhost:30000/v1/chat/completions')}")
 
             payload = {
                 "model": os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b"),
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.7,
-                "max_tokens": 2000,
+                "temperature": 0.3,  # Lower temperature for more focused responses
+                "max_tokens": 3000,  # Increased to handle complete JSON
                 "response_format": {
                     "type": "json_schema",
                     "json_schema": {
@@ -226,7 +230,25 @@ CRITICAL FORMAT REQUIREMENTS:
             response_text = extract_text_from_response(response)
             print(f"\n[API RESPONSE] Raw text length: {len(response_text)} chars")
 
-            solution_dict = json.loads(response_text)
+            # Check for truncation
+            if hasattr(response, 'choices') and response.choices:
+                finish_reason = response.choices[0].finish_reason
+                print(f"[API RESPONSE] Finish reason: {finish_reason}")
+
+                if finish_reason == "length":
+                    print("\n⚠️  WARNING: Response was truncated (hit max_tokens limit)")
+                    print("This may result in incomplete JSON. Attempting to parse anyway...")
+
+            # Parse JSON with error handling
+            try:
+                solution_dict = json.loads(response_text)
+            except json.JSONDecodeError as e:
+                print(f"\n✗ JSON PARSING FAILED: {e}")
+                print(f"\n[RAW RESPONSE] First 1000 chars:")
+                print(response_text[:1000])
+                print(f"\n[RAW RESPONSE] Last 500 chars:")
+                print(response_text[-500:])
+                self.fail(f"Failed to parse JSON response: {e}\nResponse may be truncated or malformed.")
 
             # Print response
             print("\n[RESPONSE STRUCTURE]")
@@ -251,11 +273,17 @@ CRITICAL FORMAT REQUIREMENTS:
             print(f"✓ PASS: final_answer is integer: {final_answer}")
 
             # VALIDATION 3: Verify final_answer NOT in blacklist
-            blacklisted_values = [10, 25]
+            blacklisted_values = [20, 25, 50]
             self.assertNotIn(final_answer, blacklisted_values,
                            f"final_answer {final_answer} should not be blacklisted")
 
             print(f"✓ PASS: final_answer {final_answer} is not blacklisted (avoiding {blacklisted_values})")
+
+            # VALIDATION 3.5: Check if answer is correct (expected: 24)
+            if final_answer == 24:
+                print(f"✓ BONUS: final_answer {final_answer} is CORRECT! (24^2 + 24 = 600, divisible by 100)")
+            else:
+                print(f"ℹ️  NOTE: final_answer {final_answer} may not be correct (expected 24)")
 
             # VALIDATION 4: Verify solution does NOT contain \boxed{}
             is_valid, error_msg = validate_no_boxed_in_solution(solution_dict, verbose=False)
@@ -285,11 +313,13 @@ CRITICAL FORMAT REQUIREMENTS:
             print("ALL VALIDATIONS PASSED ✓")
             print("="*80)
             print("\nSUMMARY:")
-            print(f"  - Model generated solution WITHOUT \\boxed{{}} format")
-            print(f"  - final_answer field: {final_answer} (integer)")
-            print(f"  - Blacklist constraint enforced (avoided {blacklisted_values})")
-            print(f"  - Solution contains reasoning: {len(solution_text)} chars")
-            print("\n✅ NEW FORMAT WORKING CORRECTLY")
+            print(f"  - Model generated solution WITHOUT \\boxed{{}} format ✓")
+            print(f"  - final_answer field: {final_answer} (integer type) ✓")
+            print(f"  - Blacklist constraint enforced: avoided {blacklisted_values} ✓")
+            print(f"  - Solution contains reasoning: {len(solution_text)} chars ✓")
+            if final_answer == 24:
+                print(f"  - Answer is mathematically CORRECT (24) ✓✓")
+            print("\n✅ NEW FORMAT WORKING CORRECTLY - SINGLE SOURCE OF TRUTH VALIDATED")
 
         finally:
             os.unlink(blacklist_file)
