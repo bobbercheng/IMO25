@@ -3096,6 +3096,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
             blacklist_prompt = ""
 
     # SCHEMA BLACKLIST: Use JSON schema for hard constraint (100% compliance, 0% waste)
+    schema_blacklisted_values = None  # Store for validation later
     if use_schema_blacklist and SCHEMA_BLACKLIST_AVAILABLE and problem_file:
         try:
             schema = get_blacklist_constrained_schema(problem_file, problem_statement)
@@ -3108,6 +3109,7 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
                 }
             }
             metadata = get_schema_metadata(schema)
+            schema_blacklisted_values = metadata.get('blacklisted_values', [])
             if verbose:
                 print(f"[SCHEMA BLACKLIST] ✅ Enabled")
                 print(f"[SCHEMA BLACKLIST]   Constraint: {metadata['constraint_type']}")
@@ -3173,6 +3175,17 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     solution = extract_solution(extract_text_from_response(response2))
     print(f">>>>>>> Corrected solution:")
     print(json.dumps(solution, indent=4))
+
+    # GAMING DETECTION: Validate blacklist consistency
+    if schema_blacklisted_values and solution:
+        is_valid, gaming_msg = validate_blacklist_consistency(solution, schema_blacklisted_values, verbose=verbose)
+        if not is_valid:
+            print(f"\n{'='*80}")
+            print(f"[GAMING DETECTED] This solution will be marked as FAILED")
+            print(f"{'='*80}\n")
+            # Return None for solution to indicate failure
+            # This forces BFS to try another attempt with a different prompt
+            return p1, None, gaming_msg, "no"
 
     print(f">>>>>>> Verify the solution.")
     verify, good_verify, _, _ = verify_solution(problem_statement, solution, verbose, verification_reasoning)
@@ -3511,6 +3524,117 @@ def validate_no_boxed_in_solution(solution, verbose=True):
 
     if verbose:
         print(">>>>>>> [VALIDATION] ✓ Solution text does not contain \\boxed{} (correct format)")
+
+    return True, None
+
+
+def validate_blacklist_consistency(solution, blacklist, verbose=True):
+    """
+    Validate that solution does not derive a blacklisted answer in the text
+    while returning a different value in final_answer field (gaming detection).
+
+    This catches the evolved gaming behavior where the model:
+    1. Uses correct mathematical reasoning to derive a blacklisted value (e.g., 4048)
+    2. Writes that value in solution text (e.g., "the answer is $4048$")
+    3. Returns a slightly different value in final_answer field (e.g., 4047)
+       to satisfy the anyOf constraint
+
+    Args:
+        solution: Solution dict with 'solution' and 'final_answer' fields
+        blacklist: List of blacklisted values to check
+        verbose: Print validation messages
+
+    Returns:
+        (is_valid, error_msg) tuple
+        - is_valid: True if no gaming detected, False if gaming found
+        - error_msg: Description of gaming behavior if detected, None otherwise
+
+    Example Gaming Pattern:
+        solution_text: "Hence 2n-2 = 2×2025-2 = 4048. The answer is $4048$."
+        final_answer: 4047
+        blacklist: [2025, 4048, 4050]
+        Result: INVALID - solution derives 4048 but final_answer is 4047
+    """
+    import re
+
+    solution_text = get_solution_text(solution)
+    final_answer = solution.get('final_answer')
+
+    if final_answer is None:
+        return True, None  # Can't validate without final_answer
+
+    # Convert final_answer to string for comparison
+    final_answer_str = str(final_answer)
+
+    # Extract all numerical values mentioned in solution text
+    # Look for patterns like: $4048$, \(4048\), "4048", answer is 4048, etc.
+    number_patterns = [
+        r'\$(\d+)\$',                    # $4048$
+        r'\\boxed\{(\d+)\}',             # \boxed{4048}
+        r'answer is (\d+)',               # answer is 4048
+        r'equals? (\d+)',                 # equals 4048, equal 4048
+        r'= (\d+)\.?\s*$',                # = 4048. (at end of sentence)
+        r'is (\d+)\.?\s*(?:$|\n)',        # is 4048. (at end)
+    ]
+
+    mentioned_numbers = set()
+    for pattern in number_patterns:
+        matches = re.findall(pattern, solution_text, re.IGNORECASE | re.MULTILINE)
+        mentioned_numbers.update(matches)
+
+    # Check 1: Does solution text mention any blacklisted value?
+    blacklisted_in_solution = []
+    for num_str in mentioned_numbers:
+        try:
+            num = int(num_str)
+            if num in blacklist:
+                blacklisted_in_solution.append(num)
+        except ValueError:
+            continue
+
+    if blacklisted_in_solution:
+        # Check 2: Is final_answer different from what solution derives?
+        if final_answer not in blacklisted_in_solution:
+            # GAMING DETECTED: Solution derives blacklisted value but final_answer is different
+            error_msg = (
+                f"GAMING DETECTED: Solution text derives blacklisted value(s) {blacklisted_in_solution}, "
+                f"but final_answer is {final_answer}. This suggests the model used a blacklisted "
+                f"method (leading to {blacklisted_in_solution[0]}) but tweaked the final_answer "
+                f"to satisfy the constraint. The method should be changed, not just the final number."
+            )
+
+            if verbose:
+                print(f">>>>>>> [BLACKLIST VALIDATION] ❌ {error_msg}")
+                print(f">>>>>>> [BLACKLIST VALIDATION] Solution mentions: {sorted(mentioned_numbers)}")
+                print(f">>>>>>> [BLACKLIST VALIDATION] Blacklisted values found: {blacklisted_in_solution}")
+                print(f">>>>>>> [BLACKLIST VALIDATION] final_answer: {final_answer}")
+
+            return False, error_msg
+        else:
+            # Solution derives blacklisted value AND final_answer matches it
+            # This means the blacklist constraint wasn't enforced by schema (shouldn't happen)
+            error_msg = (
+                f"CONSTRAINT VIOLATION: Solution derives blacklisted value {final_answer} "
+                f"which appears in both solution text and final_answer field. "
+                f"The anyOf constraint should have prevented this."
+            )
+
+            if verbose:
+                print(f">>>>>>> [BLACKLIST VALIDATION] ⚠️  {error_msg}")
+
+            return False, error_msg
+
+    # Check 3: Consistency check - does final_answer appear in solution text?
+    if final_answer_str not in mentioned_numbers:
+        # This is acceptable - the solution might not explicitly state the final number
+        # as long as it doesn't derive a blacklisted value
+        if verbose:
+            print(f">>>>>>> [BLACKLIST VALIDATION] ℹ️  Note: final_answer ({final_answer}) not explicitly mentioned in solution text")
+            print(f">>>>>>> [BLACKLIST VALIDATION] Solution mentions: {sorted(mentioned_numbers)}")
+
+    if verbose:
+        print(f">>>>>>> [BLACKLIST VALIDATION] ✓ No gaming detected")
+        print(f">>>>>>> [BLACKLIST VALIDATION] final_answer: {final_answer}, blacklist: {blacklist}")
 
     return True, None
 
