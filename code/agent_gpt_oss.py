@@ -863,6 +863,21 @@ def extract_text_from_response(response_data):
         message = response_data['choices'][0]['message']
         content = message.get('content', '')
 
+        # ROOT CAUSE FIX #2: Handle truncation (finish_reason: "length")
+        # When high reasoning effort causes truncation, OpenRouter returns:
+        # - content = "" (empty)
+        # - reasoning_content = "...actual response..." (20KB+)
+        # Without this fix, we get empty string → JSON parsing fails
+        finish_reason = response_data['choices'][0].get('finish_reason', '')
+        if not content and finish_reason == 'length':
+            # Try to extract from reasoning_content field
+            reasoning_content = message.get('reasoning_content', '')
+            if reasoning_content:
+                content = reasoning_content
+                print(f">>>>>>> [TRUNCATION FIX] Extracted {len(content)} chars from reasoning_content (finish_reason: length)")
+            else:
+                print(f">>>>>>> [TRUNCATION] Warning: Response truncated but no reasoning_content found")
+
         # Clean reasoning tags from content
         content = clean_reasoning_tags(content)
 
@@ -7266,11 +7281,16 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 #self improvement
                 print(">>>>>>> Verification does not pass, correcting ...")
 
+                # ROOT CAUSE FIX #1: Preserve response_format from initial request
+                # Without this, corrections return plain text instead of JSON
+                initial_response_format = p1.get("response_format") if 'p1' in locals() else None
+
                 p1 = build_request_payload(
                     system_prompt=step1_prompt,
                     question_prompt=problem_statement,
                     other_prompts=other_prompts,
-                    reasoning_effort=sol_reasoning  # Use CLI-specified solution reasoning
+                    reasoning_effort=sol_reasoning,  # Use CLI-specified solution reasoning
+                    response_format=initial_response_format  # ← FIX: Include schema for corrections
                 )
 
                 # Append previous solution as assistant message
@@ -7561,7 +7581,13 @@ Do not simply rephrase or polish the previous approach - create something new.
                 return None
 
         except Exception as e:
+            # ROOT CAUSE FIX #3: Enhanced error logging with full stacktrace
+            # Helps identify exact line where error originated
             print(f">>>>>>> Error in run {i}: {e}")
+            print(f">>>>>>> Exception type: {type(e).__name__}")
+            print(f">>>>>>> Stacktrace:")
+            import traceback
+            traceback.print_exc()
             continue
 
     if(not success):
