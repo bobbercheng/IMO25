@@ -228,7 +228,27 @@ CRITICAL FORMAT REQUIREMENTS:
 
             # Extract and parse response
             response_text = extract_text_from_response(response)
-            print(f"\n[API RESPONSE] Raw text length: {len(response_text)} chars")
+
+            # Check if response_text is already a dict (structured output parsed)
+            # or a string (needs JSON parsing)
+            if isinstance(response_text, dict):
+                # Already parsed by extract_text_from_response
+                solution_dict = response_text
+                print(f"\n[API RESPONSE] Structured output already parsed")
+            else:
+                # String response - needs JSON parsing
+                print(f"\n[API RESPONSE] Raw text length: {len(response_text)} chars")
+
+                # Parse JSON with error handling
+                try:
+                    solution_dict = json.loads(response_text)
+                except json.JSONDecodeError as e:
+                    print(f"\n✗ JSON PARSING FAILED: {e}")
+                    print(f"\n[RAW RESPONSE] First 1000 chars:")
+                    print(response_text[:1000])
+                    print(f"\n[RAW RESPONSE] Last 500 chars:")
+                    print(response_text[-500:])
+                    self.fail(f"Failed to parse JSON response: {e}\nResponse may be truncated or malformed.")
 
             # Check for truncation
             if hasattr(response, 'choices') and response.choices:
@@ -237,32 +257,44 @@ CRITICAL FORMAT REQUIREMENTS:
 
                 if finish_reason == "length":
                     print("\n⚠️  WARNING: Response was truncated (hit max_tokens limit)")
-                    print("This may result in incomplete JSON. Attempting to parse anyway...")
-
-            # Parse JSON with error handling
-            try:
-                solution_dict = json.loads(response_text)
-            except json.JSONDecodeError as e:
-                print(f"\n✗ JSON PARSING FAILED: {e}")
-                print(f"\n[RAW RESPONSE] First 1000 chars:")
-                print(response_text[:1000])
-                print(f"\n[RAW RESPONSE] Last 500 chars:")
-                print(response_text[-500:])
-                self.fail(f"Failed to parse JSON response: {e}\nResponse may be truncated or malformed.")
+                    print("This may result in incomplete JSON.")
 
             # Print response
             print("\n[RESPONSE STRUCTURE]")
+            print(f"  Keys: {list(solution_dict.keys())}")
             print(f"  solution: {len(solution_dict.get('solution', ''))} chars")
             print(f"  method: {solution_dict.get('method', 'N/A')}")
             print(f"  final_answer: {solution_dict.get('final_answer', 'N/A')}")
 
+            # Check for empty response
+            if not solution_dict or len(solution_dict) == 0:
+                print("\n✗ ERROR: Response is empty!")
+                print(f"[DEBUG] Full response object:")
+                print(json.dumps(response, indent=2) if isinstance(response, dict) else str(response))
+                self.fail("API returned empty response - check API key, endpoint, and model availability")
+
             print("\n[SOLUTION TEXT] (first 500 chars)")
-            print(solution_dict.get('solution', '')[:500])
+            solution_text_preview = solution_dict.get('solution', '')[:500]
+            print(solution_text_preview if solution_text_preview else "(empty)")
 
             # VALIDATION 1: Verify structure
-            self.assertIn('solution', solution_dict, "Response should have 'solution' field")
-            self.assertIn('final_answer', solution_dict, "Response should have 'final_answer' field")
-            self.assertIn('method', solution_dict, "Response should have 'method' field")
+            if 'solution' not in solution_dict:
+                print(f"\n✗ ERROR: Missing 'solution' field")
+                print(f"[DEBUG] Available fields: {list(solution_dict.keys())}")
+                print(f"[DEBUG] Full response: {json.dumps(solution_dict, indent=2)}")
+                self.fail("Response missing 'solution' field")
+
+            if 'final_answer' not in solution_dict:
+                print(f"\n✗ ERROR: Missing 'final_answer' field")
+                print(f"[DEBUG] Available fields: {list(solution_dict.keys())}")
+                print(f"[DEBUG] Full response: {json.dumps(solution_dict, indent=2)}")
+                self.fail("Response missing 'final_answer' field")
+
+            if 'method' not in solution_dict:
+                print(f"\n✗ ERROR: Missing 'method' field")
+                print(f"[DEBUG] Available fields: {list(solution_dict.keys())}")
+                print(f"[DEBUG] Full response: {json.dumps(solution_dict, indent=2)}")
+                self.fail("Response missing 'method' field")
 
             print("\n✓ PASS: Response has correct structure")
 
