@@ -247,21 +247,19 @@ def get_blacklist_constrained_schema(
     # OPTION 1: Use enum ONLY for very small ranges (< 50 values)
     # SINGLE SOURCE OF TRUTH: Remove final_answer field, extract from \boxed{} later
     if use_enum and range_size <= max_enum_size:
-        # Build simple pattern that blocks ONLY \boxed{blacklisted_value}
-        # Use sorted(set()) to ensure unique values and consistent ordering
+        # Deduplicate blacklist values
         unique_blacklisted = sorted(set(blacklisted_nums))
-        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in unique_blacklisted]
-        combined_pattern = "|".join(boxed_patterns) if boxed_patterns else "(?!.*)"  # Never match if empty
 
         schema = {
             "type": "object",
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}.",
-                    "not": {
-                        "pattern": combined_pattern
-                    } if boxed_patterns else {}
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
+                    # NOTE: Cannot use "not": {"pattern": ...} to enforce blacklist because
+                    # OpenAI's Structured Outputs does not support "not" constraints.
+                    # See: https://platform.openai.com/docs/guides/structured-outputs#supported-schemas
+                    # Blacklist validation MUST be done via post-processing in parse_structured_solution()
                 },
                 "method": {
                     "type": "string",
@@ -274,23 +272,19 @@ def get_blacklist_constrained_schema(
     # OPTION 2: Use "anyOf" with range splits for compact blacklist (RECOMMENDED)
     # SINGLE SOURCE OF TRUTH: Remove final_answer field, extract from \boxed{} later
     elif blacklisted_nums:
-        # Build simple pattern that blocks ONLY \boxed{blacklisted_value}
-        # This prevents model from writing blacklisted values as final answer
-        # Intermediate calculations like "For n=2025..." are still allowed
-        # Use sorted(set()) to ensure unique values and consistent ordering
+        # Deduplicate blacklist values
         unique_blacklisted = sorted(set(blacklisted_nums))
-        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in unique_blacklisted]
-        combined_pattern = "|".join(boxed_patterns)
 
         schema = {
             "type": "object",
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach.",
-                    "not": {
-                        "pattern": combined_pattern
-                    }
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
+                    # NOTE: Cannot use "not": {"pattern": ...} to enforce blacklist because
+                    # OpenAI's Structured Outputs does not support "not" constraints.
+                    # See: https://platform.openai.com/docs/guides/structured-outputs#supported-schemas
+                    # Blacklist validation MUST be done via post-processing in parse_structured_solution()
                 },
                 "method": {
                     "type": "string",
