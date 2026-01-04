@@ -248,7 +248,9 @@ def get_blacklist_constrained_schema(
     # SINGLE SOURCE OF TRUTH: Remove final_answer field, extract from \boxed{} later
     if use_enum and range_size <= max_enum_size:
         # Build simple pattern that blocks ONLY \boxed{blacklisted_value}
-        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in blacklisted_nums]
+        # Use sorted(set()) to ensure unique values and consistent ordering
+        unique_blacklisted = sorted(set(blacklisted_nums))
+        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in unique_blacklisted]
         combined_pattern = "|".join(boxed_patterns) if boxed_patterns else "(?!.*)"  # Never match if empty
 
         schema = {
@@ -256,7 +258,7 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {blacklisted_nums}.",
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}.",
                     "not": {
                         "pattern": combined_pattern
                     } if boxed_patterns else {}
@@ -275,7 +277,9 @@ def get_blacklist_constrained_schema(
         # Build simple pattern that blocks ONLY \boxed{blacklisted_value}
         # This prevents model from writing blacklisted values as final answer
         # Intermediate calculations like "For n=2025..." are still allowed
-        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in blacklisted_nums]
+        # Use sorted(set()) to ensure unique values and consistent ordering
+        unique_blacklisted = sorted(set(blacklisted_nums))
+        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in unique_blacklisted]
         combined_pattern = "|".join(boxed_patterns)
 
         schema = {
@@ -283,7 +287,7 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {blacklisted_nums}. You MUST use a completely different approach.",
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach.",
                     "not": {
                         "pattern": combined_pattern
                     }
