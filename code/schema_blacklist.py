@@ -318,17 +318,17 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": "Detailed mathematical solution with step-by-step reasoning. CRITICAL: Your solution MUST contain the answer in \\boxed{answer} format that EXACTLY matches the final_answer field (e.g., if final_answer is 42, write '\\boxed{42}'). Any mismatch will be rejected."
+                    "description": "Complete mathematical reasoning and proof with rigorous step-by-step justification. This field contains ONLY the logical argumentation, lemmas, constructions, and derivations. DO NOT include the final numerical answer in \\boxed{} format here - the answer belongs exclusively in the 'final_answer' field. Focus on explaining WHY your answer is correct."
                 },
                 "method": {
                     "type": "string",
-                    "description": "Mathematical method or technique used"
+                    "description": "Mathematical method or technique used (e.g., 'induction', 'contradiction', 'construction')"
                 },
                 "final_answer": {
                     "type": "integer",
                     "minimum": min_val,
                     "maximum": max_val,
-                    "description": f"Final numerical answer in range [{min_val}, {max_val}]. This MUST match the value in \\boxed{{}} in your solution."
+                    "description": f"Final numerical answer in range [{min_val}, {max_val}]. This is the conclusive result derived from your reasoning in the 'solution' field."
                 }
             },
             "required": ["solution", "method", "final_answer"]
