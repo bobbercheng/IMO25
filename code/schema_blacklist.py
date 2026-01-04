@@ -245,85 +245,45 @@ def get_blacklist_constrained_schema(
         return anyof_ranges
 
     # OPTION 1: Use enum ONLY for very small ranges (< 50 values)
+    # SINGLE SOURCE OF TRUTH: Remove final_answer field, extract from \boxed{} later
     if use_enum and range_size <= max_enum_size:
-        valid_answers = [
-            x for x in range(min_val, max_val + 1)
-            if x not in blacklisted_nums
-        ]
-
-        # BUILD PATTERN CONSTRAINTS FOR SOLUTION TEXT (Critical fix!)
-        # Block blacklisted values in solution text to prevent model from
-        # writing correct answer in text but different value in JSON field
-        solution_patterns = []
-        for blacklisted_val in blacklisted_nums:
-            # Block common patterns where answer appears in solution text:
-            # - \boxed{4048}
-            # - answer is 4048
-            # - = 4048.
-            # - is 4048.
-            solution_patterns.extend([
-                f"\\\\boxed\\{{{blacklisted_val}\\}}",
-                f"answer is {blacklisted_val}",
-                f"= {blacklisted_val}\\.",
-                f"is {blacklisted_val}\\."
-            ])
-
-        # Combine all patterns into single NOT pattern (matches ANY blacklisted value)
-        combined_pattern = "|".join(solution_patterns) if solution_patterns else "(?!.*)"  # Never match if empty
+        # Build simple pattern that blocks ONLY \boxed{blacklisted_value}
+        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in blacklisted_nums]
+        combined_pattern = "|".join(boxed_patterns) if boxed_patterns else "(?!.*)"  # Never match if empty
 
         schema = {
             "type": "object",
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": "Detailed mathematical solution with step-by-step reasoning",
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. Must end with final answer in \\boxed{{}} format. BLACKLISTED answers (proven incorrect): {blacklisted_nums}.",
                     "not": {
                         "pattern": combined_pattern
-                    } if solution_patterns else {}
+                    } if boxed_patterns else {}
                 },
                 "method": {
                     "type": "string",
                     "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
-                },
-                "final_answer": {
-                    "type": "integer",
-                    "enum": valid_answers,
-                    "description": f"Final numerical answer. BLACKLISTED (do not use): {blacklisted_nums}. These have been proven INCORRECT."
                 }
             },
-            "required": ["solution", "method", "final_answer"]
+            "required": ["solution", "method"]
+            # NOTE: final_answer field REMOVED - will be extracted from \boxed{} in solution text
         }
     # OPTION 2: Use "anyOf" with range splits for compact blacklist (RECOMMENDED)
-    # This works on OpenRouter (unlike "not" constraint which is not supported)
+    # SINGLE SOURCE OF TRUTH: Remove final_answer field, extract from \boxed{} later
     elif blacklisted_nums:
-        anyof_ranges = build_anyof_ranges(min_val, max_val, blacklisted_nums)
-
-        # BUILD PATTERN CONSTRAINTS FOR SOLUTION TEXT (Critical fix!)
-        # Block blacklisted values in solution text to prevent model from
-        # writing correct answer in text but different value in JSON field
-        solution_patterns = []
-        for blacklisted_val in blacklisted_nums:
-            # Block common patterns where answer appears in solution text:
-            # - \boxed{4048}
-            # - answer is 4048
-            # - = 4048.
-            # - is 4048.
-            solution_patterns.extend([
-                f"\\\\boxed\\{{{blacklisted_val}\\}}",
-                f"answer is {blacklisted_val}",
-                f"= {blacklisted_val}\\.",
-                f"is {blacklisted_val}\\."
-            ])
-
-        # Combine all patterns into single NOT pattern (matches ANY blacklisted value)
-        combined_pattern = "|".join(solution_patterns)
+        # Build simple pattern that blocks ONLY \boxed{blacklisted_value}
+        # This prevents model from writing blacklisted values as final answer
+        # Intermediate calculations like "For n=2025..." are still allowed
+        boxed_patterns = [f"\\\\boxed\\{{{val}\\}}" for val in blacklisted_nums]
+        combined_pattern = "|".join(boxed_patterns)
 
         schema = {
             "type": "object",
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": "Detailed mathematical solution with step-by-step reasoning",
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. Must end with final answer in \\boxed{{}} format. FORBIDDEN answers (proven incorrect): {blacklisted_nums}. You MUST use a completely different approach.",
                     "not": {
                         "pattern": combined_pattern
                     }
@@ -331,14 +291,11 @@ def get_blacklist_constrained_schema(
                 "method": {
                     "type": "string",
                     "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
-                },
-                "final_answer": {
-                    "type": "integer",
-                    "anyOf": anyof_ranges,
-                    "description": f"Final numerical answer in range [{min_val}, {max_val}]. FORBIDDEN (proven incorrect): {blacklisted_nums}. You MUST use a different approach."
                 }
             },
-            "required": ["solution", "method", "final_answer"]
+            "required": ["solution", "method"]
+            # NOTE: final_answer field REMOVED - will be extracted from \boxed{} in solution text
+            # This prevents inconsistency between solution text and final_answer field
         }
     # OPTION 3: Fallback to range + description only (no blacklist entries yet)
     else:

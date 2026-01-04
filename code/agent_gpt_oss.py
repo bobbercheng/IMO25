@@ -1042,24 +1042,37 @@ def parse_structured_solution(content):
         if not isinstance(parsed, dict):
             return None
 
-        if 'solution' not in parsed or 'final_answer' not in parsed:
+        if 'solution' not in parsed:
             return None
 
         # Validate field types
-        # ROOT ROOT CAUSE FIX: final_answer should be integer, not string!
-        # Our schema requires: "final_answer": 42 (integer)
-        # NOT: "final_answer": "42" (string)
         if not isinstance(parsed['solution'], str):
-            return None
-
-        if not isinstance(parsed['final_answer'], int):
             return None
 
         # Validate non-empty solution text
         if not parsed['solution'].strip():
             return None
 
-        # final_answer is integer, no need to strip()
+        # SINGLE SOURCE OF TRUTH FIX:
+        # If final_answer is missing from JSON (schema blacklist case),
+        # extract it from \boxed{} in solution text
+        if 'final_answer' not in parsed:
+            import re
+            solution_text = parsed['solution']
+            boxed_match = re.search(r'\\boxed\{(\d+)\}', solution_text)
+
+            if not boxed_match:
+                print(">>>>>>> [EXTRACTION FAILED] No \\boxed{} found in solution text")
+                return None
+
+            final_answer = int(boxed_match.group(1))
+            parsed['final_answer'] = final_answer
+            print(f">>>>>>> [EXTRACTED] final_answer={final_answer} from \\boxed{{}}")
+
+        # Validate final_answer type (whether from JSON or extracted)
+        # ROOT ROOT CAUSE FIX: final_answer should be integer, not string!
+        if not isinstance(parsed['final_answer'], int):
+            return None
 
         return parsed
 
