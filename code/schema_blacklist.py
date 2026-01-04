@@ -256,7 +256,7 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. Must end with final answer in \\boxed{{}} format. BLACKLISTED answers (proven incorrect): {blacklisted_nums}.",
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {blacklisted_nums}.",
                     "not": {
                         "pattern": combined_pattern
                     } if boxed_patterns else {}
@@ -283,7 +283,7 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. Must end with final answer in \\boxed{{}} format. FORBIDDEN answers (proven incorrect): {blacklisted_nums}. You MUST use a completely different approach.",
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {blacklisted_nums}. You MUST use a completely different approach.",
                     "not": {
                         "pattern": combined_pattern
                     }

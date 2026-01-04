@@ -17,9 +17,9 @@ import json
 import requests
 from schema_blacklist import get_blacklist_constrained_schema
 
-# Configuration
-API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
-API_KEY = os.getenv("GPT_OSS_API_KEY", "dummy")
+# Configuration - Use OpenRouter from CLAUDE.md
+API_URL = os.getenv("GPT_OSS_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+API_KEY = os.getenv("GPT_OSS_API_KEY", "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")
 MODEL = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
 
 def test_real_llm_request():
@@ -77,7 +77,12 @@ What is the minimum possible number of tiles?
         "messages": [
             {
                 "role": "system",
-                "content": "You are a mathematical problem solver. Provide rigorous solutions."
+                "content": """You are a mathematical problem solver. Provide rigorous solutions.
+
+CRITICAL OUTPUT FORMAT REQUIREMENT:
+- Your solution MUST end with the final answer in \\boxed{} format
+- Example: "Therefore, the answer is \\boxed{42}."
+- This is MANDATORY - responses without \\boxed{} will be rejected"""
             },
             {
                 "role": "user",
@@ -85,14 +90,23 @@ What is the minimum possible number of tiles?
 
 {problem_statement}
 
-IMPORTANT:
-- You MUST end your solution with \\boxed{{answer}}
-- The following answers have been PROVEN INCORRECT: 4048, 4050, 2025
-- You MUST find a DIFFERENT approach that leads to a different answer
+CRITICAL REQUIREMENTS:
+1. You MUST end your solution with \\boxed{{final_answer}}
+   Example: "Therefore the minimum is \\boxed{{4044}}."
 
-Return JSON with:
-- solution: Complete mathematical proof
-- method: Brief method name"""
+2. The following answers have been PROVEN INCORRECT:
+   - 4048 (FORBIDDEN)
+   - 4050 (FORBIDDEN)
+   - 2025 (FORBIDDEN)
+   You MUST use a COMPLETELY DIFFERENT approach that leads to a different answer.
+
+3. Return JSON with EXACTLY this structure:
+   {{
+     "solution": "Your complete mathematical proof ending with \\boxed{{answer}}",
+     "method": "Brief method name"
+   }}
+
+Remember: Your solution MUST contain \\boxed{{answer}} or it will be rejected!"""
             }
         ],
         "response_format": response_format,
@@ -165,8 +179,20 @@ Return JSON with:
     boxed_match = re.search(r'\\boxed\{(\d+)\}', solution_text)
 
     if not boxed_match:
-        print(f"    ✗ No \\boxed{{}} found in solution")
-        print(f"    Solution preview: {solution_text[:200]}...")
+        print(f"    ✗ No \\boxed{{}} found in solution!")
+        print(f"    This means the model didn't follow the format requirement.")
+        print()
+        print("    Full solution text:")
+        print("    " + "=" * 60)
+        print(solution_text[:1000])
+        if len(solution_text) > 1000:
+            print(f"\n    ... (truncated, total length: {len(solution_text)} chars)")
+        print("    " + "=" * 60)
+        print()
+        print("    Possible issues:")
+        print("    1. Model ignored the \\boxed{} format requirement")
+        print("    2. Schema description needs to be stronger")
+        print("    3. Need to add \\boxed{} requirement to required fields")
         return False
 
     extracted_answer = int(boxed_match.group(1))
