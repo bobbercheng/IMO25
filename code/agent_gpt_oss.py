@@ -1046,12 +1046,20 @@ def parse_structured_solution(content):
             return None
 
         # Validate field types
-        if not isinstance(parsed['solution'], str) or not isinstance(parsed['final_answer'], str):
+        # ROOT ROOT CAUSE FIX: final_answer should be integer, not string!
+        # Our schema requires: "final_answer": 42 (integer)
+        # NOT: "final_answer": "42" (string)
+        if not isinstance(parsed['solution'], str):
             return None
 
-        # Validate non-empty
-        if not parsed['solution'].strip() or not parsed['final_answer'].strip():
+        if not isinstance(parsed['final_answer'], int):
             return None
+
+        # Validate non-empty solution text
+        if not parsed['solution'].strip():
+            return None
+
+        # final_answer is integer, no need to strip()
 
         return parsed
 
