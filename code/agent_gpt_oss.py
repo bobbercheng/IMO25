@@ -7016,6 +7016,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                             best_solution = sol
                             best_verify = ver
                             best_good_verify = good_ver
+                            best_p1 = p1  # ROOT CAUSE FIX #1C: Save p1 from best BFS attempt
                             print(f">>>>>>> BFS: New best solution (attempt {attempt+1})")
 
                         # Early stopping: if score > 0, likely has valid construction
@@ -7166,6 +7167,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 solution = best_solution
                 verify = best_verify
                 good_verify = best_good_verify
+                p1 = best_p1 if 'best_p1' in locals() else None  # ROOT CAUSE FIX #1C: Use p1 from best attempt
 
                 # Small-case verification: detect incomplete solutions and force small-case exploration
                 if SMALL_CASE_VERIFICATION_AVAILABLE:
@@ -7182,12 +7184,16 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                             problem_statement, solution, missing
                         )
 
+                        # ROOT CAUSE FIX #4: Save response_format before rebuilding p1
+                        saved_small_case_format = p1.get("response_format") if p1 and isinstance(p1, dict) else None
+
                         # Build request with previous solution as context
                         p1 = build_request_payload(
                             system_prompt=step1_prompt,
                             question_prompt=problem_statement,
                             other_prompts=other_prompts,
-                            reasoning_effort=sol_reasoning  # Use same reasoning as solution
+                            reasoning_effort=sol_reasoning,  # Use same reasoning as solution
+                            response_format=saved_small_case_format  # ROOT CAUSE FIX #4: Include schema
                         )
 
                         # Add small-case prompt to messages (extract text from dict if needed)
@@ -7237,6 +7243,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort
         _, good_verify, _, _ = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+        p1 = None  # No p1 when resuming from memory
+
+    # ROOT CAUSE FIX #1B: Save response_format for later reuse
+    # This preserves the schema from init_explorations for use in corrections
+    saved_response_format = p1.get("response_format") if p1 and isinstance(p1, dict) else None
+    if saved_response_format:
+        print(f">>>>>>> [SCHEMA] response_format preserved for corrections")
 
     error_count = 0
     correct_count = 1
@@ -7282,15 +7295,14 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 print(">>>>>>> Verification does not pass, correcting ...")
 
                 # ROOT CAUSE FIX #1: Preserve response_format from initial request
-                # Without this, corrections return plain text instead of JSON
-                initial_response_format = p1.get("response_format") if 'p1' in locals() else None
-
+                # Use saved_response_format from line 7244 (set after init_explorations)
+                # This ensures corrections use the same schema as initial attempts
                 p1 = build_request_payload(
                     system_prompt=step1_prompt,
                     question_prompt=problem_statement,
                     other_prompts=other_prompts,
                     reasoning_effort=sol_reasoning,  # Use CLI-specified solution reasoning
-                    response_format=initial_response_format  # ← FIX: Include schema for corrections
+                    response_format=saved_response_format  # ← FIX: Include schema for corrections
                 )
 
                 # Append previous solution as assistant message
