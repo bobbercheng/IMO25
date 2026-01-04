@@ -44,6 +44,30 @@ class TestSolutionDictHandling(unittest.TestCase):
         result = get_solution_text(None)
         self.assertEqual(result, "")
 
+    def test_extract_answer_simple_with_integer(self):
+        """Test extract_answer_simple with integer final_answer (from schema type: integer)."""
+        from agent_gpt_oss import extract_answer_simple
+
+        # Test with integer final_answer (schema type: integer)
+        solution_dict = {
+            "solution": "Test solution text",
+            "method": "test_method",
+            "final_answer": 4048
+        }
+        result = extract_answer_simple(solution_dict)
+        self.assertEqual(result, "4048")
+        self.assertIsInstance(result, str)  # Should return string, not int
+
+        # Test with string final_answer (legacy)
+        solution_dict_str = {
+            "solution": "Test solution text",
+            "method": "test_method",
+            "final_answer": "2025"
+        }
+        result = extract_answer_simple(solution_dict_str)
+        self.assertEqual(result, "2025")
+        self.assertIsInstance(result, str)
+
 
 
 

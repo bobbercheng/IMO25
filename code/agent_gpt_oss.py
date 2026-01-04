@@ -3418,25 +3418,29 @@ def extract_answer_simple(solution):
 
         answer = solution['final_answer']
 
+        # FIX TypeError: Convert to string if integer (from schema type: integer)
+        # Schema defines final_answer as int, but we need string for validation/storage
+        answer_str = str(answer) if not isinstance(answer, str) else answer
+
         # Validate answer is clean (not LaTeX fragment or variable assignment)
-        if len(answer) > 50:
+        if len(answer_str) > 50:
             raise ValueError(
-                f"Answer too long ({len(answer)} chars): likely LaTeX fragment. "
-                f"Got: {answer[:100]}"
+                f"Answer too long ({len(answer_str)} chars): likely LaTeX fragment. "
+                f"Got: {answer_str[:100]}"
             )
 
-        if '\\' in answer or '$' in answer:
+        if '\\' in answer_str or '$' in answer_str:
             raise ValueError(
-                f"Answer contains LaTeX symbols: {answer}"
+                f"Answer contains LaTeX symbols: {answer_str}"
             )
 
         # Check for variable assignments like "n = 2025"
-        if re.match(r'^[a-zA-Z_]\w*\s*=\s*', answer):
+        if re.match(r'^[a-zA-Z_]\w*\s*=\s*', answer_str):
             raise ValueError(
-                f"Answer looks like variable assignment, not final value: {answer}"
+                f"Answer looks like variable assignment, not final value: {answer_str}"
             )
 
-        return answer
+        return answer_str
     else:
         # Not a dict - this means structured output failed
         raise ValueError(
