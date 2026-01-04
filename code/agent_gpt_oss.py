@@ -7196,8 +7196,11 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
 
                 # Small-case verification: detect incomplete solutions and force small-case exploration
                 if SMALL_CASE_VERIFICATION_AVAILABLE:
+                    # FIX TypeError: Extract solution text from structured dict
+                    solution_text = get_solution_text(solution)
+
                     trigger, reason, missing = should_trigger_small_case_verification(
-                        solution, verify, good_verify
+                        solution_text, verify, good_verify
                     )
 
                     if trigger:
@@ -7206,7 +7209,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         print(f">>>>>>> [SMALL-CASE] Forcing explicit small-case exploration...")
 
                         small_case_prompt = generate_small_case_prompt(
-                            problem_statement, solution, missing
+                            problem_statement, solution_text, missing
                         )
 
                         # ROOT CAUSE FIX #4: Save response_format before rebuilding p1

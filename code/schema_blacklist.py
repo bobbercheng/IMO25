@@ -173,9 +173,19 @@ def get_blacklist_constrained_schema(
     # Extract blacklisted numbers
     blacklisted_nums = extract_blacklisted_numbers(blacklist)
 
+    # DEBUG: Log blacklist extraction
+    import os
+    if os.environ.get('DEBUG_SCHEMA_BLACKLIST', '0') == '1':
+        print(f"[DEBUG SCHEMA] Loaded blacklist: {blacklist}")
+        print(f"[DEBUG SCHEMA] Extracted numbers: {blacklisted_nums}")
+
     # Estimate answer range
     n = extract_problem_parameter(problem_text)
     min_val, max_val = estimate_answer_range(problem_text, n)
+
+    if os.environ.get('DEBUG_SCHEMA_BLACKLIST', '0') == '1':
+        print(f"[DEBUG SCHEMA] Range: ({min_val}, {max_val})")
+        print(f"[DEBUG SCHEMA] Will use anyOf: {bool(blacklisted_nums)}")
 
     # Build schema based on size
     range_size = max_val - min_val + 1
