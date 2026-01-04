@@ -2266,8 +2266,12 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
         try:
             from prescriptive_feedback import enhance_verification_with_prescriptive_feedback
 
+            # FIX TypeError: Extract solution text from structured dict before passing to prescriptive feedback
+            # Solution may be dict (structured output) or string (legacy), prescriptive feedback expects string
+            solution_text = get_solution_text(solution)
+
             bug_report, metadata = enhance_verification_with_prescriptive_feedback(
-                problem_statement, solution, bug_report, "yes" in o.lower(), verbose
+                problem_statement, solution_text, bug_report, "yes" in o.lower(), verbose
             )
 
             if verbose and metadata.get('templates_matched'):
