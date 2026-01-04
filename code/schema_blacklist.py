@@ -245,55 +245,61 @@ def get_blacklist_constrained_schema(
         return anyof_ranges
 
     # OPTION 1: Use enum ONLY for very small ranges (< 50 values)
-    # SINGLE SOURCE OF TRUTH: Remove final_answer field, extract from \boxed{} later
     if use_enum and range_size <= max_enum_size:
         # Deduplicate blacklist values
         unique_blacklisted = sorted(set(blacklisted_nums))
 
-        schema = {
-            "type": "object",
-            "properties": {
-                "solution": {
-                    "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
-                    # NOTE: Cannot use "not": {"pattern": ...} to enforce blacklist because
-                    # OpenAI's Structured Outputs does not support "not" constraints.
-                    # See: https://platform.openai.com/docs/guides/structured-outputs#supported-schemas
-                    # Blacklist validation MUST be done via post-processing in parse_structured_solution()
-                },
-                "method": {
-                    "type": "string",
-                    "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
-                }
-            },
-            "required": ["solution", "method"]
-            # NOTE: final_answer field REMOVED - will be extracted from \boxed{} in solution text
-        }
-    # OPTION 2: Use "anyOf" with range splits for compact blacklist (RECOMMENDED)
-    # SINGLE SOURCE OF TRUTH: Remove final_answer field, extract from \boxed{} later
-    elif blacklisted_nums:
-        # Deduplicate blacklist values
-        unique_blacklisted = sorted(set(blacklisted_nums))
+        # Build list of valid (non-blacklisted) answers for enum constraint
+        valid_answers = [
+            x for x in range(min_val, max_val + 1)
+            if x not in blacklisted_nums
+        ]
 
         schema = {
             "type": "object",
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL REQUIREMENT: You MUST end your solution with the final answer in \\boxed{{answer}} format (e.g., 'Therefore the minimum is \\boxed{{42}}.'). Responses without \\boxed{{answer}} will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
-                    # NOTE: Cannot use "not": {"pattern": ...} to enforce blacklist because
-                    # OpenAI's Structured Outputs does not support "not" constraints.
-                    # See: https://platform.openai.com/docs/guides/structured-outputs#supported-schemas
-                    # Blacklist validation MUST be done via post-processing in parse_structured_solution()
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL: Your solution MUST contain the answer in \\boxed{{answer}} format that EXACTLY matches the final_answer field (e.g., if final_answer is 42, write '\\boxed{{42}}'). Any mismatch will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
                 },
                 "method": {
                     "type": "string",
                     "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
+                },
+                "final_answer": {
+                    "type": "integer",
+                    "enum": valid_answers,
+                    "description": f"Final numerical answer. This MUST match the value in \\boxed{{}} in your solution. BLACKLISTED (do not use): {unique_blacklisted}. These have been proven INCORRECT."
                 }
             },
-            "required": ["solution", "method"]
-            # NOTE: final_answer field REMOVED - will be extracted from \boxed{} in solution text
-            # This prevents inconsistency between solution text and final_answer field
+            "required": ["solution", "method", "final_answer"]
+        }
+    # OPTION 2: Use "anyOf" with range splits for compact blacklist (RECOMMENDED)
+    elif blacklisted_nums:
+        # Deduplicate blacklist values
+        unique_blacklisted = sorted(set(blacklisted_nums))
+
+        # Build anyOf ranges to exclude blacklisted values
+        anyof_ranges = build_anyof_ranges(min_val, max_val, blacklisted_nums)
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "solution": {
+                    "type": "string",
+                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL: Your solution MUST contain the answer in \\boxed{{answer}} format that EXACTLY matches the final_answer field (e.g., if final_answer is 42, write '\\boxed{{42}}'). Any mismatch will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
+                },
+                "method": {
+                    "type": "string",
+                    "description": "Mathematical method or technique used (e.g., 'Dilworth theorem', 'bipartite matching', 'permutation optimization')"
+                },
+                "final_answer": {
+                    "type": "integer",
+                    "anyOf": anyof_ranges,
+                    "description": f"Final numerical answer. This MUST match the value in \\boxed{{}} in your solution. FORBIDDEN (proven incorrect): {unique_blacklisted}. You MUST use a different approach."
+                }
+            },
+            "required": ["solution", "method", "final_answer"]
         }
     # OPTION 3: Fallback to range + description only (no blacklist entries yet)
     else:
@@ -302,7 +308,7 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": "Detailed mathematical solution with step-by-step reasoning"
+                    "description": "Detailed mathematical solution with step-by-step reasoning. CRITICAL: Your solution MUST contain the answer in \\boxed{answer} format that EXACTLY matches the final_answer field (e.g., if final_answer is 42, write '\\boxed{42}'). Any mismatch will be rejected."
                 },
                 "method": {
                     "type": "string",
@@ -312,7 +318,7 @@ def get_blacklist_constrained_schema(
                     "type": "integer",
                     "minimum": min_val,
                     "maximum": max_val,
-                    "description": f"Final numerical answer in range [{min_val}, {max_val}]."
+                    "description": f"Final numerical answer in range [{min_val}, {max_val}]. This MUST match the value in \\boxed{{}} in your solution."
                 }
             },
             "required": ["solution", "method", "final_answer"]
