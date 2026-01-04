@@ -137,12 +137,17 @@ Return your response as valid JSON with this exact structure:
   "final_answer": 42
 }
 
-CRITICAL: 'final_answer' MUST be an INTEGER type (not a string).
-- Correct: "final_answer": 2025
-- WRONG: "final_answer": "2025"
+CRITICAL FORMAT REQUIREMENTS:
+1. 'final_answer' MUST be an INTEGER type (not a string).
+   - Correct: "final_answer": 2025
+   - WRONG: "final_answer": "2025"
 
-Ensure 'final_answer' contains ONLY the numerical value, without quotes, \\boxed{}, or LaTeX formatting.
-The 'solution' field should contain your full detailed mathematical proof and reasoning.
+2. The 'solution' field contains ONLY your mathematical reasoning and proof.
+   - DO NOT include the final numerical answer in \\boxed{} format in the solution field
+   - The solution should explain your logical steps, lemmas, constructions, and WHY your answer is correct
+   - The final numerical answer belongs EXCLUSIVELY in the 'final_answer' field
+
+3. Ensure 'final_answer' contains ONLY the integer value, without quotes, \\boxed{}, or LaTeX formatting.
 """
 
 # --- CONFIGURATION ---
@@ -3463,6 +3468,52 @@ def get_solution_text(solution):
     if isinstance(solution, dict) and 'solution' in solution:
         return solution['solution']
     return str(solution) if solution else ""
+
+
+def validate_no_boxed_in_solution(solution, verbose=True):
+    """
+    Validate that solution text does NOT contain \\boxed{} format.
+
+    New requirement (2026-01-04): The final answer should ONLY appear in the
+    'final_answer' field, not in \\boxed{} format in the solution text.
+
+    Args:
+        solution: Solution dict from structured output
+        verbose: Whether to print validation messages
+
+    Returns:
+        (is_valid, error_msg) tuple
+
+    Raises:
+        ValueError: If solution contains \\boxed{} format
+    """
+    import re
+
+    solution_text = get_solution_text(solution)
+
+    # Check for \boxed{} pattern
+    boxed_pattern = r'\\boxed\{[^}]+\}'
+    boxed_match = re.search(boxed_pattern, solution_text)
+
+    if boxed_match:
+        boxed_content = boxed_match.group(0)
+        error_msg = (
+            f"VALIDATION ERROR: Solution text contains \\boxed{{}} format: {boxed_content}\n"
+            "The final numerical answer should be in the 'final_answer' field ONLY, "
+            "not in the solution text. The solution field should contain only the "
+            "mathematical reasoning and proof."
+        )
+
+        if verbose:
+            print(f">>>>>>> {error_msg}")
+
+        return False, error_msg
+
+    if verbose:
+        print(">>>>>>> [VALIDATION] ✓ Solution text does not contain \\boxed{} (correct format)")
+
+    return True, None
+
 
 def validate_answer_change(prev_solution, new_solution, iteration, verbose=True):
     """

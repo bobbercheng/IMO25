@@ -270,7 +270,7 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL: Your solution MUST contain the answer in \\boxed{{answer}} format that EXACTLY matches the final_answer field (e.g., if final_answer is 42, write '\\boxed{{42}}'). Any mismatch will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
+                    "description": f"Complete mathematical reasoning and proof with rigorous step-by-step justification. This field contains ONLY the logical argumentation, lemmas, constructions, and derivations. DO NOT include the final numerical answer in \\boxed{{}} format here - the answer belongs exclusively in the 'final_answer' field. Focus on explaining WHY your answer is correct. FORBIDDEN approaches (proven incorrect): {unique_blacklisted}. You MUST use a completely different method."
                 },
                 "method": {
                     "type": "string",
@@ -279,7 +279,7 @@ def get_blacklist_constrained_schema(
                 "final_answer": {
                     "type": "integer",
                     "enum": valid_answers,
-                    "description": f"Final numerical answer. This MUST match the value in \\boxed{{}} in your solution. BLACKLISTED (do not use): {unique_blacklisted}. These have been proven INCORRECT."
+                    "description": f"Final numerical answer ONLY (just the integer value). This is the conclusive result derived from your reasoning in the 'solution' field. BLACKLISTED (do not use): {unique_blacklisted}. These have been proven INCORRECT - you MUST arrive at a different answer."
                 }
             },
             "required": ["solution", "method", "final_answer"]
@@ -297,7 +297,7 @@ def get_blacklist_constrained_schema(
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": f"Detailed mathematical solution with step-by-step reasoning. CRITICAL: Your solution MUST contain the answer in \\boxed{{answer}} format that EXACTLY matches the final_answer field (e.g., if final_answer is 42, write '\\boxed{{42}}'). Any mismatch will be rejected. FORBIDDEN answers (proven incorrect): {unique_blacklisted}. You MUST use a completely different approach."
+                    "description": f"Complete mathematical reasoning and proof with rigorous step-by-step justification. This field contains ONLY the logical argumentation, lemmas, constructions, and derivations. DO NOT include the final numerical answer in \\boxed{{}} format here - the answer belongs exclusively in the 'final_answer' field. Focus on explaining WHY your answer is correct. FORBIDDEN approaches (proven incorrect): {unique_blacklisted}. You MUST use a completely different method."
                 },
                 "method": {
                     "type": "string",
@@ -306,7 +306,7 @@ def get_blacklist_constrained_schema(
                 "final_answer": {
                     "type": "integer",
                     "anyOf": anyof_ranges,
-                    "description": f"Final numerical answer. This MUST match the value in \\boxed{{}} in your solution. FORBIDDEN (proven incorrect): {unique_blacklisted}. You MUST use a different approach."
+                    "description": f"Final numerical answer ONLY (just the integer value). This is the conclusive result derived from your reasoning in the 'solution' field. FORBIDDEN (proven incorrect): {unique_blacklisted}. You MUST use a different approach to arrive at a different answer."
                 }
             },
             "required": ["solution", "method", "final_answer"]
