@@ -251,12 +251,35 @@ def get_blacklist_constrained_schema(
             if x not in blacklisted_nums
         ]
 
+        # BUILD PATTERN CONSTRAINTS FOR SOLUTION TEXT (Critical fix!)
+        # Block blacklisted values in solution text to prevent model from
+        # writing correct answer in text but different value in JSON field
+        solution_patterns = []
+        for blacklisted_val in blacklisted_nums:
+            # Block common patterns where answer appears in solution text:
+            # - \boxed{4048}
+            # - answer is 4048
+            # - = 4048.
+            # - is 4048.
+            solution_patterns.extend([
+                f"\\\\boxed\\{{{blacklisted_val}\\}}",
+                f"answer is {blacklisted_val}",
+                f"= {blacklisted_val}\\.",
+                f"is {blacklisted_val}\\."
+            ])
+
+        # Combine all patterns into single NOT pattern (matches ANY blacklisted value)
+        combined_pattern = "|".join(solution_patterns) if solution_patterns else "(?!.*)"  # Never match if empty
+
         schema = {
             "type": "object",
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": "Detailed mathematical solution with step-by-step reasoning"
+                    "description": "Detailed mathematical solution with step-by-step reasoning",
+                    "not": {
+                        "pattern": combined_pattern
+                    } if solution_patterns else {}
                 },
                 "method": {
                     "type": "string",
@@ -275,12 +298,35 @@ def get_blacklist_constrained_schema(
     elif blacklisted_nums:
         anyof_ranges = build_anyof_ranges(min_val, max_val, blacklisted_nums)
 
+        # BUILD PATTERN CONSTRAINTS FOR SOLUTION TEXT (Critical fix!)
+        # Block blacklisted values in solution text to prevent model from
+        # writing correct answer in text but different value in JSON field
+        solution_patterns = []
+        for blacklisted_val in blacklisted_nums:
+            # Block common patterns where answer appears in solution text:
+            # - \boxed{4048}
+            # - answer is 4048
+            # - = 4048.
+            # - is 4048.
+            solution_patterns.extend([
+                f"\\\\boxed\\{{{blacklisted_val}\\}}",
+                f"answer is {blacklisted_val}",
+                f"= {blacklisted_val}\\.",
+                f"is {blacklisted_val}\\."
+            ])
+
+        # Combine all patterns into single NOT pattern (matches ANY blacklisted value)
+        combined_pattern = "|".join(solution_patterns)
+
         schema = {
             "type": "object",
             "properties": {
                 "solution": {
                     "type": "string",
-                    "description": "Detailed mathematical solution with step-by-step reasoning"
+                    "description": "Detailed mathematical solution with step-by-step reasoning",
+                    "not": {
+                        "pattern": combined_pattern
+                    }
                 },
                 "method": {
                     "type": "string",
