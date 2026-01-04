@@ -211,6 +211,7 @@ test_enhancements_logs/
 test_logs_mcts_translation/
 test_*_logs/
 test_rlac_log/
+test_*/
 # Generated validation results
 **/validation_results.json
 poc_output.log
