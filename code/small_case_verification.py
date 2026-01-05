@@ -12,6 +12,22 @@ From Expert Panel (RUN3_EXPERT_PANEL_SYNTHESIS.md):
 
 import re
 
+
+def get_verdict(verification_result):
+    """
+    Extract verdict from verification result in either structured or unstructured format.
+
+    Args:
+        verification_result: Either a string (legacy) or dict with 'verdict' field (structured)
+
+    Returns:
+        String containing the verdict ('PASS', 'FAIL', etc.) or 'UNKNOWN' if not a dict
+    """
+    if isinstance(verification_result, dict):
+        return verification_result.get('verdict', 'UNKNOWN')
+    # Legacy string format - assume not PASS since we can't parse reliably
+    return 'UNKNOWN'
+
 def detect_incompleteness(solution_text):
     """
     Detect if solution admits incompleteness.
@@ -133,11 +149,7 @@ def should_trigger_small_case_verification(solution_text, verify_text, good_veri
 
     # Check if failed verification is due to missing cases (not errors)
     # Support both dict (new format) and string (legacy format)
-    failed_verify = False
-    if isinstance(good_verify, dict):
-        failed_verify = good_verify.get('verdict') != 'PASS'
-    elif isinstance(good_verify, str):
-        failed_verify = "no" in good_verify.lower()
+    failed_verify = get_verdict(good_verify) != 'PASS'
 
     if failed_verify and verify_text:
         critical_errors = verify_text.lower().count('critical error')

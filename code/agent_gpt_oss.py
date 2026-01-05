@@ -2726,7 +2726,7 @@ Please revise the proof outline to fix these structural issues while keeping the
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Phase 4: Verifying mathematics")
     verify_result, good_verify, _, _ = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
 
-    success = good_verify.get('verdict') == 'PASS'
+    success = get_verdict(good_verify) == 'PASS'
 
     print(f"\n{'='*80}")
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Pipeline complete")
@@ -3257,7 +3257,7 @@ def calculate_solution_score(verify, good_verify):
     score = 0.0
 
     # Perfect verification
-    if isinstance(good_verify, dict) and good_verify.get('verdict') == 'PASS':
+    if get_verdict(good_verify) == 'PASS':
         score += 100.0
     elif isinstance(good_verify, str) and "yes" in good_verify.lower():
         # Legacy support for string verdicts
@@ -3527,6 +3527,22 @@ def get_solution_text(solution):
     if isinstance(solution, dict) and 'solution' in solution:
         return solution['solution']
     return str(solution) if solution else ""
+
+
+def get_verdict(verification_result):
+    """
+    Extract verdict from verification result in either structured or unstructured format.
+
+    Args:
+        verification_result: Either a string (legacy) or dict with 'verdict' field (structured)
+
+    Returns:
+        String containing the verdict ('PASS', 'FAIL', etc.) or 'UNKNOWN' if not a dict
+    """
+    if isinstance(verification_result, dict):
+        return verification_result.get('verdict', 'UNKNOWN')
+    # Legacy string format - assume not PASS since we can't parse reliably
+    return 'UNKNOWN'
 
 
 def validate_no_boxed_in_solution(solution, verbose=True):
@@ -4730,7 +4746,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
     # Initialize best solution tracking
     best_solution = solution
-    best_solution_score = 0 if good_verify.get('verdict') == 'PASS' else -10
+    best_solution_score = 0 if get_verdict(good_verify) == 'PASS' else -10
     best_solution_round = 0
     print(f">>>>>>> [RLAC TRACKING] Initial best solution score: {best_solution_score}")
 
@@ -5657,7 +5673,7 @@ Start completely fresh with a different mathematical approach.
                     print(">>>>>>> [RLAC FINAL] Skipping verification for adaptive exit (no progress)")
                     verify, good_verify = "", {"verdict": "FAIL", "reasoning": "Skipped for adaptive exit"}
 
-                cooperative_verified = good_verify.get('verdict') == 'PASS'
+                cooperative_verified = get_verdict(good_verify) == 'PASS'
 
                 if cooperative_verified:
                     print(">>>>>>> [RLAC FINAL] ✓ TIER 2 ACHIEVED: Passed both adversarial AND cooperative verification!")
@@ -6937,7 +6953,7 @@ Provide a corrected solution that passes validation for all small cases.
             reasoning_effort=ver_reasoning
         )
 
-        cooperative_verified = good_verify.get('verdict') == 'PASS'
+        cooperative_verified = get_verdict(good_verify) == 'PASS'
 
         if cooperative_verified:
             print(">>>>>>> [SUSPICIOUS CONVERGENCE] ✓ Final verification: Answer correct!")
@@ -7584,7 +7600,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"{'='*80}\n")
 
         try:
-            if good_verify.get('verdict') != 'PASS':
+            if get_verdict(good_verify) != 'PASS':
                 # clear
                 correct_count = 0
                 error_count += 1
@@ -7793,7 +7809,7 @@ Do not simply rephrase or polish the previous approach - create something new.
             score_history.append(current_score)
             print(f">>>>>>> [SCORE] Iteration {i} score: {current_score:.2f}")
 
-            if good_verify.get('verdict') == 'PASS':
+            if get_verdict(good_verify) == 'PASS':
                 print(">>>>>>> Solution verification PASSED")
                 correct_count += 1
                 error_count = 0
