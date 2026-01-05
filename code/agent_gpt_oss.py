@@ -3213,6 +3213,26 @@ Do not search for other answers. Focus on proving that {ground_truth_answer} is 
             # This forces BFS to try another attempt with a different prompt
             return p1, None, gaming_msg, "no"
 
+    # P0 FIX (2026-01-05): PROOF MODE ANSWER VALIDATION
+    # When ground truth is provided, validate that final answer matches target
+    # This prevents accepting solutions with wrong answers even if reasoning is good
+    if ground_truth_answer is not None and solution:
+        solution_answer = solution.get('final_answer') if isinstance(solution, dict) else None
+
+        if solution_answer is not None and solution_answer != ground_truth_answer:
+            print(f"\n{'='*80}")
+            print(f"[PROOF MODE VIOLATION] Answer mismatch detected!")
+            print(f"  Target answer (ground truth): {ground_truth_answer}")
+            print(f"  Solution answer (derived):    {solution_answer}")
+            print(f"  Difference:                    {solution_answer - ground_truth_answer:+d}")
+            print(f"[VERIFICATION SKIPPED] Wrong answer - solution rejected")
+            print(f"{'='*80}\n")
+            # Return None to indicate failure
+            error_msg = f"Answer mismatch: expected {ground_truth_answer}, got {solution_answer}"
+            return p1, None, error_msg, "no"
+        elif solution_answer == ground_truth_answer:
+            print(f"[PROOF MODE] ✅ Answer validation passed: {solution_answer} = {ground_truth_answer}")
+
     print(f">>>>>>> Verify the solution.")
     verify, good_verify, _, _ = verify_solution(problem_statement, solution, verbose, verification_reasoning)
 
@@ -7209,6 +7229,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             best_verify = None
             best_good_verify = None
             best_attempt_label = "None"
+            locked_answer = None  # P1 FIX: Initialize answer lock variable
 
             # BFS Diversity Fix (2025-12-30): Use run-specific prompt rotation
             # Each parallel run gets different prompts to ensure exploration diversity
@@ -7419,6 +7440,14 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 good_verify = best_good_verify
                 p1 = best_p1 if 'best_p1' in locals() else None  # ROOT CAUSE FIX #1C: Use p1 from best attempt
 
+                # P1 FIX (2026-01-05): ANSWER LOCK AFTER BFS SELECTION
+                # Lock the answer to prevent drift during correction iterations
+                # Only allow proof quality improvements, not answer changes
+                locked_answer = best_solution.get('final_answer') if isinstance(best_solution, dict) else None
+                if locked_answer is not None:
+                    print(f">>>>>>> [ANSWER LOCK] Answer locked after BFS: {locked_answer}")
+                    print(f">>>>>>> [ANSWER LOCK] Corrections will preserve this answer")
+
                 # Small-case verification: detect incomplete solutions and force small-case exploration
                 if SMALL_CASE_VERIFICATION_AVAILABLE:
                     # FIX TypeError: Extract solution text from structured dict
@@ -7506,11 +7535,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             if(solution is None):
                 print(">>>>>>> Failed in finding a complete solution.")
                 return None
+            locked_answer = None  # P1 FIX: No answer lock in single-path mode
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort
         _, good_verify, _, _ = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
         p1 = None  # No p1 when resuming from memory
+        locked_answer = None  # P1 FIX: No answer lock when resuming from memory
 
     # ROOT CAUSE FIX #1B: Save response_format for later reuse
     # This preserves the schema from init_explorations for use in corrections
@@ -7612,7 +7643,31 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     )
 
                 response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Correction prompt")
-                solution = extract_solution(extract_text_from_response(response2))
+                corrected_solution = extract_solution(extract_text_from_response(response2))
+
+                # P1 FIX (2026-01-05): ANSWER LOCK ENFORCEMENT
+                # Check if correction changed the answer (when answer is locked from BFS)
+                if 'locked_answer' in locals() and locked_answer is not None:
+                    corrected_answer = corrected_solution.get('final_answer') if isinstance(corrected_solution, dict) else None
+
+                    if corrected_answer is not None and corrected_answer != locked_answer:
+                        print(f"\n{'='*80}")
+                        print(f"[ANSWER LOCK VIOLATION] Correction changed the answer!")
+                        print(f"  Locked answer (from BFS):  {locked_answer}")
+                        print(f"  Corrected answer:          {corrected_answer}")
+                        print(f"  Difference:                {corrected_answer - locked_answer if isinstance(corrected_answer, (int, float)) and isinstance(locked_answer, (int, float)) else 'N/A'}")
+                        print(f"[ANSWER LOCK] Rejecting correction - keeping previous solution")
+                        print(f"{'='*80}\n")
+                        # Keep previous solution instead of using corrected one
+                        solution = previous_solution
+                    else:
+                        # Answer matches lock or no answer extracted - accept correction
+                        solution = corrected_solution
+                        if corrected_answer == locked_answer:
+                            print(f"[ANSWER LOCK] ✅ Correction preserved locked answer: {locked_answer}")
+                else:
+                    # No answer lock active (non-BFS mode) - accept correction normally
+                    solution = corrected_solution
 
                 print(">>>>>>> Corrected solution:")
                 print(json.dumps(solution, indent=4))
