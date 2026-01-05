@@ -7178,6 +7178,16 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         if not use_mcts and num_initial_attempts > 1:
             print(f">>>>>>> BFS: Generating {num_initial_attempts} diverse initial solutions...")
 
+            # P0 FIX (2026-01-05): Parse ground_truth_answer for BFS mode (same as single-path)
+            # This enables proof mode in BFS - model will prove given answer instead of searching
+            ground_truth = None
+            if args.ground_truth_answer:
+                try:
+                    ground_truth = int(args.ground_truth_answer)
+                except ValueError:
+                    ground_truth = args.ground_truth_answer
+                print(f">>>>>>> BFS: Ground truth proof mode enabled - will prove answer = {ground_truth}")
+
             # Check if we should use dynamic BFS prompts
             use_dynamic = False
             dynamic_prompts_list = []
@@ -7234,11 +7244,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 try:
                     # FIX 2: Skip self-improvement during BFS exploration to preserve diversity
                     # Only use self-improvement on final selected solution after BFS completes
+                    # P0 FIX: Pass ground_truth_answer to enable proof mode in BFS
                     p1, sol, ver, good_ver = init_explorations(
                         problem_statement, True, diverse_prompts,
                         sol_reasoning, self_imp_reasoning, ver_reasoning,
                         agent_problem_id, agent_run_id, use_schema_blacklist, problem_file,
-                        skip_self_improvement=True  # Preserve diversity during exploration
+                        skip_self_improvement=True,  # Preserve diversity during exploration
+                        ground_truth_answer=ground_truth  # Enable proof mode if provided
                     )
 
                     if sol:
