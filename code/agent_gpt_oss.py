@@ -7208,6 +7208,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             best_score = -999999
             best_verify = None
             best_good_verify = None
+            best_attempt_label = "None"
 
             # BFS Diversity Fix (2025-12-30): Use run-specific prompt rotation
             # Each parallel run gets different prompts to ensure exploration diversity
@@ -7264,6 +7265,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                             best_verify = ver
                             best_good_verify = good_ver
                             best_p1 = p1  # ROOT CAUSE FIX #1C: Save p1 from best BFS attempt
+                            best_attempt_label = f"Attempt {attempt+1}"
                             print(f">>>>>>> BFS: New best solution (attempt {attempt+1})")
 
                         # Early stopping: if score > 0, likely has valid construction
@@ -7397,6 +7399,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                                             best_solution = sol2
                                             best_verify = ver2
                                             best_good_verify = good_ver2
+                                            best_attempt_label = f"Phase 2 (k={k_val})"
                                             print(f">>>>>>> BFS Phase 2: NEW BEST (k={k_val}, score={score2:.2f})")
                                 except Exception as e:
                                     print(f">>>>>>> BFS Phase 2: k={k_val} failed: {e}")
@@ -7410,7 +7413,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         print(f">>>>>>> BFS Phase 2: Continuing with Phase 1 results")
 
             if best_solution:
-                print(f">>>>>>> BFS: Best initial solution selected (score: {best_score:.2f})")
+                print(f">>>>>>> BFS: Best initial solution selected: {best_attempt_label} (score: {best_score:.2f})")
                 solution = best_solution
                 verify = best_verify
                 good_verify = best_good_verify
