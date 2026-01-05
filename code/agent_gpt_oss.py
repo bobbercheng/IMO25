@@ -3074,7 +3074,7 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None, use_schema_blacklist=False, problem_file=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None, use_schema_blacklist=False, problem_file=None, skip_self_improvement=False, ground_truth_answer=None):
     # BFS DIVERSITY FIX: Load solution blacklist to avoid repeating failed attempts
     blacklist_prompt = ""
     blacklist = None
@@ -3133,6 +3133,22 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     # Enrich problem with blacklist prompt for diversity (complementary to schema)
     enriched_problem = f"{problem_statement}\n{blacklist_prompt}" if blacklist_prompt else problem_statement
 
+    # GROUND TRUTH PROOF MODE: If ground truth answer is provided, ask for proof instead of generation
+    if ground_truth_answer is not None:
+        proof_mode_prompt = f"""
+
+IMPORTANT: The answer to this problem is {ground_truth_answer}. Your task is to PROVE that this is the correct answer.
+
+Construct a complete mathematical proof showing that {ground_truth_answer} is the minimum/maximum/correct value for this problem. Your proof should:
+1. Establish a lower bound (or upper bound, as appropriate) showing why the answer cannot be less than (or greater than) {ground_truth_answer}
+2. Provide an explicit construction demonstrating that {ground_truth_answer} is achievable
+3. Conclude that {ground_truth_answer} is therefore the optimal value
+
+Do not search for other answers. Focus on proving that {ground_truth_answer} is correct."""
+        enriched_problem = f"{enriched_problem}\n{proof_mode_prompt}"
+        if verbose:
+            print(f"[PROOF MODE] ✅ Enabled - Proving answer = {ground_truth_answer}")
+
     p1 = build_request_payload(
             system_prompt=step1_prompt,
             question_prompt=enriched_problem,  # ← Blacklist prompt visible during generation!
@@ -3147,41 +3163,51 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     print(f">>>>>>> First solution:")
     print(json.dumps(output1, indent=4))
 
-    print(f">>>>>>> Self improvement start:")
-    # Use build_assistant_message to properly handle thinking/content separation
-    p1["messages"].append(build_assistant_message(response1))
-    p1["messages"].append(
-        {"role": "user",
-        "content": self_improvement_prompt
-        }
-    )
+    # FIX 2: Skip self-improvement during BFS exploration to preserve diversity
+    # Self-improvement can amplify bias (e.g., "correcting" 3036 → 4048)
+    if not skip_self_improvement:
+        print(f">>>>>>> Self improvement start:")
+        # Use build_assistant_message to properly handle thinking/content separation
+        p1["messages"].append(build_assistant_message(response1))
+        p1["messages"].append(
+            {"role": "user",
+            "content": self_improvement_prompt
+            }
+        )
 
-    # Use high reasoning for self-improvement (proactive error prevention)
-    # This catches errors BEFORE verification, saving 5-7 correction iterations
-    improvement_effort = self_improvement_reasoning if self_improvement_reasoning is not None else SELF_IMPROVEMENT_REASONING_EFFORT
+        # Use high reasoning for self-improvement (proactive error prevention)
+        # This catches errors BEFORE verification, saving 5-7 correction iterations
+        improvement_effort = self_improvement_reasoning if self_improvement_reasoning is not None else SELF_IMPROVEMENT_REASONING_EFFORT
 
-    # BUGFIX (2025-11-30): Handle both OpenRouter (extra_body) and standard API formats
-    has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
-    if has_prefix:
-        # OpenRouter: reasoning in extra_body
-        p1["extra_body"]["reasoning"]["effort"] = improvement_effort
+        # BUGFIX (2025-11-30): Handle both OpenRouter (extra_body) and standard API formats
+        has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
+        if has_prefix:
+            # OpenRouter: reasoning in extra_body
+            p1["extra_body"]["reasoning"]["effort"] = improvement_effort
+        else:
+            # Standard: reasoning at top level
+            p1["reasoning"]["effort"] = improvement_effort
+
+        print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
+
+        response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Self-improvement prompt")
+        solution = extract_solution(extract_text_from_response(response2))
+        print(f">>>>>>> Corrected solution:")
+        print(json.dumps(solution, indent=4))
     else:
-        # Standard: reasoning at top level
-        p1["reasoning"]["effort"] = improvement_effort
+        # Skip self-improvement - use initial solution directly
+        print(f">>>>>>> Self-improvement SKIPPED (preserving initial diversity)")
+        solution = extract_solution(output1)
 
-    print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
-
-    response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Self-improvement prompt")
-    solution = extract_solution(extract_text_from_response(response2))
-    print(f">>>>>>> Corrected solution:")
-    print(json.dumps(solution, indent=4))
-
-    # GAMING DETECTION: Validate blacklist consistency
+    # FIX 1: GAMING DETECTION SHORT-CIRCUIT
+    # This validation runs BEFORE verification and returns early if gaming detected
+    # Verification will NEVER run on gamed solutions (no wasted compute)
     if schema_blacklisted_values and solution:
         is_valid, gaming_msg = validate_blacklist_consistency(solution, schema_blacklisted_values, verbose=verbose)
         if not is_valid:
             print(f"\n{'='*80}")
             print(f"[GAMING DETECTED] This solution will be marked as FAILED")
+            print(f"[VERIFICATION SKIPPED] No need to verify - solution already rejected")
             print(f"{'='*80}\n")
             # Return None for solution to indicate failure
             # This forces BFS to try another attempt with a different prompt
@@ -4633,7 +4659,9 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             p1, solution, verify, good_verify = init_explorations(
                 problem_statement, verbose, current_prompts,
                 sol_reasoning, self_imp_reasoning, ver_reasoning,
-                agent_problem_id, agent_run_id, use_schema_blacklist, problem_file
+                agent_problem_id, agent_run_id, use_schema_blacklist, problem_file,
+                skip_self_improvement=False,  # RLAC uses self-improvement
+                ground_truth_answer=None  # RLAC doesn't use proof mode
             )
 
             if solution is None:
@@ -7204,10 +7232,13 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     diverse_prompts.append(f"Note: This is attempt {attempt+1} of {num_initial_attempts}. {diversity_hints[attempt % len(diversity_hints)]}")
 
                 try:
+                    # FIX 2: Skip self-improvement during BFS exploration to preserve diversity
+                    # Only use self-improvement on final selected solution after BFS completes
                     p1, sol, ver, good_ver = init_explorations(
                         problem_statement, True, diverse_prompts,
                         sol_reasoning, self_imp_reasoning, ver_reasoning,
-                        agent_problem_id, agent_run_id, use_schema_blacklist, problem_file
+                        agent_problem_id, agent_run_id, use_schema_blacklist, problem_file,
+                        skip_self_improvement=True  # Preserve diversity during exploration
                     )
 
                     if sol:
@@ -7442,7 +7473,21 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 return None
         if not use_mcts and num_initial_attempts <= 1:
             # Original single-path initialization
-            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning, agent_problem_id, agent_run_id, use_schema_blacklist, args.problem_file)
+            # Parse ground_truth_answer if provided (try as int first, fall back to string)
+            ground_truth = None
+            if args.ground_truth_answer:
+                try:
+                    ground_truth = int(args.ground_truth_answer)
+                except ValueError:
+                    ground_truth = args.ground_truth_answer
+
+            p1, solution, verify, good_verify = init_explorations(
+                problem_statement, True, other_prompts,
+                sol_reasoning, self_imp_reasoning, ver_reasoning,
+                agent_problem_id, agent_run_id, use_schema_blacklist, args.problem_file,
+                skip_self_improvement=False,  # Use self-improvement in single-path mode
+                ground_truth_answer=ground_truth
+            )
             if(solution is None):
                 print(">>>>>>> Failed in finding a complete solution.")
                 return None
@@ -7851,6 +7896,8 @@ if __name__ == "__main__":
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
     parser.add_argument('--num-initial-attempts', '-nia', type=int, default=1,
                        help='Generate N diverse initial solutions and pick best (default: 1). Use 3-5 for BFS exploration to escape local minima.')
+    parser.add_argument('--ground-truth-answer', '-gta', type=str, default=None,
+                       help='Provide ground truth answer (e.g., "2112") and ask LLM to prove it instead of finding answer. Useful when answer is known but proof is hard to construct manually.')
     parser.add_argument('--use-mcts', action='store_true',
                        help='Use MCTS-guided exploration instead of simple BFS')
     parser.add_argument('--mcts-simulations', type=int, default=5,
