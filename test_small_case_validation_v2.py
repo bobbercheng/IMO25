@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Enhanced Small-Case Validation Test with LLM
-Version 2.1 - No Data Leakage! Implements all 4 priority improvements
+Version 2.2 - Fixed False Negative Bugs
 
 Priority 1: Structured JSON output + stop instruction
 Priority 2: Adversarial validation (pre-reject obvious wrong formulas only)
@@ -11,6 +11,12 @@ Priority 4: Formula DERIVATION from small cases (NO candidate formulas given!)
 CRITICAL: This version does NOT provide the correct formula to the LLM.
 Instead, the LLM must DERIVE the formula from analyzing the verified small cases.
 This ensures there is no data leakage - the LLM must discover the pattern itself.
+
+FIXES in v2.2:
+- Added normalize_formula() to handle "n + 2*k - 3" vs "n+2k-3"
+- Removed n=16 case (was circular: derived_from_formula)
+- Fixed JSON extraction to apply normalization
+- Now correctly identifies LLM success (was false negative)
 """
 
 import os
@@ -119,15 +125,39 @@ def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3, use_j
                 raise
 
 
+def normalize_formula(formula_str: str) -> str:
+    """Normalize formula to canonical form for matching"""
+    # Remove function notation like f(n,k) =
+    formula_str = re.sub(r'f\([^)]+\)\s*=\s*', '', formula_str)
+
+    # Extract first formula if multiple given (before "equivalently", "or", etc.)
+    formula_str = formula_str.split('(equivalently')[0]
+    formula_str = formula_str.split(' or ')[0]
+
+    # Remove spaces and multiplication operators
+    formula_str = formula_str.replace(' ', '')
+    formula_str = formula_str.replace('*', '')
+    formula_str = formula_str.replace('·', '')
+
+    # Handle Unicode characters
+    formula_str = formula_str.replace('−', '-')
+    formula_str = formula_str.replace('√', 'sqrt')
+
+    return formula_str.strip()
+
+
 def extract_formula_and_answer(llm_response: str) -> tuple:
-    """Extract formula and answer from LLM response"""
-    # Look for formula patterns
+    """Extract formula and answer from LLM response with robust normalization"""
+    # Normalize the response
+    normalized = normalize_formula(llm_response)
+
+    # Look for formula patterns in normalized text
     formulas = []
-    if "n+2k-3" in llm_response or "n + 2k - 3" in llm_response:
+    if "n+2k-3" in normalized or "k²+2k-3" in normalized or "k^2+2k-3" in normalized:
         formulas.append("n+2k-3")
-    if "n+2k-2" in llm_response or "n + 2k - 2" in llm_response:
+    if "n+2k-2" in normalized or "k²+2k-2" in normalized:
         formulas.append("n+2k-2")
-    if "2n-2" in llm_response or "2n - 2" in llm_response:
+    if "2n-2" in normalized:
         formulas.append("2n-2")
 
     # Look for final answer for n=2025
@@ -263,19 +293,28 @@ CRITICAL: Do NOT include the correct formula in your response if you haven't der
 
     # Extract results from JSON
     if isinstance(response, dict):
-        derived_formula = response.get("derived_formula", "unknown")
+        derived_formula_raw = response.get("derived_formula", "unknown")
         final_answer = response.get("final_answer", None)
         all_match = response.get("all_cases_match", False)
-        formulas = [derived_formula] if derived_formula != "unknown" else []
+
+        # Apply normalization and pattern matching to derived formula
+        if derived_formula_raw != "unknown":
+            formulas, _ = extract_formula_and_answer(derived_formula_raw)
+            if not formulas:
+                # Fallback: keep raw if no pattern matched
+                formulas = [derived_formula_raw]
+        else:
+            formulas = []
+
         answers = [str(final_answer)] if final_answer else []
     else:
         formulas, answers = extract_formula_and_answer(str(response))
         all_match = False
 
     print("\nExtracted:")
-    print(f"  Derived formula: {derived_formula if isinstance(response, dict) else formulas}")
+    print(f"  Derived formula: {formulas}")
     print(f"  All cases match: {all_match if isinstance(response, dict) else 'unknown'}")
-    print(f"  Final answer: {final_answer if isinstance(response, dict) else answers}")
+    print(f"  Final answer: {answers}")
 
     return response, formulas, answers
 
@@ -320,7 +359,8 @@ For context: 2025 = 45², so k = √2025 = 45.
             "tiles": 12,
             "source": "trusted_imo_official_solution"
         },
-        {"n": 16, "k": 4, "tiles": 21, "source": "derived_from_formula"},  # ← Would be circular!
+        # REMOVED n=16 case: was "derived_from_formula" (circular reasoning)
+        # Using only independently verified cases to avoid data leakage
     ]
 
     # Test 1: Baseline (no validation)
