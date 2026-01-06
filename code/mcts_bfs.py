@@ -10,6 +10,23 @@ import json
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional
 
+
+def get_verdict(verification_result):
+    """
+    Extract verdict from verification result in either structured or unstructured format.
+
+    Args:
+        verification_result: Either a string (legacy) or dict with 'verdict' field (structured)
+
+    Returns:
+        String containing the verdict ('PASS', 'FAIL', etc.) or 'UNKNOWN' if not a dict
+    """
+    if isinstance(verification_result, dict):
+        return verification_result.get('verdict', 'UNKNOWN')
+    # Legacy string format - assume not PASS since we can't parse reliably
+    return 'UNKNOWN'
+
+
 class MCTSNode:
     """
     Node in the MCTS tree representing a proof strategy/approach.
@@ -516,7 +533,7 @@ class MCTSExplorer:
         passed = False
         if good_verify:
             if isinstance(good_verify, dict):
-                passed = good_verify.get('verdict') == 'PASS'
+                passed = get_verdict(good_verify) == 'PASS'
             else:
                 passed = "yes" in good_verify.lower()
         if passed:
@@ -778,7 +795,7 @@ def mcts_bfs_search(problem_statement: str, num_simulations: int,
                 # Support both dict (new format) and string (legacy format)
                 verified = False
                 if isinstance(good_verify, dict):
-                    verified = good_verify.get('verdict') == 'PASS'
+                    verified = get_verdict(good_verify) == 'PASS'
                 else:
                     verified = "yes" in good_verify.lower()
 

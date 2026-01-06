@@ -1,0 +1,86 @@
+================================================================================
+SMALL-CASE VALIDATION TEST
+================================================================================
+Using model: openai/gpt-4o-2024-11-20
+API: OpenRouter
+
+
+================================================================================
+TEST 1: BASELINE (No Small-Case Validation)
+================================================================================
+
+================================================================================
+Calling openai/gpt-4o-2024-11-20...
+================================================================================
+
+LLM Response (excerpt):
+--------------------------------------------------------------------------------
+### Problem Analysis:
+
+We are tasked with finding the minimum number of tiles required to cover a \(2025 \times 2025\) grid, satisfying the following constraints:
+
+1. Each side of every tile lies on the grid lines.
+2. Each unit square is covered by at most one tile.
+3. Each row has exactly **one unit square that is NOT covered** by any tile.
+4. Each column has exactly **one unit square that is NOT covered** by any tile.
+
+### Key Observations:
+
+1. **Grid Size and Uncovered Squares:**
+   - The gri...
+--------------------------------------------------------------------------------
+
+Extracted:
+  Formulas mentioned: []
+  Answers mentioned: ['2025']
+
+================================================================================
+TEST 2: WITH SMALL-CASE VALIDATION
+================================================================================
+
+================================================================================
+Calling openai/gpt-4o-2024-11-20...
+================================================================================
+
+LLM Response (excerpt):
+--------------------------------------------------------------------------------
+To solve this problem, we need to consider both the verified small-case results and generalize a formula to compute the minimum number of tiles required for any \( n \times n \) grid, where \( k = \sqrt{n} \).
+
+---
+
+### Step 1: Analyze the small-case example (\( n = 4 \), \( k = 2 \))
+- Grid size: \( 4 \times 4 \)
+- Verified answer: Minimum tiles = **5**.
+
+Key constraints:
+1. Each row has exactly **1 uncovered square**.
+2. Each column has exactly **1 uncovered square**.
+3. Tiles can vary in size...
+--------------------------------------------------------------------------------
+
+Extracted:
+  Formulas mentioned: []
+  Answers mentioned: ['2025', '2025', '2025']
+
+================================================================================
+COMPARISON: BASELINE vs WITH-VALIDATION
+================================================================================
+
+Baseline (no validation):
+  Formulas: []
+  Answers: ['2025']
+
+With validation:
+  Formulas: []
+  Answers: ['2025', '2025', '2025']
+
+================================================================================
+RESULT
+================================================================================
+
+Baseline found correct formula (n+2k-3): ✗
+With validation found correct formula (n+2k-3): ✗
+
+❌ FAILURE: Neither approach found correct formula (need better prompt)
+
+Results saved to: small_case_validation_test_results.json

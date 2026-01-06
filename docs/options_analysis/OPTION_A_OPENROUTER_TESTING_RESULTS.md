@@ -106,7 +106,7 @@ python test_option_a_openrouter.py --test 1 --reasoning high
 **API Configuration Used:**
 - URL: `https://openrouter.ai/api/v1/chat/completions`
 - Model: `openrouter/openai/gpt-oss-120b`
-- API Key: `sk-or-v1-f66b5ad7f1b3e43a7f5aa4df7e19ccb405b7ef0b756a6a68bdb53cd8`
+- API Key: `sk-or-...`
 
 **Test Duration:** 0.1-0.2 seconds per test (immediate authentication failure)
 

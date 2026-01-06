@@ -108,7 +108,6 @@ step1_prompt = """
     *   Establishing a critical property of the mathematical objects in the problem.
     *   For an optimization problem, proving an upper or lower bound without proving that this bound is achievable.
 *   **Use TeX for All Mathematics:** All mathematical variables, expressions, and relations must be enclosed in TeX delimiters (e.g., `Let $n$ be an integer.`).
-*   **Final Answer Format:** When you have a complete solution, state the final answer using \\boxed{} format (e.g., `The final answer is \\boxed{42}`).
 *   **Structured Exploration for FIND/DETERMINE Problems** (2025-12-22 Expert Panel): When the problem asks to "find ALL" or "determine ALL" values of a parameter:
     *   **Step 1**: Test the SIMPLEST cases first (e.g., s=1 for "determine all s")
     *   **Step 2**: Test the NEXT simplest case (e.g., s=2)
@@ -147,7 +146,7 @@ Your response MUST be structured into the following sections, in this exact orde
 Provide a concise overview of your findings. This section must contain two parts:
 
 *   **a. Verdict:** State clearly whether you have found a complete solution or a partial solution.
-    *   **For a complete solution:** State the final answer in \\boxed{} format, e.g., "I have successfully solved the problem. The final answer is \\boxed{42}."
+    *   **For a complete solution:** State that you have found the answer, e.g., "I have successfully solved the problem. The final answer is 42."
     *   **For a partial solution:** State the main rigorous conclusion(s) you were able to prove, e.g., "I have not found a complete solution, but I have rigorously proven that..."
 *   **b. Method Sketch:** Present a high-level, conceptual outline of your solution. This sketch should allow an expert to understand the logical flow of your argument without reading the full detail. It should include:
     *   A narrative of your overall strategy.

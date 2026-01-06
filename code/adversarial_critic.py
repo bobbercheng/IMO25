@@ -51,6 +51,22 @@ from adversarial_prompts import (
 )
 
 
+def get_verdict(verification_result):
+    """
+    Extract verdict from verification result in either structured or unstructured format.
+
+    Args:
+        verification_result: Either a string (legacy) or dict with 'verdict' field (structured)
+
+    Returns:
+        String containing the verdict ('PASS', 'FAIL', etc.) or 'UNKNOWN' if not a dict
+    """
+    if isinstance(verification_result, dict):
+        return verification_result.get('verdict', 'UNKNOWN')
+    # Legacy string format - assume not PASS since we can't parse reliably
+    return 'UNKNOWN'
+
+
 class AdversarialCritic:
     """
     Adversarial critic that actively tries to break mathematical solutions.
@@ -163,10 +179,7 @@ class AdversarialCritic:
 
                 # Check if verification found issues
                 # Support both dict (new format) and string (legacy format)
-                if isinstance(good_verify, dict):
-                    verification_passed = good_verify.get('verdict') == 'PASS'
-                else:
-                    verification_passed = "yes" in good_verify.lower()
+                verification_passed = get_verdict(good_verify) == 'PASS'
 
                 if not verification_passed:
                     # Verification found issues - use them for attack

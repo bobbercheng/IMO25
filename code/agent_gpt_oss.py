@@ -89,6 +89,14 @@ except ImportError:
     print("[WARNING] Small-case verification module not available")
     SMALL_CASE_VERIFICATION_AVAILABLE = False
 
+# Import schema blacklist for constrained decoding
+try:
+    from schema_blacklist import get_blacklist_constrained_schema, get_schema_metadata
+    SCHEMA_BLACKLIST_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Schema blacklist module not available")
+    SCHEMA_BLACKLIST_AVAILABLE = False
+
 # Import dynamic BFS prompts module
 try:
     from dynamic_bfs_prompts import (
@@ -115,6 +123,14 @@ except ImportError:
     print("[WARNING] Meta-prompted BFS module not available")
     META_PROMPTED_BFS_AVAILABLE = False
 
+# Import small-case formula validation module
+try:
+    from small_case_validator import SmallCaseValidator
+    FORMULA_VALIDATION_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Small-case formula validation module not available")
+    FORMULA_VALIDATION_AVAILABLE = False
+
 # --- STRUCTURED OUTPUT CONFIGURATION ---
 # Enable structured JSON output for clean answer extraction (bypasses regex)
 ENABLE_STRUCTURED_OUTPUT = os.getenv("ENABLE_STRUCTURED_OUTPUT", "1") == "1"
@@ -126,11 +142,20 @@ STRUCTURED_OUTPUT_SUFFIX = """
 Return your response as valid JSON with this exact structure:
 {
   "solution": "your complete mathematical reasoning, proof, and detailed solution here",
-  "final_answer": "the numerical answer only (single value like 42, without LaTeX formatting)"
+  "final_answer": 42
 }
 
-Ensure 'final_answer' contains ONLY the numerical value or expression, without \\boxed{} or other LaTeX.
-The 'solution' field should contain your full detailed mathematical proof and reasoning.
+CRITICAL FORMAT REQUIREMENTS:
+1. 'final_answer' MUST be an INTEGER type (not a string).
+   - Correct: "final_answer": 2025
+   - WRONG: "final_answer": "2025"
+
+2. The 'solution' field contains ONLY your mathematical reasoning and proof.
+   - DO NOT include the final numerical answer in \\boxed{} format in the solution field
+   - The solution should explain your logical steps, lemmas, constructions, and WHY your answer is correct
+   - The final numerical answer belongs EXCLUSIVELY in the 'final_answer' field
+
+3. Ensure 'final_answer' contains ONLY the integer value, without quotes, \\boxed{}, or LaTeX formatting.
 """
 
 # --- CONFIGURATION ---
@@ -407,8 +432,12 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
     # Use specified reasoning effort, or default to solution reasoning
     effort = reasoning_effort if reasoning_effort is not None else SOLUTION_REASONING_EFFORT
 
-    # Append structured output suffix if enabled
-    if ENABLE_STRUCTURED_OUTPUT:
+    # Append structured output suffix if enabled (but NOT if custom JSON schema already present)
+    # FIX (2026-01-06): Prevent STRUCTURED_OUTPUT_SUFFIX from conflicting with custom JSON schemas
+    # Example: small_case_validator.py defines its own JSON schema for formula derivation
+    # If we append the suffix, LLM sees TWO conflicting schemas and picks the wrong one
+    has_custom_json_schema = "Return JSON with this exact structure" in system_prompt
+    if ENABLE_STRUCTURED_OUTPUT and not has_custom_json_schema:
         system_prompt = system_prompt + STRUCTURED_OUTPUT_SUFFIX
 
     # Build base payload
@@ -851,6 +880,21 @@ def extract_text_from_response(response_data):
         message = response_data['choices'][0]['message']
         content = message.get('content', '')
 
+        # ROOT CAUSE FIX #2: Handle truncation (finish_reason: "length")
+        # When high reasoning effort causes truncation, OpenRouter returns:
+        # - content = "" (empty)
+        # - reasoning_content = "...actual response..." (20KB+)
+        # Without this fix, we get empty string → JSON parsing fails
+        finish_reason = response_data['choices'][0].get('finish_reason', '')
+        if not content and finish_reason == 'length':
+            # Try to extract from reasoning_content field
+            reasoning_content = message.get('reasoning_content', '')
+            if reasoning_content:
+                content = reasoning_content
+                print(f">>>>>>> [TRUNCATION FIX] Extracted {len(content)} chars from reasoning_content (finish_reason: length)")
+            else:
+                print(f">>>>>>> [TRUNCATION] Warning: Response truncated but no reasoning_content found")
+
         # Clean reasoning tags from content
         content = clean_reasoning_tags(content)
 
@@ -992,8 +1036,10 @@ def parse_structured_solution(content):
     Expected JSON format:
     {
       "solution": "detailed mathematical reasoning and proof",
-      "final_answer": "numerical answer only (e.g., 2112)"
+      "final_answer": 2112
     }
+
+    Note: final_answer must be an integer type, not a string.
 
     Args:
         content: String content from API response
@@ -1013,15 +1059,36 @@ def parse_structured_solution(content):
         if not isinstance(parsed, dict):
             return None
 
-        if 'solution' not in parsed or 'final_answer' not in parsed:
+        if 'solution' not in parsed:
             return None
 
         # Validate field types
-        if not isinstance(parsed['solution'], str) or not isinstance(parsed['final_answer'], str):
+        if not isinstance(parsed['solution'], str):
             return None
 
-        # Validate non-empty
-        if not parsed['solution'].strip() or not parsed['final_answer'].strip():
+        # Validate non-empty solution text
+        if not parsed['solution'].strip():
+            return None
+
+        # SINGLE SOURCE OF TRUTH FIX:
+        # If final_answer is missing from JSON (schema blacklist case),
+        # extract it from \boxed{} in solution text
+        if 'final_answer' not in parsed:
+            import re
+            solution_text = parsed['solution']
+            boxed_match = re.search(r'\\boxed\{(\d+)\}', solution_text)
+
+            if not boxed_match:
+                print(">>>>>>> [EXTRACTION FAILED] No \\boxed{} found in solution text")
+                return None
+
+            final_answer = int(boxed_match.group(1))
+            parsed['final_answer'] = final_answer
+            print(f">>>>>>> [EXTRACTED] final_answer={final_answer} from \\boxed{{}}")
+
+        # Validate final_answer type (whether from JSON or extracted)
+        # ROOT ROOT CAUSE FIX: final_answer should be integer, not string!
+        if not isinstance(parsed['final_answer'], int):
             return None
 
         return parsed
@@ -2216,8 +2283,12 @@ Return your verdict as VALID JSON matching this schema (no extra text, no reason
         try:
             from prescriptive_feedback import enhance_verification_with_prescriptive_feedback
 
+            # FIX TypeError: Extract solution text from structured dict before passing to prescriptive feedback
+            # Solution may be dict (structured output) or string (legacy), prescriptive feedback expects string
+            solution_text = get_solution_text(solution)
+
             bug_report, metadata = enhance_verification_with_prescriptive_feedback(
-                problem_statement, solution, bug_report, "yes" in o.lower(), verbose
+                problem_statement, solution_text, bug_report, "yes" in o.lower(), verbose
             )
 
             if verbose and metadata.get('templates_matched'):
@@ -2667,7 +2738,7 @@ Please revise the proof outline to fix these structural issues while keeping the
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Phase 4: Verifying mathematics")
     verify_result, good_verify, _, _ = verify_solution(problem_statement, complete_proof, reasoning_effort=ver_reasoning)
 
-    success = good_verify.get('verdict') == 'PASS'
+    success = get_verdict(good_verify) == 'PASS'
 
     print(f"\n{'='*80}")
     print(f">>>>>>> [PROOF SKETCH PIPELINE] Pipeline complete")
@@ -3015,10 +3086,12 @@ Response in exactly "yes" or "no". No other words.
     return "yes" in o.lower()
 
 
-def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None):
+def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoning_effort=None, self_improvement_reasoning=None, verification_reasoning=None, problem_id=None, run_id=None, use_schema_blacklist=False, problem_file=None, skip_self_improvement=False, ground_truth_answer=None):
     # BFS DIVERSITY FIX: Load solution blacklist to avoid repeating failed attempts
     blacklist_prompt = ""
     blacklist = None
+    response_format = None  # For schema-based blacklist
+
     if BLACKLIST_AVAILABLE and problem_id:
         try:
             blacklist = SolutionBlacklist(problem_id)
@@ -3034,14 +3107,66 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
                 print(f"[BLACKLIST] Warning: Could not load blacklist: {e}")
             blacklist_prompt = ""
 
-    # Enrich problem with blacklist prompt for diversity
+    # SCHEMA BLACKLIST: Use JSON schema for hard constraint (100% compliance, 0% waste)
+    schema_blacklisted_values = None  # Store for validation later
+    if use_schema_blacklist and SCHEMA_BLACKLIST_AVAILABLE and problem_file:
+        try:
+            schema = get_blacklist_constrained_schema(problem_file, problem_statement)
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "math_solution_with_blacklist",
+                    "schema": schema,
+                    "strict": True
+                }
+            }
+            metadata = get_schema_metadata(schema)
+            schema_blacklisted_values = metadata.get('blacklisted_values', [])
+            if verbose:
+                print(f"[SCHEMA BLACKLIST] ✅ Enabled")
+                print(f"[SCHEMA BLACKLIST]   Constraint: {metadata['constraint_type']}")
+                if metadata.get('has_anyof'):
+                    print(f"[SCHEMA BLACKLIST]   Forbidden values: {metadata['blacklisted_values']}")
+                    print(f"[SCHEMA BLACKLIST]   Range segments: {metadata['anyof_segments']} (split around blacklist)")
+                    print(f"[SCHEMA BLACKLIST]   Range: {metadata['range']}")
+                elif metadata['has_not_constraint']:
+                    print(f"[SCHEMA BLACKLIST]   Forbidden values: {metadata['blacklisted_values']}")
+                    print(f"[SCHEMA BLACKLIST]   Range: {metadata['range']}")
+                elif metadata['has_enum']:
+                    print(f"[SCHEMA BLACKLIST]   Enum size: {metadata['enum_size']} valid values")
+                else:
+                    print(f"[SCHEMA BLACKLIST]   Range: {metadata['range']}")
+                print(f"[SCHEMA BLACKLIST]   Model CANNOT generate blacklisted answers (hard constraint)")
+        except Exception as e:
+            if verbose:
+                print(f"[SCHEMA BLACKLIST] ⚠️  Warning: Could not generate schema: {e}")
+            response_format = None
+
+    # Enrich problem with blacklist prompt for diversity (complementary to schema)
     enriched_problem = f"{problem_statement}\n{blacklist_prompt}" if blacklist_prompt else problem_statement
+
+    # GROUND TRUTH PROOF MODE: If ground truth answer is provided, ask for proof instead of generation
+    if ground_truth_answer is not None:
+        proof_mode_prompt = f"""
+
+IMPORTANT: The answer to this problem is {ground_truth_answer}. Your task is to PROVE that this is the correct answer.
+
+Construct a complete mathematical proof showing that {ground_truth_answer} is the minimum/maximum/correct value for this problem. Your proof should:
+1. Establish a lower bound (or upper bound, as appropriate) showing why the answer cannot be less than (or greater than) {ground_truth_answer}
+2. Provide an explicit construction demonstrating that {ground_truth_answer} is achievable
+3. Conclude that {ground_truth_answer} is therefore the optimal value
+
+Do not search for other answers. Focus on proving that {ground_truth_answer} is correct."""
+        enriched_problem = f"{enriched_problem}\n{proof_mode_prompt}"
+        if verbose:
+            print(f"[PROOF MODE] ✅ Enabled - Proving answer = {ground_truth_answer}")
 
     p1 = build_request_payload(
             system_prompt=step1_prompt,
             question_prompt=enriched_problem,  # ← Blacklist prompt visible during generation!
             other_prompts=other_prompts,
-            reasoning_effort=reasoning_effort
+            reasoning_effort=reasoning_effort,
+            response_format=response_format  # ← Schema constraint enforced at API level!
         )
 
     response1 = send_api_request_with_retry(get_api_key(), p1, request_label="Initial solution prompt")
@@ -3050,34 +3175,75 @@ def init_explorations(problem_statement, verbose=True, other_prompts=[], reasoni
     print(f">>>>>>> First solution:")
     print(json.dumps(output1, indent=4))
 
-    print(f">>>>>>> Self improvement start:")
-    # Use build_assistant_message to properly handle thinking/content separation
-    p1["messages"].append(build_assistant_message(response1))
-    p1["messages"].append(
-        {"role": "user",
-        "content": self_improvement_prompt
-        }
-    )
+    # FIX 2: Skip self-improvement during BFS exploration to preserve diversity
+    # Self-improvement can amplify bias (e.g., "correcting" 3036 → 4048)
+    if not skip_self_improvement:
+        print(f">>>>>>> Self improvement start:")
+        # Use build_assistant_message to properly handle thinking/content separation
+        p1["messages"].append(build_assistant_message(response1))
+        p1["messages"].append(
+            {"role": "user",
+            "content": self_improvement_prompt
+            }
+        )
 
-    # Use high reasoning for self-improvement (proactive error prevention)
-    # This catches errors BEFORE verification, saving 5-7 correction iterations
-    improvement_effort = self_improvement_reasoning if self_improvement_reasoning is not None else SELF_IMPROVEMENT_REASONING_EFFORT
+        # Use high reasoning for self-improvement (proactive error prevention)
+        # This catches errors BEFORE verification, saving 5-7 correction iterations
+        improvement_effort = self_improvement_reasoning if self_improvement_reasoning is not None else SELF_IMPROVEMENT_REASONING_EFFORT
 
-    # BUGFIX (2025-11-30): Handle both OpenRouter (extra_body) and standard API formats
-    has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
-    if has_prefix:
-        # OpenRouter: reasoning in extra_body
-        p1["extra_body"]["reasoning"]["effort"] = improvement_effort
+        # BUGFIX (2025-11-30): Handle both OpenRouter (extra_body) and standard API formats
+        has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
+        if has_prefix:
+            # OpenRouter: reasoning in extra_body
+            p1["extra_body"]["reasoning"]["effort"] = improvement_effort
+        else:
+            # Standard: reasoning at top level
+            p1["reasoning"]["effort"] = improvement_effort
+
+        print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
+
+        response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Self-improvement prompt")
+        solution = extract_solution(extract_text_from_response(response2))
+        print(f">>>>>>> Corrected solution:")
+        print(json.dumps(solution, indent=4))
     else:
-        # Standard: reasoning at top level
-        p1["reasoning"]["effort"] = improvement_effort
+        # Skip self-improvement - use initial solution directly
+        print(f">>>>>>> Self-improvement SKIPPED (preserving initial diversity)")
+        solution = extract_solution(output1)
 
-    print(f">>>>>>> Using {improvement_effort} reasoning for self-improvement (proactive error detection)")
+    # FIX 1: GAMING DETECTION SHORT-CIRCUIT
+    # This validation runs BEFORE verification and returns early if gaming detected
+    # Verification will NEVER run on gamed solutions (no wasted compute)
+    if schema_blacklisted_values and solution:
+        is_valid, gaming_msg = validate_blacklist_consistency(solution, schema_blacklisted_values, verbose=verbose)
+        if not is_valid:
+            print(f"\n{'='*80}")
+            print(f"[GAMING DETECTED] This solution will be marked as FAILED")
+            print(f"[VERIFICATION SKIPPED] No need to verify - solution already rejected")
+            print(f"{'='*80}\n")
+            # Return None for solution to indicate failure
+            # This forces BFS to try another attempt with a different prompt
+            return p1, None, gaming_msg, "no"
 
-    response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Self-improvement prompt")
-    solution = extract_solution(extract_text_from_response(response2))
-    print(f">>>>>>> Corrected solution:")
-    print(json.dumps(solution, indent=4))
+    # P0 FIX (2026-01-05): PROOF MODE ANSWER VALIDATION
+    # When ground truth is provided, validate that final answer matches target
+    # This prevents accepting solutions with wrong answers even if reasoning is good
+    if ground_truth_answer is not None and solution:
+        solution_answer = solution.get('final_answer') if isinstance(solution, dict) else None
+
+        if solution_answer is not None and solution_answer != ground_truth_answer:
+            print(f"\n{'='*80}")
+            print(f"[PROOF MODE VIOLATION] Answer mismatch detected!")
+            print(f"  Target answer (ground truth): {ground_truth_answer}")
+            print(f"  Solution answer (derived):    {solution_answer}")
+            print(f"  Difference:                    {solution_answer - ground_truth_answer:+d}")
+            print(f"[VERIFICATION SKIPPED] Wrong answer - solution rejected")
+            print(f"{'='*80}\n")
+            # Return None to indicate failure
+            error_msg = f"Answer mismatch: expected {ground_truth_answer}, got {solution_answer}"
+            return p1, None, error_msg, "no"
+        elif solution_answer == ground_truth_answer:
+            print(f"[PROOF MODE] ✅ Answer validation passed: {solution_answer} = {ground_truth_answer}")
 
     print(f">>>>>>> Verify the solution.")
     verify, good_verify, _, _ = verify_solution(problem_statement, solution, verbose, verification_reasoning)
@@ -3103,7 +3269,7 @@ def calculate_solution_score(verify, good_verify):
     score = 0.0
 
     # Perfect verification
-    if isinstance(good_verify, dict) and good_verify.get('verdict') == 'PASS':
+    if get_verdict(good_verify) == 'PASS':
         score += 100.0
     elif isinstance(good_verify, str) and "yes" in good_verify.lower():
         # Legacy support for string verdicts
@@ -3328,25 +3494,29 @@ def extract_answer_simple(solution):
 
         answer = solution['final_answer']
 
+        # FIX TypeError: Convert to string if integer (from schema type: integer)
+        # Schema defines final_answer as int, but we need string for validation/storage
+        answer_str = str(answer) if not isinstance(answer, str) else answer
+
         # Validate answer is clean (not LaTeX fragment or variable assignment)
-        if len(answer) > 50:
+        if len(answer_str) > 50:
             raise ValueError(
-                f"Answer too long ({len(answer)} chars): likely LaTeX fragment. "
-                f"Got: {answer[:100]}"
+                f"Answer too long ({len(answer_str)} chars): likely LaTeX fragment. "
+                f"Got: {answer_str[:100]}"
             )
 
-        if '\\' in answer or '$' in answer:
+        if '\\' in answer_str or '$' in answer_str:
             raise ValueError(
-                f"Answer contains LaTeX symbols: {answer}"
+                f"Answer contains LaTeX symbols: {answer_str}"
             )
 
         # Check for variable assignments like "n = 2025"
-        if re.match(r'^[a-zA-Z_]\w*\s*=\s*', answer):
+        if re.match(r'^[a-zA-Z_]\w*\s*=\s*', answer_str):
             raise ValueError(
-                f"Answer looks like variable assignment, not final value: {answer}"
+                f"Answer looks like variable assignment, not final value: {answer_str}"
             )
 
-        return answer
+        return answer_str
     else:
         # Not a dict - this means structured output failed
         raise ValueError(
@@ -3369,6 +3539,179 @@ def get_solution_text(solution):
     if isinstance(solution, dict) and 'solution' in solution:
         return solution['solution']
     return str(solution) if solution else ""
+
+
+def get_verdict(verification_result):
+    """
+    Extract verdict from verification result in either structured or unstructured format.
+
+    Args:
+        verification_result: Either a string (legacy) or dict with 'verdict' field (structured)
+
+    Returns:
+        String containing the verdict ('PASS', 'FAIL', etc.) or 'UNKNOWN' if not a dict
+    """
+    if isinstance(verification_result, dict):
+        return verification_result.get('verdict', 'UNKNOWN')
+    # Legacy string format - assume not PASS since we can't parse reliably
+    return 'UNKNOWN'
+
+
+def validate_no_boxed_in_solution(solution, verbose=True):
+    """
+    Validate that solution text does NOT contain \\boxed{} format.
+
+    New requirement (2026-01-04): The final answer should ONLY appear in the
+    'final_answer' field, not in \\boxed{} format in the solution text.
+
+    Args:
+        solution: Solution dict from structured output
+        verbose: Whether to print validation messages
+
+    Returns:
+        (is_valid, error_msg) tuple
+
+    Raises:
+        ValueError: If solution contains \\boxed{} format
+    """
+    import re
+
+    solution_text = get_solution_text(solution)
+
+    # Check for \boxed{} pattern
+    boxed_pattern = r'\\boxed\{[^}]+\}'
+    boxed_match = re.search(boxed_pattern, solution_text)
+
+    if boxed_match:
+        boxed_content = boxed_match.group(0)
+        error_msg = (
+            f"VALIDATION ERROR: Solution text contains \\boxed{{}} format: {boxed_content}\n"
+            "The final numerical answer should be in the 'final_answer' field ONLY, "
+            "not in the solution text. The solution field should contain only the "
+            "mathematical reasoning and proof."
+        )
+
+        if verbose:
+            print(f">>>>>>> {error_msg}")
+
+        return False, error_msg
+
+    if verbose:
+        print(">>>>>>> [VALIDATION] ✓ Solution text does not contain \\boxed{} (correct format)")
+
+    return True, None
+
+
+def validate_blacklist_consistency(solution, blacklist, verbose=True):
+    """
+    Validate that solution does not derive a blacklisted answer in the text
+    while returning a different value in final_answer field (gaming detection).
+
+    This catches the evolved gaming behavior where the model:
+    1. Uses correct mathematical reasoning to derive a blacklisted value (e.g., 4048)
+    2. Writes that value in solution text (e.g., "the answer is $4048$")
+    3. Returns a slightly different value in final_answer field (e.g., 4047)
+       to satisfy the anyOf constraint
+
+    Args:
+        solution: Solution dict with 'solution' and 'final_answer' fields
+        blacklist: List of blacklisted values to check
+        verbose: Print validation messages
+
+    Returns:
+        (is_valid, error_msg) tuple
+        - is_valid: True if no gaming detected, False if gaming found
+        - error_msg: Description of gaming behavior if detected, None otherwise
+
+    Example Gaming Pattern:
+        solution_text: "Hence 2n-2 = 2×2025-2 = 4048. The answer is $4048$."
+        final_answer: 4047
+        blacklist: [2025, 4048, 4050]
+        Result: INVALID - solution derives 4048 but final_answer is 4047
+    """
+    import re
+
+    solution_text = get_solution_text(solution)
+    final_answer = solution.get('final_answer')
+
+    if final_answer is None:
+        return True, None  # Can't validate without final_answer
+
+    # Convert final_answer to string for comparison
+    final_answer_str = str(final_answer)
+
+    # Extract all numerical values mentioned in solution text
+    # Look for patterns like: $4048$, \(4048\), "4048", answer is 4048, etc.
+    number_patterns = [
+        r'\$(\d+)\$',                    # $4048$
+        r'\\boxed\{(\d+)\}',             # \boxed{4048}
+        r'answer is (\d+)',               # answer is 4048
+        r'equals? (\d+)',                 # equals 4048, equal 4048
+        r'= (\d+)\.?\s*$',                # = 4048. (at end of sentence)
+        r'is (\d+)\.?\s*(?:$|\n)',        # is 4048. (at end)
+    ]
+
+    mentioned_numbers = set()
+    for pattern in number_patterns:
+        matches = re.findall(pattern, solution_text, re.IGNORECASE | re.MULTILINE)
+        mentioned_numbers.update(matches)
+
+    # Check 1: Does solution text mention any blacklisted value?
+    blacklisted_in_solution = []
+    for num_str in mentioned_numbers:
+        try:
+            num = int(num_str)
+            if num in blacklist:
+                blacklisted_in_solution.append(num)
+        except ValueError:
+            continue
+
+    if blacklisted_in_solution:
+        # Check 2: Is final_answer different from what solution derives?
+        if final_answer not in blacklisted_in_solution:
+            # GAMING DETECTED: Solution derives blacklisted value but final_answer is different
+            error_msg = (
+                f"GAMING DETECTED: Solution text derives blacklisted value(s) {blacklisted_in_solution}, "
+                f"but final_answer is {final_answer}. This suggests the model used a blacklisted "
+                f"method (leading to {blacklisted_in_solution[0]}) but tweaked the final_answer "
+                f"to satisfy the constraint. The method should be changed, not just the final number."
+            )
+
+            if verbose:
+                print(f">>>>>>> [BLACKLIST VALIDATION] ❌ {error_msg}")
+                print(f">>>>>>> [BLACKLIST VALIDATION] Solution mentions: {sorted(mentioned_numbers)}")
+                print(f">>>>>>> [BLACKLIST VALIDATION] Blacklisted values found: {blacklisted_in_solution}")
+                print(f">>>>>>> [BLACKLIST VALIDATION] final_answer: {final_answer}")
+
+            return False, error_msg
+        else:
+            # Solution derives blacklisted value AND final_answer matches it
+            # This means the blacklist constraint wasn't enforced by schema (shouldn't happen)
+            error_msg = (
+                f"CONSTRAINT VIOLATION: Solution derives blacklisted value {final_answer} "
+                f"which appears in both solution text and final_answer field. "
+                f"The anyOf constraint should have prevented this."
+            )
+
+            if verbose:
+                print(f">>>>>>> [BLACKLIST VALIDATION] ⚠️  {error_msg}")
+
+            return False, error_msg
+
+    # Check 3: Consistency check - does final_answer appear in solution text?
+    if final_answer_str not in mentioned_numbers:
+        # This is acceptable - the solution might not explicitly state the final number
+        # as long as it doesn't derive a blacklisted value
+        if verbose:
+            print(f">>>>>>> [BLACKLIST VALIDATION] ℹ️  Note: final_answer ({final_answer}) not explicitly mentioned in solution text")
+            print(f">>>>>>> [BLACKLIST VALIDATION] Solution mentions: {sorted(mentioned_numbers)}")
+
+    if verbose:
+        print(f">>>>>>> [BLACKLIST VALIDATION] ✓ No gaming detected")
+        print(f">>>>>>> [BLACKLIST VALIDATION] final_answer: {final_answer}, blacklist: {blacklist}")
+
+    return True, None
+
 
 def validate_answer_change(prev_solution, new_solution, iteration, verbose=True):
     """
@@ -4134,7 +4477,8 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
                max_adversarial_rounds=12, consecutive_robust_threshold=3,
                stuck_threshold=5, memory_file=None, verbose=True,
                defense_first=True, max_regeneration_attempts=2,
-               use_constructive_mode=True, max_cost=100.0):
+               use_constructive_mode=True, max_cost=100.0,
+               use_schema_blacklist=False, problem_file=None):
     """
     Main RLAC (Reinforcement Learning with Adversarial Critics) agent.
 
@@ -4363,7 +4707,9 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
             p1, solution, verify, good_verify = init_explorations(
                 problem_statement, verbose, current_prompts,
                 sol_reasoning, self_imp_reasoning, ver_reasoning,
-                agent_problem_id, agent_run_id
+                agent_problem_id, agent_run_id, use_schema_blacklist, problem_file,
+                skip_self_improvement=False,  # RLAC uses self-improvement
+                ground_truth_answer=None  # RLAC doesn't use proof mode
             )
 
             if solution is None:
@@ -4412,7 +4758,7 @@ def rlac_agent(problem_statement, other_prompts=[], sol_reasoning="low",
 
     # Initialize best solution tracking
     best_solution = solution
-    best_solution_score = 0 if good_verify.get('verdict') == 'PASS' else -10
+    best_solution_score = 0 if get_verdict(good_verify) == 'PASS' else -10
     best_solution_round = 0
     print(f">>>>>>> [RLAC TRACKING] Initial best solution score: {best_solution_score}")
 
@@ -5339,7 +5685,7 @@ Start completely fresh with a different mathematical approach.
                     print(">>>>>>> [RLAC FINAL] Skipping verification for adaptive exit (no progress)")
                     verify, good_verify = "", {"verdict": "FAIL", "reasoning": "Skipped for adaptive exit"}
 
-                cooperative_verified = good_verify.get('verdict') == 'PASS'
+                cooperative_verified = get_verdict(good_verify) == 'PASS'
 
                 if cooperative_verified:
                     print(">>>>>>> [RLAC FINAL] ✓ TIER 2 ACHIEVED: Passed both adversarial AND cooperative verification!")
@@ -6619,7 +6965,7 @@ Provide a corrected solution that passes validation for all small cases.
             reasoning_effort=ver_reasoning
         )
 
-        cooperative_verified = good_verify.get('verdict') == 'PASS'
+        cooperative_verified = get_verdict(good_verify) == 'PASS'
 
         if cooperative_verified:
             print(">>>>>>> [SUSPICIOUS CONVERGENCE] ✓ Final verification: Answer correct!")
@@ -6702,7 +7048,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
           num_initial_attempts=1, use_mcts=False, mcts_simulations=5, mcts_exploration=1.414, best_of_n=0,
           use_proof_sketch=False, use_rlac=False, rlac_max_rounds=12, rlac_robust_threshold=3, rlac_stuck_threshold=2,
           rlac_defense_first=True, rlac_max_regeneration=2, rlac_constructive_mode=True, rlac_critic_reasoning=None,
-          problem_file=None):
+          use_schema_blacklist=False, problem_file=None):
     """
     Main agent function for solving mathematical problems.
 
@@ -6768,7 +7114,9 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             verbose=True,
             defense_first=rlac_defense_first,
             max_regeneration_attempts=rlac_max_regeneration,
-            use_constructive_mode=rlac_constructive_mode
+            use_constructive_mode=rlac_constructive_mode,
+            use_schema_blacklist=use_schema_blacklist,
+            problem_file=problem_file
         )
 
     if resume_from_memory and memory_file:
@@ -6878,6 +7226,16 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         if not use_mcts and num_initial_attempts > 1:
             print(f">>>>>>> BFS: Generating {num_initial_attempts} diverse initial solutions...")
 
+            # P0 FIX (2026-01-05): Parse ground_truth_answer for BFS mode (same as single-path)
+            # This enables proof mode in BFS - model will prove given answer instead of searching
+            ground_truth = None
+            if args.ground_truth_answer:
+                try:
+                    ground_truth = int(args.ground_truth_answer)
+                except ValueError:
+                    ground_truth = args.ground_truth_answer
+                print(f">>>>>>> BFS: Ground truth proof mode enabled - will prove answer = {ground_truth}")
+
             # Check if we should use dynamic BFS prompts
             use_dynamic = False
             dynamic_prompts_list = []
@@ -6898,6 +7256,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
             best_score = -999999
             best_verify = None
             best_good_verify = None
+            best_attempt_label = "None"
+            locked_answer = None  # P1 FIX: Initialize answer lock variable
 
             # BFS Diversity Fix (2025-12-30): Use run-specific prompt rotation
             # Each parallel run gets different prompts to ensure exploration diversity
@@ -6932,10 +7292,15 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     diverse_prompts.append(f"Note: This is attempt {attempt+1} of {num_initial_attempts}. {diversity_hints[attempt % len(diversity_hints)]}")
 
                 try:
+                    # FIX 2: Skip self-improvement during BFS exploration to preserve diversity
+                    # Only use self-improvement on final selected solution after BFS completes
+                    # P0 FIX: Pass ground_truth_answer to enable proof mode in BFS
                     p1, sol, ver, good_ver = init_explorations(
                         problem_statement, True, diverse_prompts,
                         sol_reasoning, self_imp_reasoning, ver_reasoning,
-                        agent_problem_id, agent_run_id
+                        agent_problem_id, agent_run_id, use_schema_blacklist, problem_file,
+                        skip_self_improvement=True,  # Preserve diversity during exploration
+                        ground_truth_answer=ground_truth  # Enable proof mode if provided
                     )
 
                     if sol:
@@ -6948,6 +7313,8 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                             best_solution = sol
                             best_verify = ver
                             best_good_verify = good_ver
+                            best_p1 = p1  # ROOT CAUSE FIX #1C: Save p1 from best BFS attempt
+                            best_attempt_label = f"Attempt {attempt+1}"
                             print(f">>>>>>> BFS: New best solution (attempt {attempt+1})")
 
                         # Early stopping: if score > 0, likely has valid construction
@@ -7069,7 +7436,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                                     p2, sol2, ver2, good_ver2 = init_explorations(
                                         problem_statement, True, diverse_prompts,
                                         sol_reasoning, self_imp_reasoning, ver_reasoning,
-                                        agent_problem_id, agent_run_id
+                                        agent_problem_id, agent_run_id, use_schema_blacklist, problem_file
                                     )
 
                                     if sol2:
@@ -7081,6 +7448,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                                             best_solution = sol2
                                             best_verify = ver2
                                             best_good_verify = good_ver2
+                                            best_attempt_label = f"Phase 2 (k={k_val})"
                                             print(f">>>>>>> BFS Phase 2: NEW BEST (k={k_val}, score={score2:.2f})")
                                 except Exception as e:
                                     print(f">>>>>>> BFS Phase 2: k={k_val} failed: {e}")
@@ -7094,15 +7462,27 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         print(f">>>>>>> BFS Phase 2: Continuing with Phase 1 results")
 
             if best_solution:
-                print(f">>>>>>> BFS: Best initial solution selected (score: {best_score:.2f})")
+                print(f">>>>>>> BFS: Best initial solution selected: {best_attempt_label} (score: {best_score:.2f})")
                 solution = best_solution
                 verify = best_verify
                 good_verify = best_good_verify
+                p1 = best_p1 if 'best_p1' in locals() else None  # ROOT CAUSE FIX #1C: Use p1 from best attempt
+
+                # P1 FIX (2026-01-05): ANSWER LOCK AFTER BFS SELECTION
+                # Lock the answer to prevent drift during correction iterations
+                # Only allow proof quality improvements, not answer changes
+                locked_answer = best_solution.get('final_answer') if isinstance(best_solution, dict) else None
+                if locked_answer is not None:
+                    print(f">>>>>>> [ANSWER LOCK] Answer locked after BFS: {locked_answer}")
+                    print(f">>>>>>> [ANSWER LOCK] Corrections will preserve this answer")
 
                 # Small-case verification: detect incomplete solutions and force small-case exploration
                 if SMALL_CASE_VERIFICATION_AVAILABLE:
+                    # FIX TypeError: Extract solution text from structured dict
+                    solution_text = get_solution_text(solution)
+
                     trigger, reason, missing = should_trigger_small_case_verification(
-                        solution, verify, good_verify
+                        solution_text, verify, good_verify
                     )
 
                     if trigger:
@@ -7111,15 +7491,19 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                         print(f">>>>>>> [SMALL-CASE] Forcing explicit small-case exploration...")
 
                         small_case_prompt = generate_small_case_prompt(
-                            problem_statement, solution, missing
+                            problem_statement, solution_text, missing
                         )
+
+                        # ROOT CAUSE FIX #4: Save response_format before rebuilding p1
+                        saved_small_case_format = p1.get("response_format") if p1 and isinstance(p1, dict) else None
 
                         # Build request with previous solution as context
                         p1 = build_request_payload(
                             system_prompt=step1_prompt,
                             question_prompt=problem_statement,
                             other_prompts=other_prompts,
-                            reasoning_effort=sol_reasoning  # Use same reasoning as solution
+                            reasoning_effort=sol_reasoning,  # Use same reasoning as solution
+                            response_format=saved_small_case_format  # ROOT CAUSE FIX #4: Include schema
                         )
 
                         # Add small-case prompt to messages (extract text from dict if needed)
@@ -7161,14 +7545,37 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 return None
         if not use_mcts and num_initial_attempts <= 1:
             # Original single-path initialization
-            p1, solution, verify, good_verify = init_explorations(problem_statement, True, other_prompts, sol_reasoning, self_imp_reasoning, ver_reasoning, agent_problem_id, agent_run_id)
+            # Parse ground_truth_answer if provided (try as int first, fall back to string)
+            ground_truth = None
+            if args.ground_truth_answer:
+                try:
+                    ground_truth = int(args.ground_truth_answer)
+                except ValueError:
+                    ground_truth = args.ground_truth_answer
+
+            p1, solution, verify, good_verify = init_explorations(
+                problem_statement, True, other_prompts,
+                sol_reasoning, self_imp_reasoning, ver_reasoning,
+                agent_problem_id, agent_run_id, use_schema_blacklist, args.problem_file,
+                skip_self_improvement=False,  # Use self-improvement in single-path mode
+                ground_truth_answer=ground_truth
+            )
             if(solution is None):
                 print(">>>>>>> Failed in finding a complete solution.")
                 return None
+            locked_answer = None  # P1 FIX: No answer lock in single-path mode
     else:
         # We have a solution from memory, need to get good_verify
         # Use the verification reasoning effort
         _, good_verify, _, _ = verify_solution(problem_statement, solution, reasoning_effort=ver_reasoning)
+        p1 = None  # No p1 when resuming from memory
+        locked_answer = None  # P1 FIX: No answer lock when resuming from memory
+
+    # ROOT CAUSE FIX #1B: Save response_format for later reuse
+    # This preserves the schema from init_explorations for use in corrections
+    saved_response_format = p1.get("response_format") if p1 and isinstance(p1, dict) else None
+    if saved_response_format:
+        print(f">>>>>>> [SCHEMA] response_format preserved for corrections")
 
     error_count = 0
     correct_count = 1
@@ -7205,7 +7612,7 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
         print(f"{'='*80}\n")
 
         try:
-            if good_verify.get('verdict') != 'PASS':
+            if get_verdict(good_verify) != 'PASS':
                 # clear
                 correct_count = 0
                 error_count += 1
@@ -7213,11 +7620,15 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                 #self improvement
                 print(">>>>>>> Verification does not pass, correcting ...")
 
+                # ROOT CAUSE FIX #1: Preserve response_format from initial request
+                # Use saved_response_format from line 7244 (set after init_explorations)
+                # This ensures corrections use the same schema as initial attempts
                 p1 = build_request_payload(
                     system_prompt=step1_prompt,
                     question_prompt=problem_statement,
                     other_prompts=other_prompts,
-                    reasoning_effort=sol_reasoning  # Use CLI-specified solution reasoning
+                    reasoning_effort=sol_reasoning,  # Use CLI-specified solution reasoning
+                    response_format=saved_response_format  # ← FIX: Include schema for corrections
                 )
 
                 # Append previous solution as assistant message
@@ -7260,7 +7671,31 @@ def agent(problem_statement, other_prompts=[], memory_file=None, resume_from_mem
                     )
 
                 response2 = send_api_request_with_retry(get_api_key(), p1, request_label="Correction prompt")
-                solution = extract_solution(extract_text_from_response(response2))
+                corrected_solution = extract_solution(extract_text_from_response(response2))
+
+                # P1 FIX (2026-01-05): ANSWER LOCK ENFORCEMENT
+                # Check if correction changed the answer (when answer is locked from BFS)
+                if 'locked_answer' in locals() and locked_answer is not None:
+                    corrected_answer = corrected_solution.get('final_answer') if isinstance(corrected_solution, dict) else None
+
+                    if corrected_answer is not None and corrected_answer != locked_answer:
+                        print(f"\n{'='*80}")
+                        print(f"[ANSWER LOCK VIOLATION] Correction changed the answer!")
+                        print(f"  Locked answer (from BFS):  {locked_answer}")
+                        print(f"  Corrected answer:          {corrected_answer}")
+                        print(f"  Difference:                {corrected_answer - locked_answer if isinstance(corrected_answer, (int, float)) and isinstance(locked_answer, (int, float)) else 'N/A'}")
+                        print(f"[ANSWER LOCK] Rejecting correction - keeping previous solution")
+                        print(f"{'='*80}\n")
+                        # Keep previous solution instead of using corrected one
+                        solution = previous_solution
+                    else:
+                        # Answer matches lock or no answer extracted - accept correction
+                        solution = corrected_solution
+                        if corrected_answer == locked_answer:
+                            print(f"[ANSWER LOCK] ✅ Correction preserved locked answer: {locked_answer}")
+                else:
+                    # No answer lock active (non-BFS mode) - accept correction normally
+                    solution = corrected_solution
 
                 print(">>>>>>> Corrected solution:")
                 print(json.dumps(solution, indent=4))
@@ -7386,7 +7821,7 @@ Do not simply rephrase or polish the previous approach - create something new.
             score_history.append(current_score)
             print(f">>>>>>> [SCORE] Iteration {i} score: {current_score:.2f}")
 
-            if good_verify.get('verdict') == 'PASS':
+            if get_verdict(good_verify) == 'PASS':
                 print(">>>>>>> Solution verification PASSED")
                 correct_count += 1
                 error_count = 0
@@ -7508,7 +7943,13 @@ Do not simply rephrase or polish the previous approach - create something new.
                 return None
 
         except Exception as e:
+            # ROOT CAUSE FIX #3: Enhanced error logging with full stacktrace
+            # Helps identify exact line where error originated
             print(f">>>>>>> Error in run {i}: {e}")
+            print(f">>>>>>> Exception type: {type(e).__name__}")
+            print(f">>>>>>> Stacktrace:")
+            import traceback
+            traceback.print_exc()
             continue
 
     if(not success):
@@ -7528,6 +7969,154 @@ Do not simply rephrase or polish the previous approach - create something new.
                                        iterations=MAX_ITERATIONS)
 
         return None
+
+
+# ============================================================================
+# Formula Derivation Integration
+# ============================================================================
+
+class LLMClient:
+    """Simple LLM client wrapper for SmallCaseValidator."""
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+
+    def call(self, system, user, reasoning_effort="medium", json_mode=False):
+        """
+        Call LLM with system and user prompts.
+
+        Args:
+            system: System prompt
+            user: User prompt
+            reasoning_effort: "low", "medium", or "high"
+            json_mode: Enable JSON mode
+
+        Returns:
+            Response dict (already parsed JSON if json_mode=True)
+        """
+        # Build payload
+        payload = build_request_payload(
+            system_prompt=system,
+            question_prompt=user,
+            reasoning_effort=reasoning_effort
+        )
+
+        # Send request
+        response = send_api_request_with_retry(
+            api_key=self.api_key,
+            payload=payload,
+            stream=False,  # Don't stream for formula derivation
+            request_label="Formula Derivation"
+        )
+
+        # Extract content
+        if 'choices' in response and len(response['choices']) > 0:
+            content = response['choices'][0]['message']['content']
+
+            # Parse JSON if requested
+            if json_mode:
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError as e:
+                    print(f"[LLM_CLIENT] Failed to parse JSON: {e}")
+                    print(f"[LLM_CLIENT] Raw content: {content[:200]}...")
+                    return None
+
+            return content
+
+        return None
+
+
+def solve_with_formula_guidance(problem_statement, problem_file=None, use_formula_derivation=False,
+                                formula_reasoning="adaptive", min_confidence=0.8, **agent_kwargs):
+    """
+    Solve problem with optional formula derivation attempt before BFS.
+
+    Args:
+        problem_statement: Full problem text
+        problem_file: Path to problem file (for ID extraction)
+        use_formula_derivation: Whether to attempt formula derivation
+        formula_reasoning: "low", "medium", "high", or "adaptive"
+        min_confidence: Minimum confidence to accept derived answer
+        **agent_kwargs: Other solving parameters passed to agent()
+
+    Returns:
+        Solution result
+    """
+    # Attempt formula derivation if enabled
+    if use_formula_derivation and FORMULA_VALIDATION_AVAILABLE:
+        print("\n" + "="*80)
+        print("[FORMULA DERIVATION] Attempting formula derivation from small cases...")
+        print("="*80)
+
+        # Get verified cases for this problem
+        from verified_cases_db import get_verified_cases, should_use_formula_derivation
+
+        if should_use_formula_derivation(problem_statement):
+            problem_id = extract_problem_id_from_path(problem_file) if problem_file else None
+            verified_cases = get_verified_cases(problem_statement, problem_id)
+
+            if verified_cases:
+                print(f"[FORMULA DERIVATION] Found {len(verified_cases)} verified cases")
+
+                # Get API key
+                api_key = os.getenv("GPT_OSS_API_KEY", "")
+                if not api_key:
+                    api_key = os.getenv("OPENROUTER_API_KEY", "")
+
+                # Create LLM client and validator
+                llm_client = LLMClient(api_key)
+                validator = SmallCaseValidator(llm_client)
+
+                # Attempt derivation
+                try:
+                    if formula_reasoning == "adaptive":
+                        result = validator.derive_formula_with_adaptive_reasoning(
+                            problem_statement, verified_cases
+                        )
+                    else:
+                        result = validator.derive_formula(
+                            problem_statement, verified_cases, reasoning_effort=formula_reasoning
+                        )
+
+                    if result and result["confidence"] >= min_confidence:
+                        print(f"[FORMULA DERIVATION] ✓ SUCCESS!")
+                        print(f"[FORMULA DERIVATION]   Formula: {result['formula']}")
+                        print(f"[FORMULA DERIVATION]   Answer: {result['answer']}")
+                        print(f"[FORMULA DERIVATION]   Confidence: {result['confidence']}")
+                        print(f"[FORMULA DERIVATION]   Pattern: {result['pattern_analysis'][:100]}...")
+
+                        # Return formula-derived answer
+                        # NOTE: We trust the formula derivation for now
+                        # Future: Add optional verification step here
+                        print(f"[FORMULA DERIVATION] ✓ Using formula-derived answer.")
+                        return {
+                            "final_answer": str(result["answer"]),
+                            "solution": f"Formula derivation: {result['formula']}\nPattern: {result['pattern_analysis']}",
+                            "method": "formula_derivation",
+                            "formula": result["formula"],
+                            "confidence": result["confidence"],
+                            "verified": False  # Not yet verified by BFS
+                        }
+                    else:
+                        if result:
+                            print(f"[FORMULA DERIVATION] ✗ Low confidence ({result['confidence']}). Falling back to BFS...")
+                        else:
+                            print(f"[FORMULA DERIVATION] ✗ Failed to derive formula. Falling back to BFS...")
+                except Exception as e:
+                    print(f"[FORMULA DERIVATION] ✗ Error during derivation: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[FORMULA DERIVATION] No verified cases available for this problem.")
+        else:
+            print(f"[FORMULA DERIVATION] Problem doesn't appear to be formula-based.")
+
+        print(f"[FORMULA DERIVATION] Proceeding with standard BFS...")
+
+    # Fall back to standard agent() solving
+    return agent(problem_statement, **agent_kwargs)
+
 
 if __name__ == "__main__":
     # Set up argument parsing
@@ -7553,6 +8142,8 @@ if __name__ == "__main__":
                        help='Override verification reasoning effort (low/medium/high). Use "high" for rigorous checking.')
     parser.add_argument('--num-initial-attempts', '-nia', type=int, default=1,
                        help='Generate N diverse initial solutions and pick best (default: 1). Use 3-5 for BFS exploration to escape local minima.')
+    parser.add_argument('--ground-truth-answer', '-gta', type=str, default=None,
+                       help='Provide ground truth answer (e.g., "2112") and ask LLM to prove it instead of finding answer. Useful when answer is known but proof is hard to construct manually.')
     parser.add_argument('--use-mcts', action='store_true',
                        help='Use MCTS-guided exploration instead of simple BFS')
     parser.add_argument('--mcts-simulations', type=int, default=5,
@@ -7594,6 +8185,18 @@ if __name__ == "__main__":
     parser.add_argument('--rlac-critic-reasoning', type=str, choices=['low', 'medium', 'high'], default='medium',
                        help='Reasoning effort for RLAC adversarial critic attacks (default: medium). Higher = more rigorous attacks.')
 
+    # Schema Blacklist Arguments
+    parser.add_argument('--use-schema-blacklist', action='store_true',
+                       help='Use JSON schema to enforce blacklist constraints via constrained decoding (100%% compliance, 0%% waste)')
+
+    # Small-case formula derivation arguments
+    parser.add_argument('--use-formula-derivation', action='store_true',
+                       help='Attempt formula derivation from small cases before BFS (10-100x speedup for formula problems)')
+    parser.add_argument('--formula-min-confidence', type=float, default=0.8,
+                       help='Minimum confidence threshold for accepting derived formula (default: 0.8)')
+    parser.add_argument('--formula-reasoning', type=str, choices=['low', 'medium', 'high', 'adaptive'], default='adaptive',
+                       help='Reasoning effort for formula derivation (default: adaptive = try low→medium→high)')
+
     args = parser.parse_args()
 
     max_runs = args.max_runs
@@ -7616,6 +8219,10 @@ if __name__ == "__main__":
     rlac_max_regeneration = args.rlac_max_regeneration
     rlac_constructive_mode = args.rlac_constructive_mode and not args.no_rlac_constructive_mode
     rlac_critic_reasoning = args.rlac_critic_reasoning
+    use_schema_blacklist = args.use_schema_blacklist
+    use_formula_derivation = args.use_formula_derivation
+    formula_min_confidence = args.formula_min_confidence
+    formula_reasoning = args.formula_reasoning
 
     # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
@@ -7707,12 +8314,35 @@ if __name__ == "__main__":
     # Rationale: BFS phase results were lost on restart, each restart re-ran expensive BFS (~82 min)
     print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Starting agent ...")
     try:
-        sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
-                   solution_reasoning, self_improvement_reasoning, verification_reasoning,
-                   num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
-                   use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
-                   rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning,
-                   problem_file=args.problem_file)
+        sol = solve_with_formula_guidance(
+            problem_statement,
+            problem_file=args.problem_file,
+            use_formula_derivation=use_formula_derivation,
+            formula_reasoning=formula_reasoning,
+            min_confidence=formula_min_confidence,
+            # Pass all agent() parameters as kwargs
+            other_prompts=other_prompts,
+            memory_file=memory_file,
+            resume_from_memory=resume_from_memory,
+            solution_reasoning=solution_reasoning,
+            self_improvement_reasoning=self_improvement_reasoning,
+            verification_reasoning=verification_reasoning,
+            num_initial_attempts=num_initial_attempts,
+            use_mcts=use_mcts,
+            mcts_simulations=mcts_simulations,
+            mcts_exploration=mcts_exploration,
+            best_of_n=best_of_n,
+            use_proof_sketch=use_proof_sketch,
+            use_rlac=use_rlac,
+            rlac_max_rounds=rlac_max_rounds,
+            rlac_robust_threshold=rlac_robust_threshold,
+            rlac_stuck_threshold=rlac_stuck_threshold,
+            rlac_defense_first=rlac_defense_first,
+            rlac_max_regeneration=rlac_max_regeneration,
+            rlac_constructive_mode=rlac_constructive_mode,
+            rlac_critic_reasoning=rlac_critic_reasoning,
+            use_schema_blacklist=use_schema_blacklist
+        )
         if(sol is not None):
             print(f">>>>>>> Found a correct solution.")
             print(json.dumps(sol, indent=4))

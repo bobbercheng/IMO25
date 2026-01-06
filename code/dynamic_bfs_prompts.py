@@ -40,8 +40,15 @@ def parse_problem_parameters(problem_statement: str) -> Dict[str, Any]:
         'problem_type': None  # 'FIND', 'PROVE', 'DETERMINE'
     }
 
-    # Detect problem type
-    if re.search(r'\bfind\b|\bdetermine\b', problem_statement, re.IGNORECASE):
+    # P1 FIX (2026-01-05): Detect problem type more accurately
+    # Priority: MINIMIZE/MAXIMIZE > FIND > PROVE (order matters!)
+    if re.search(r'\bminimize\b|\bminimum\b|\bsmallest\b|\bleast\b|\bminimal\b', problem_statement, re.IGNORECASE):
+        result['problem_type'] = 'MINIMIZE'
+    elif re.search(r'\bmaximize\b|\bmaximum\b|\blargest\b|\bgreatest\b|\bmaximal\b', problem_statement, re.IGNORECASE):
+        result['problem_type'] = 'MAXIMIZE'
+    elif re.search(r'\bfind\s+all\b|\bdetermine\s+all\b', problem_statement, re.IGNORECASE):
+        result['problem_type'] = 'FIND_ALL'
+    elif re.search(r'\bfind\b|\bdetermine\b', problem_statement, re.IGNORECASE):
         result['problem_type'] = 'FIND'
     elif re.search(r'\bprove\b|\bshow\b', problem_statement, re.IGNORECASE):
         result['problem_type'] = 'PROVE'
@@ -59,11 +66,15 @@ def parse_problem_parameters(problem_statement: str) -> Dict[str, Any]:
         result['variable'] = match.group(1)
 
     # Pattern 2: Look for "exactly k" or "k ∈"
-    if not result['variable']:
+    # P1 FIX: Skip this for MINIMIZE/MAXIMIZE problems (avoids extracting "one" from "exactly one unit")
+    if not result['variable'] and result['problem_type'] not in ['MINIMIZE', 'MAXIMIZE']:
         match = re.search(r'exactly\s+(\w+)\s+(\w+)', problem_statement)
         if match:
-            result['variable'] = match.group(1)
-            result['description'] = match.group(2)
+            # Additional check: don't extract common words like "one", "two", "three"
+            potential_var = match.group(1)
+            if potential_var.lower() not in ['one', 'two', 'three', 'four', 'five', 'a', 'the']:
+                result['variable'] = potential_var
+                result['description'] = match.group(2)
 
     # Pattern 3: Extract constraints like "n ≥ 3" or "n >= 3"
     # Prioritize constraints in "Let" statements
@@ -114,6 +125,10 @@ def generate_bfs_prompts(problem_statement: str, num_prompts: int = 5) -> List[s
     2. Generate prompts forcing specific values (e.g., k=0, k=1, k=2, k=3)
     3. Include edge cases (minimum, maximum, intermediate)
 
+    P1 FIX (2026-01-05): Handle MINIMIZE/MAXIMIZE problems differently
+    - For optimization problems: construction strategy prompts
+    - For FIND_ALL problems: parameter exploration prompts
+
     Args:
         problem_statement: The problem text
         num_prompts: Number of prompts to generate (default: 5)
@@ -122,6 +137,10 @@ def generate_bfs_prompts(problem_statement: str, num_prompts: int = 5) -> List[s
         List of explicit exploration prompts
     """
     params = parse_problem_parameters(problem_statement)
+
+    # P1 FIX: For MINIMIZE/MAXIMIZE problems, use construction strategy prompts
+    if params['problem_type'] in ['MINIMIZE', 'MAXIMIZE']:
+        return generate_optimization_prompts(problem_statement, num_prompts, params['problem_type'])
 
     if not params['variable']:
         # Fallback: generic exploration prompts
@@ -193,6 +212,72 @@ def generate_bfs_prompts(problem_statement: str, num_prompts: int = 5) -> List[s
             f"For each value, either construct an example or prove impossibility."
         ])
 
+    return prompts[:num_prompts]
+
+
+def generate_optimization_prompts(problem_statement: str, num_prompts: int, problem_type: str) -> List[str]:
+    """
+    Generate construction strategy prompts for MINIMIZE/MAXIMIZE problems.
+
+    P1 FIX (2026-01-05): Created to handle optimization problems properly.
+    Instead of exploring parameter values, these prompts guide construction strategies.
+
+    Args:
+        problem_statement: The problem text
+        num_prompts: Number of prompts to generate
+        problem_type: 'MINIMIZE' or 'MAXIMIZE'
+
+    Returns:
+        List of construction strategy prompts
+    """
+    # Detect if problem involves special structures
+    has_perfect_square = False
+    n_value = None
+
+    # Extract n value from problem
+    n_match = re.search(r'(\d+)\s*\\?times\s*(\d+)', problem_statement)
+    if n_match and n_match.group(1) == n_match.group(2):
+        n_value = int(n_match.group(1))
+        sqrt_n = int(n_value ** 0.5)
+        if sqrt_n * sqrt_n == n_value:
+            has_perfect_square = True
+
+    action = "minimize" if problem_type == "MINIMIZE" else "maximize"
+
+    prompts = [
+        f"**Explicit Task**: Try a greedy construction strategy. At each step, make the choice that immediately {action}s the objective. Verify this approach works.",
+
+        f"**Explicit Task**: Test small cases (n=3, n=4, n=5) to identify patterns. Use these patterns to construct a solution for larger n.",
+
+        f"**Explicit Task**: Try a block-based or modular construction. Can you decompose the problem into smaller independent subproblems?",
+
+        f"**Explicit Task**: Consider symmetry and structural properties. Are there special configurations (diagonal, cyclic, regular patterns) that {action} the objective?",
+
+        f"**Explicit Task**: Challenge the obvious formula. The first valid construction may not be optimal. Can you find a better approach?",
+    ]
+
+    # Add perfect square-specific prompts if detected
+    if has_perfect_square and n_value:
+        sqrt_n = int(n_value ** 0.5)
+        prompts.insert(2,
+            f"**Explicit Task**: Exploit the perfect square structure (n={n_value}={sqrt_n}²). "
+            f"Try block decomposition, Dilworth's theorem for posets, or grid-based approaches."
+        )
+
+    # Add more diversity prompts if needed
+    additional_prompts = [
+        f"**Explicit Task**: Use a probabilistic or randomized construction. Does randomization help achieve better bounds?",
+
+        f"**Explicit Task**: Apply algebraic or combinatorial lower/upper bounds. What theoretical limits exist?",
+
+        f"**Explicit Task**: Consider adversarial or worst-case constructions. What configuration makes {action}ing hardest?",
+
+        f"**Explicit Task**: Try induction or recursive approaches. Can you build larger solutions from smaller ones while maintaining optimality?",
+
+        f"**Explicit Task**: Explore dual or complementary formulations. Does transforming the problem reveal better strategies?",
+    ]
+
+    prompts.extend(additional_prompts)
     return prompts[:num_prompts]
 
 
@@ -285,14 +370,20 @@ def should_use_dynamic_prompts(problem_statement: str, num_initial_attempts: int
     - Problem is FIND/DETERMINE type (not pure PROVE)
     - Has parameters to explore (k, n, etc.)
     - Using BFS (num_initial_attempts > 1)
+
+    P1 FIX (2026-01-05): Also enable for MINIMIZE/MAXIMIZE problems
     """
     if num_initial_attempts <= 1:
         return False
 
     params = parse_problem_parameters(problem_statement)
 
+    # P1 FIX: Use dynamic prompts for MINIMIZE/MAXIMIZE (construction strategies)
+    if params['problem_type'] in ['MINIMIZE', 'MAXIMIZE']:
+        return True
+
     # Use if we found a variable to explore
-    if params['variable'] and params['problem_type'] in ['FIND', None]:
+    if params['variable'] and params['problem_type'] in ['FIND', 'FIND_ALL', None]:
         return True
 
     return False
