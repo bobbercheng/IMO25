@@ -36,6 +36,9 @@ def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3) -> Di
         "model": MODEL_NAME,
         "messages": messages,
         "temperature": 0.7,
+        "reasoning": {
+            "effort": "high"
+        }
     }
 
     headers = {
@@ -155,6 +158,7 @@ def main():
     print("="*80)
     print(f"Using model: {MODEL_NAME}")
     print(f"API endpoint: {API_URL}")
+    print(f"Reasoning effort: high")
     print()
 
     # Problem statement (simplified version of IMO 2025 P6)
