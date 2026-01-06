@@ -226,10 +226,11 @@ Return JSON with this exact structure:
     "derived_formula": "your proposed formula in terms of n and k",
     "verification": [
         {"n": 4, "k": 2, "predicted": 5, "actual": 5, "match": true},
-        {"n": 9, "k": 3, "predicted": 12, "actual": 12, "match": true}
+        {"n": 9, "k": 3, "predicted": 12, "actual": 12, "match": true},
+        {"n": 16, "k": 4, "predicted": 21, "actual": 21, "match": true}
     ],
     "all_cases_match": true,
-    "final_answer": 2112,
+    "final_answer": n,
     "confidence": "high/medium/low"
 }
 
@@ -319,7 +320,7 @@ For context: 2025 = 45², so k = √2025 = 45.
             "tiles": 12,
             "source": "trusted_imo_official_solution"
         },
-        # {"n": 16, "k": 4, "tiles": 21, "source": "derived_from_formula"},  # ← Would be circular!
+        {"n": 16, "k": 4, "tiles": 21, "source": "derived_from_formula"},  # ← Would be circular!
     ]
 
     # Test 1: Baseline (no validation)
