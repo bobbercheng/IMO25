@@ -4,3 +4,4 @@ filelock==3.13.1
 idna==3.10
 requests==2.32.4
 urllib3==2.5.0
+ortools=9.14.6206

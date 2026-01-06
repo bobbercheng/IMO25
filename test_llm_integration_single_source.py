@@ -19,7 +19,7 @@ from schema_blacklist import get_blacklist_constrained_schema
 
 # Configuration - Use OpenRouter from CLAUDE.md
 API_URL = os.getenv("GPT_OSS_API_URL", "https://openrouter.ai/api/v1/chat/completions")
-API_KEY = os.getenv("GPT_OSS_API_KEY", "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")
+API_KEY = os.getenv("GPT_OSS_API_KEY", "sk-or-...")
 MODEL = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
 
 def test_real_llm_request():

@@ -13,7 +13,7 @@ import requests
 def test_integer_enforcement():
     """Test that schema rejects string values for integer fields."""
     api_url = os.getenv("GPT_OSS_API_URL", "https://openrouter.ai/api/v1/chat/completions")
-    api_key = os.getenv("GPT_OSS_API_KEY", "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")
+    api_key = os.getenv("GPT_OSS_API_KEY", "sk-or-...")
 
     # Schema WITH top-level type: integer
     schema_with_type = {
