@@ -1,40 +1,46 @@
 {
   "test": "enhanced_small_case_validation_v2",
-  "model": "openai/gpt-oss-120b",
-  "reasoning_effort": "medium",
+  "model": "openrouter/openai/gpt-oss-120b",
+  "reasoning_effort": "high",
   "improvements": [
     "Priority 1: Structured JSON output + stop instruction",
-    "Priority 2: Adversarial validation (pre-reject wrong formulas)",
-    "Priority 3: Multiple small-case validation points",
-    "Priority 4: Formula hypothesis testing mode"
+    "Priority 2: Adversarial validation (pre-reject obvious wrong formulas)",
+    "Priority 3: Multiple small-case validation points (n=4 verified, n=9 trusted)",
+    "Priority 4: Formula derivation from small cases (NO candidate formulas given!)"
   ],
   "verified_cases": [
     {
       "n": 4,
       "k": 2,
-      "tiles": 5
+      "tiles": 5,
+      "source": "verified_independent_cp_sat_exhaustive_search"
     },
     {
       "n": 9,
       "k": 3,
-      "tiles": 12
+      "tiles": 12,
+      "source": "trusted_imo_official_solution"
     }
   ],
   "baseline": {
-    "formulas": [],
+    "formulas": [
+      "2n-2"
+    ],
     "answers": [
+      "4048",
       "2025"
     ],
     "correct": false
   },
-  "hypothesis_testing": {
+  "formula_derivation": {
     "formulas": [
       "n+2k-3"
     ],
     "answers": [
       "2112"
     ],
-    "correct": true
+    "correct": true,
+    "method": "LLM derives formula from pattern in small cases without hints"
   },
   "conclusion": "success"
 }
