@@ -1,0 +1,40 @@
+{
+  "test": "enhanced_small_case_validation_v2",
+  "model": "openai/gpt-oss-120b",
+  "reasoning_effort": "medium",
+  "improvements": [
+    "Priority 1: Structured JSON output + stop instruction",
+    "Priority 2: Adversarial validation (pre-reject wrong formulas)",
+    "Priority 3: Multiple small-case validation points",
+    "Priority 4: Formula hypothesis testing mode"
+  ],
+  "verified_cases": [
+    {
+      "n": 4,
+      "k": 2,
+      "tiles": 5
+    },
+    {
+      "n": 9,
+      "k": 3,
+      "tiles": 12
+    }
+  ],
+  "baseline": {
+    "formulas": [],
+    "answers": [
+      "2025"
+    ],
+    "correct": false
+  },
+  "hypothesis_testing": {
+    "formulas": [
+      "n+2k-3"
+    ],
+    "answers": [
+      "2112"
+    ],
+    "correct": true
+  },
+  "conclusion": "success"
+}
