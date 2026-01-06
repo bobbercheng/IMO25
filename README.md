@@ -93,11 +93,11 @@ I successfully resolved **all 6 IMO 2025 problems** with high reasoning effort, 
 
 | Problem | Answer | Method | Log Reference |
 |---------|--------|--------|---------------|
-| **Problem 1** | k ∈ {0, 1, 3} | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem1` |
-| **Problem 2** | Proof (geometry) | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem2` |
-| **Problem 3** | c = 4 | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem3` |
-| **Problem 4** | a₁ = 12^e · 6 · ℓ | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem4` |
-| **Problem 5** | λ > 1/√2 (Alice wins) | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem5` |
+| **Problem 1** | k ∈ {0, 1, 3} | BFS (high reasoning, n=3) | [`bfs_validate_high_n3_problem1`](bfs_validate_high_n3_problem1) |
+| **Problem 2** | Proof (geometry) | BFS (high reasoning, n=3) | [`bfs_validate_high_n3_problem2`](bfs_validate_high_n3_problem2) |
+| **Problem 3** | c = 4 | BFS (high reasoning, n=3) | [`bfs_validate_high_n3_problem3`](bfs_validate_high_n3_problem3) |
+| **Problem 4** | a₁ = 12^e · 6 · ℓ | BFS (high reasoning, n=3) | [`bfs_validate_high_n3_problem4`](bfs_validate_high_n3_problem4) |
+| **Problem 5** | λ > 1/√2 (Alice wins) | BFS (high reasoning, n=3) | [`bfs_validate_high_n3_problem5`](bfs_validate_high_n3_problem5) |
 | **Problem 6** | **2112** | **Formula derivation + verified small cases** | [`logs/test_imo06_output.log`](logs/test_imo06_output.log) |
 
 **Ground truth confirmation:** All answers verified against Evan Chen's official IMO 2025 solution notes ([`papers/IMO-2025-notes.pdf`](papers/IMO-2025-notes.pdf)).
