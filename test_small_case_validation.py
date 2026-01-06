@@ -36,10 +36,24 @@ def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3) -> Di
         "model": MODEL_NAME,
         "messages": messages,
         "temperature": 0.7,
-        "reasoning": {
+    }
+
+    # Detect if model uses a prefix (e.g., "openrouter/" for OpenRouter)
+    # OpenRouter requires reasoning in extra_body, not top-level
+    has_prefix = "/" in MODEL_NAME and not MODEL_NAME.startswith("openai/")
+
+    if has_prefix:
+        # OpenRouter API spec: reasoning goes in extra_body
+        payload["extra_body"] = {
+            "reasoning": {
+                "effort": "high"
+            }
+        }
+    else:
+        # Standard OpenAI-compatible API: reasoning at top level
+        payload["reasoning"] = {
             "effort": "high"
         }
-    }
 
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -48,6 +62,7 @@ def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3) -> Di
 
     print(f"\n{'='*80}")
     print(f"Calling {MODEL_NAME}...")
+    print(f"API format: {'extra_body (OpenRouter)' if has_prefix else 'standard (top-level reasoning)'}")
     print(f"{'='*80}\n")
 
     for attempt in range(max_retries):
