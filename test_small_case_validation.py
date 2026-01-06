@@ -17,10 +17,10 @@ import requests
 from typing import Dict, Any
 
 
-# OpenRouter API configuration
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = os.getenv("GPT_OSS_API_KEY", "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")
-MODEL_NAME = "openai/gpt-4o-2024-11-20"  # Using GPT-4o for testing
+# GPT-OSS API configuration (same as agent_gpt_oss.py)
+API_URL = os.getenv("GPT_OSS_API_URL", "http://localhost:30000/v1/chat/completions")
+API_KEY = os.getenv("GPT_OSS_API_KEY", "")
+MODEL_NAME = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
 
 
 def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3) -> Dict[str, Any]:
@@ -39,7 +39,7 @@ def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3) -> Di
     }
 
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
     }
 
@@ -49,7 +49,7 @@ def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3) -> Di
 
     for attempt in range(max_retries):
         try:
-            response = requests.post(OPENROUTER_API_URL, json=payload, headers=headers, timeout=60)
+            response = requests.post(API_URL, json=payload, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
             return result['choices'][0]['message']['content']
@@ -154,7 +154,7 @@ def main():
     print("SMALL-CASE VALIDATION TEST")
     print("="*80)
     print(f"Using model: {MODEL_NAME}")
-    print(f"API: OpenRouter")
+    print(f"API endpoint: {API_URL}")
     print()
 
     # Problem statement (simplified version of IMO 2025 P6)
