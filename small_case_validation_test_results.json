@@ -1,0 +1,26 @@
+{
+  "test": "small_case_validation",
+  "model": "openai/gpt-4o-2024-11-20",
+  "verified_ground_truth": {
+    "n": 4,
+    "k": 2,
+    "tiles": 5
+  },
+  "baseline": {
+    "formulas": [],
+    "answers": [
+      "2025"
+    ],
+    "correct": false
+  },
+  "with_validation": {
+    "formulas": [],
+    "answers": [
+      "2025",
+      "2025",
+      "2025"
+    ],
+    "correct": false
+  },
+  "conclusion": "failure"
+}
