@@ -432,8 +432,12 @@ def build_request_payload(system_prompt, question_prompt, other_prompts=None, re
     # Use specified reasoning effort, or default to solution reasoning
     effort = reasoning_effort if reasoning_effort is not None else SOLUTION_REASONING_EFFORT
 
-    # Append structured output suffix if enabled
-    if ENABLE_STRUCTURED_OUTPUT:
+    # Append structured output suffix if enabled (but NOT if custom JSON schema already present)
+    # FIX (2026-01-06): Prevent STRUCTURED_OUTPUT_SUFFIX from conflicting with custom JSON schemas
+    # Example: small_case_validator.py defines its own JSON schema for formula derivation
+    # If we append the suffix, LLM sees TWO conflicting schemas and picks the wrong one
+    has_custom_json_schema = "Return JSON with this exact structure" in system_prompt
+    if ENABLE_STRUCTURED_OUTPUT and not has_custom_json_schema:
         system_prompt = system_prompt + STRUCTURED_OUTPUT_SUFFIX
 
     # Build base payload
