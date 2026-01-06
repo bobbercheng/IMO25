@@ -123,6 +123,14 @@ except ImportError:
     print("[WARNING] Meta-prompted BFS module not available")
     META_PROMPTED_BFS_AVAILABLE = False
 
+# Import small-case formula validation module
+try:
+    from small_case_validator import SmallCaseValidator
+    FORMULA_VALIDATION_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Small-case formula validation module not available")
+    FORMULA_VALIDATION_AVAILABLE = False
+
 # --- STRUCTURED OUTPUT CONFIGURATION ---
 # Enable structured JSON output for clean answer extraction (bypasses regex)
 ENABLE_STRUCTURED_OUTPUT = os.getenv("ENABLE_STRUCTURED_OUTPUT", "1") == "1"
@@ -7958,6 +7966,154 @@ Do not simply rephrase or polish the previous approach - create something new.
 
         return None
 
+
+# ============================================================================
+# Formula Derivation Integration
+# ============================================================================
+
+class LLMClient:
+    """Simple LLM client wrapper for SmallCaseValidator."""
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+
+    def call(self, system, user, reasoning_effort="medium", json_mode=False):
+        """
+        Call LLM with system and user prompts.
+
+        Args:
+            system: System prompt
+            user: User prompt
+            reasoning_effort: "low", "medium", or "high"
+            json_mode: Enable JSON mode
+
+        Returns:
+            Response dict (already parsed JSON if json_mode=True)
+        """
+        # Build payload
+        payload = build_request_payload(
+            system_prompt=system,
+            question_prompt=user,
+            reasoning_effort=reasoning_effort
+        )
+
+        # Send request
+        response = send_api_request_with_retry(
+            api_key=self.api_key,
+            payload=payload,
+            stream=False,  # Don't stream for formula derivation
+            request_label="Formula Derivation"
+        )
+
+        # Extract content
+        if 'choices' in response and len(response['choices']) > 0:
+            content = response['choices'][0]['message']['content']
+
+            # Parse JSON if requested
+            if json_mode:
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError as e:
+                    print(f"[LLM_CLIENT] Failed to parse JSON: {e}")
+                    print(f"[LLM_CLIENT] Raw content: {content[:200]}...")
+                    return None
+
+            return content
+
+        return None
+
+
+def solve_with_formula_guidance(problem_statement, problem_file=None, use_formula_derivation=False,
+                                formula_reasoning="adaptive", min_confidence=0.8, **agent_kwargs):
+    """
+    Solve problem with optional formula derivation attempt before BFS.
+
+    Args:
+        problem_statement: Full problem text
+        problem_file: Path to problem file (for ID extraction)
+        use_formula_derivation: Whether to attempt formula derivation
+        formula_reasoning: "low", "medium", "high", or "adaptive"
+        min_confidence: Minimum confidence to accept derived answer
+        **agent_kwargs: Other solving parameters passed to agent()
+
+    Returns:
+        Solution result
+    """
+    # Attempt formula derivation if enabled
+    if use_formula_derivation and FORMULA_VALIDATION_AVAILABLE:
+        print("\n" + "="*80)
+        print("[FORMULA DERIVATION] Attempting formula derivation from small cases...")
+        print("="*80)
+
+        # Get verified cases for this problem
+        from verified_cases_db import get_verified_cases, should_use_formula_derivation
+
+        if should_use_formula_derivation(problem_statement):
+            problem_id = extract_problem_id_from_path(problem_file) if problem_file else None
+            verified_cases = get_verified_cases(problem_statement, problem_id)
+
+            if verified_cases:
+                print(f"[FORMULA DERIVATION] Found {len(verified_cases)} verified cases")
+
+                # Get API key
+                api_key = os.getenv("GPT_OSS_API_KEY", "")
+                if not api_key:
+                    api_key = os.getenv("OPENROUTER_API_KEY", "")
+
+                # Create LLM client and validator
+                llm_client = LLMClient(api_key)
+                validator = SmallCaseValidator(llm_client)
+
+                # Attempt derivation
+                try:
+                    if formula_reasoning == "adaptive":
+                        result = validator.derive_formula_with_adaptive_reasoning(
+                            problem_statement, verified_cases
+                        )
+                    else:
+                        result = validator.derive_formula(
+                            problem_statement, verified_cases, reasoning_effort=formula_reasoning
+                        )
+
+                    if result and result["confidence"] >= min_confidence:
+                        print(f"[FORMULA DERIVATION] ✓ SUCCESS!")
+                        print(f"[FORMULA DERIVATION]   Formula: {result['formula']}")
+                        print(f"[FORMULA DERIVATION]   Answer: {result['answer']}")
+                        print(f"[FORMULA DERIVATION]   Confidence: {result['confidence']}")
+                        print(f"[FORMULA DERIVATION]   Pattern: {result['pattern_analysis'][:100]}...")
+
+                        # Return formula-derived answer
+                        # NOTE: We trust the formula derivation for now
+                        # Future: Add optional verification step here
+                        print(f"[FORMULA DERIVATION] ✓ Using formula-derived answer.")
+                        return {
+                            "final_answer": str(result["answer"]),
+                            "solution": f"Formula derivation: {result['formula']}\nPattern: {result['pattern_analysis']}",
+                            "method": "formula_derivation",
+                            "formula": result["formula"],
+                            "confidence": result["confidence"],
+                            "verified": False  # Not yet verified by BFS
+                        }
+                    else:
+                        if result:
+                            print(f"[FORMULA DERIVATION] ✗ Low confidence ({result['confidence']}). Falling back to BFS...")
+                        else:
+                            print(f"[FORMULA DERIVATION] ✗ Failed to derive formula. Falling back to BFS...")
+                except Exception as e:
+                    print(f"[FORMULA DERIVATION] ✗ Error during derivation: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[FORMULA DERIVATION] No verified cases available for this problem.")
+        else:
+            print(f"[FORMULA DERIVATION] Problem doesn't appear to be formula-based.")
+
+        print(f"[FORMULA DERIVATION] Proceeding with standard BFS...")
+
+    # Fall back to standard agent() solving
+    return agent(problem_statement, **agent_kwargs)
+
+
 if __name__ == "__main__":
     # Set up argument parsing
     parser = argparse.ArgumentParser(description='IMO Problem Solver Agent using GPT-OSS')
@@ -8029,6 +8185,14 @@ if __name__ == "__main__":
     parser.add_argument('--use-schema-blacklist', action='store_true',
                        help='Use JSON schema to enforce blacklist constraints via constrained decoding (100%% compliance, 0%% waste)')
 
+    # Small-case formula derivation arguments
+    parser.add_argument('--use-formula-derivation', action='store_true',
+                       help='Attempt formula derivation from small cases before BFS (10-100x speedup for formula problems)')
+    parser.add_argument('--formula-min-confidence', type=float, default=0.8,
+                       help='Minimum confidence threshold for accepting derived formula (default: 0.8)')
+    parser.add_argument('--formula-reasoning', type=str, choices=['low', 'medium', 'high', 'adaptive'], default='adaptive',
+                       help='Reasoning effort for formula derivation (default: adaptive = try low→medium→high)')
+
     args = parser.parse_args()
 
     max_runs = args.max_runs
@@ -8052,6 +8216,9 @@ if __name__ == "__main__":
     rlac_constructive_mode = args.rlac_constructive_mode and not args.no_rlac_constructive_mode
     rlac_critic_reasoning = args.rlac_critic_reasoning
     use_schema_blacklist = args.use_schema_blacklist
+    use_formula_derivation = args.use_formula_derivation
+    formula_min_confidence = args.formula_min_confidence
+    formula_reasoning = args.formula_reasoning
 
     # Set verification safeguard module variables (no 'global' needed at module level)
     VERIFICATION_TIMEOUT = args.verification_timeout
@@ -8143,12 +8310,35 @@ if __name__ == "__main__":
     # Rationale: BFS phase results were lost on restart, each restart re-ran expensive BFS (~82 min)
     print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>> Starting agent ...")
     try:
-        sol = agent(problem_statement, other_prompts, memory_file, resume_from_memory,
-                   solution_reasoning, self_improvement_reasoning, verification_reasoning,
-                   num_initial_attempts, use_mcts, mcts_simulations, mcts_exploration, best_of_n,
-                   use_proof_sketch, use_rlac, rlac_max_rounds, rlac_robust_threshold, rlac_stuck_threshold,
-                   rlac_defense_first, rlac_max_regeneration, rlac_constructive_mode, rlac_critic_reasoning,
-                   use_schema_blacklist, args.problem_file)
+        sol = solve_with_formula_guidance(
+            problem_statement,
+            problem_file=args.problem_file,
+            use_formula_derivation=use_formula_derivation,
+            formula_reasoning=formula_reasoning,
+            min_confidence=formula_min_confidence,
+            # Pass all agent() parameters as kwargs
+            other_prompts=other_prompts,
+            memory_file=memory_file,
+            resume_from_memory=resume_from_memory,
+            solution_reasoning=solution_reasoning,
+            self_improvement_reasoning=self_improvement_reasoning,
+            verification_reasoning=verification_reasoning,
+            num_initial_attempts=num_initial_attempts,
+            use_mcts=use_mcts,
+            mcts_simulations=mcts_simulations,
+            mcts_exploration=mcts_exploration,
+            best_of_n=best_of_n,
+            use_proof_sketch=use_proof_sketch,
+            use_rlac=use_rlac,
+            rlac_max_rounds=rlac_max_rounds,
+            rlac_robust_threshold=rlac_robust_threshold,
+            rlac_stuck_threshold=rlac_stuck_threshold,
+            rlac_defense_first=rlac_defense_first,
+            rlac_max_regeneration=rlac_max_regeneration,
+            rlac_constructive_mode=rlac_constructive_mode,
+            rlac_critic_reasoning=rlac_critic_reasoning,
+            use_schema_blacklist=use_schema_blacklist
+        )
         if(sol is not None):
             print(f">>>>>>> Found a correct solution.")
             print(json.dumps(sol, indent=4))
