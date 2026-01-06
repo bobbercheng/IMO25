@@ -9,7 +9,7 @@ echo ""
 # Configure OpenRouter
 export GPT_OSS_API_URL=https://openrouter.ai/api/v1/chat/completions
 export GPT_OSS_MODEL_NAME="openai/gpt-oss-120b"
-export GPT_OSS_API_KEY=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
+export GPT_OSS_API_KEY=sk-or-...
 
 # Use high reasoning for verification
 export GPT_OSS_VERIFICATION_REASONING=high

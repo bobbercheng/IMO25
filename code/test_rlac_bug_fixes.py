@@ -11,7 +11,7 @@ This tests the following critical fixes:
 Run: python code/test_rlac_bug_fixes.py
 
 For real LLM test:
-  GPT_OSS_API_KEY="sk-7EQb6H6KKmBdE2eXkOdSJA" \
+  GPT_OSS_API_KEY="sk-or-..." \
   GPT_OSS_API_URL="http://bore.vexorium.net:37472/v1/chat/completions" \
   python code/test_rlac_bug_fixes.py --real-llm
 """

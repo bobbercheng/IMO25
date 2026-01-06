@@ -20,7 +20,7 @@ def test_constraint_type(constraint_name, schema, num_tests=5):
     print(f"{'='*70}")
 
     api_url = os.getenv("GPT_OSS_API_URL", "https://openrouter.ai/api/v1/chat/completions")
-    api_key = os.getenv("GPT_OSS_API_KEY", "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")
+    api_key = os.getenv("GPT_OSS_API_KEY", "sk-or-...")
     model_name = os.getenv("GPT_OSS_MODEL_NAME", "openai/gpt-oss-120b")
 
     print(f"API: {api_url}")

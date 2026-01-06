@@ -82,7 +82,7 @@ Evidence: HTTPConnectionPool(host='localhost', port=4000): Max retries exceeded
 
 ```bash
 export GPT_OSS_API_URL=http://localhost:4000/v1/chat/completions
-export GPT_OSS_API_KEY=sk-7EQb6H6KKmBdE2eXkOdSJA
+export GPT_OSS_API_KEY=sk-or-...
 export GPT_OSS_MODEL_NAME=openai/gpt-oss-120b
 
 python test_api_connection.py

@@ -21,7 +21,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 N_RUNS=5
 
 # Agent configuration
-SOLUTION_REASONING="medium"  # Medium for creative exploration
+SOLUTION_REASONING="high"  # Medium for creative exploration
 VERIFICATION_REASONING="high"  # High for rigorous verification
 SELF_IMPROVEMENT_REASONING="high"  # High for self-correction
 NUM_INITIAL_ATTEMPTS=3  # BFS exploration
