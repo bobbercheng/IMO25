@@ -65,11 +65,20 @@ def call_llm(prompt: str, system_prompt: str = None, max_retries: int = 3) -> Di
     print(f"API format: {'extra_body (OpenRouter)' if has_prefix else 'standard (top-level reasoning)'}")
     print(f"{'='*80}\n")
 
+    print("--- REQUEST PAYLOAD ---")
+    print(json.dumps(payload, indent=2))
+    print("-----------------------\n")
+
     for attempt in range(max_retries):
         try:
-            response = requests.post(API_URL, json=payload, headers=headers, timeout=60)
+            response = requests.post(API_URL, json=payload, headers=headers, timeout=10*60)
             response.raise_for_status()
             result = response.json()
+
+            print("--- RESPONSE ---")
+            print(json.dumps(result, indent=2))
+            print("----------------\n")
+
             return result['choices'][0]['message']['content']
         except requests.exceptions.HTTPError as e:
             if attempt < max_retries - 1:
