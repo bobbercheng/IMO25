@@ -49,7 +49,7 @@ I systematically tested multiple AI reasoning approaches with increasing sophist
 - **Phase 1 mismatch**: Deduplication/adaptive temperature fixes solve problems neither BFS nor MCTS actually have
 - **Recommendation from analysis**: Expert panel recommended proper experiments before choosing MCTS
 
-See `docs/industry_reports/NETFLIX_DATA_SCIENCE_BFS_VS_MCTS_ANALYSIS.md` for detailed statistical analysis.
+See [`docs/industry_reports/NETFLIX_DATA_SCIENCE_BFS_VS_MCTS_ANALYSIS.md`](docs/industry_reports/NETFLIX_DATA_SCIENCE_BFS_VS_MCTS_ANALYSIS.md) for detailed statistical analysis.
 
 #### 3. RLAC (Reinforcement Learning with Adversarial Critics) ❌ **NOT USED**
 
@@ -61,7 +61,7 @@ See `docs/industry_reports/NETFLIX_DATA_SCIENCE_BFS_VS_MCTS_ANALYSIS.md` for det
 - **Low reasoning in defense mode**: Reduces effectiveness of adversarial refinement
 - **0% success rate**: Timeout on all test cases despite completing 15 adversarial rounds
 
-See `docs/rlac_test_log_analysis_summary.md` for failure analysis.
+See [`docs/rlac_test_log_analysis_summary.md`](docs/rlac_test_log_analysis_summary.md) for failure analysis.
 
 #### 4. Formula Derivation from Small Cases ✅ **EXCELLENT**
 
@@ -85,11 +85,11 @@ Applied to n=2025 (k=45):
   2025 + 2(45) - 3 = 2112 ✓
 ```
 
-See `logs/test_imo06_output.log` and `docs/validation/BFS_VALIDATION_FINAL_REPORT.md` for details.
+See [`logs/test_imo06_output.log`](logs/test_imo06_output.log) and [`docs/validation/BFS_VALIDATION_FINAL_REPORT.md`](docs/validation/BFS_VALIDATION_FINAL_REPORT.md) for details.
 
 ## Results: All IMO 2025 Problems Solved
 
-I successfully resolved **all 6 IMO 2025 problems** with high reasoning effort, confirmed against ground truth from official IMO solutions (`papers/IMO-2025-notes.pdf`):
+I successfully resolved **all 6 IMO 2025 problems** with high reasoning effort, confirmed against ground truth from official IMO solutions ([`papers/IMO-2025-notes.pdf`](papers/IMO-2025-notes.pdf)):
 
 | Problem | Answer | Method | Log Reference |
 |---------|--------|--------|---------------|
@@ -98,9 +98,9 @@ I successfully resolved **all 6 IMO 2025 problems** with high reasoning effort, 
 | **Problem 3** | c = 4 | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem3` |
 | **Problem 4** | a₁ = 12^e · 6 · ℓ | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem4` |
 | **Problem 5** | λ > 1/√2 (Alice wins) | BFS (high reasoning, n=3) | `bfs_validate_high_n3_problem5` |
-| **Problem 6** | **2112** | **Formula derivation + verified small cases** | `logs/test_imo06_output.log` |
+| **Problem 6** | **2112** | **Formula derivation + verified small cases** | [`logs/test_imo06_output.log`](logs/test_imo06_output.log) |
 
-**Ground truth confirmation:** All answers verified against Evan Chen's official IMO 2025 solution notes (`papers/IMO-2025-notes.pdf`).
+**Ground truth confirmation:** All answers verified against Evan Chen's official IMO 2025 solution notes ([`papers/IMO-2025-notes.pdf`](papers/IMO-2025-notes.pdf)).
 
 ## Problem 6: The Hardest Challenge
 
@@ -147,7 +147,7 @@ As a **strong engineer but not a mathematician**, I couldn't craft correct const
 - ✅ Fast (38 seconds) and cheap ($0.0001)
 - ✅ Confirmed by IMO official solution notes
 
-See implementation in `logs/test_imo06_output.log`.
+See implementation in [`logs/test_imo06_output.log`](logs/test_imo06_output.log).
 
 ## Key Insights
 
@@ -161,18 +161,23 @@ See implementation in `logs/test_imo06_output.log`.
 
 This work builds upon extensive research and community contributions:
 
-- **Official IMO Solutions**: `papers/IMO-2025-notes.pdf` by Evan Chen
-- **Research Papers**: All papers in `papers/` folder
+- **Official IMO Solutions**: [`papers/IMO-2025-notes.pdf`](papers/IMO-2025-notes.pdf) by Evan Chen
+- **Research Papers**: All papers in [`papers/`](papers/) folder
 - **Community Insights**: [luchadore_lunchables's reddit analysis](https://www.reddit.com/r/GeorgiesPodium/comments/1mpf144/leetcode_2407_is_just_imo25_p6_cosplaying_as_a/) on Problem 6
 - **Original Repository**: [lyang36/IMO25](https://github.com/lyang36/IMO25) by Google Research Team
 
 ## Documentation
 
-- **Agent Usage Guide**: `agent_gpt_oss.md` - Complete reference for `code/agent_gpt_oss.py`
-- **Architecture**: `CLAUDE.md` - System architecture and development guidelines
-- **BFS Analysis**: `docs/bfs/` - Comprehensive BFS performance reports
-- **Formula Derivation**: `docs/validation/` - Formula derivation methodology and validation
-- **Bug Fixes**: `docs/bugs_rca/` - Root cause analyses and fixes
+- **Agent Usage Guide**: [`agent_gpt_oss.md`](agent_gpt_oss.md) - Complete reference for [`code/agent_gpt_oss.py`](code/agent_gpt_oss.py)
+- **Architecture**: [`CLAUDE.md`](CLAUDE.md) - System architecture and development guidelines
+- **Source Code**: [`code/`](code/) - All agent implementations and core modules
+- **Problem Statements**: [`problems/`](problems/) - All 6 IMO 2025 problem files
+- **Test Suite**: [`test/`](test/) - Unit tests and integration tests
+- **Test Logs**: [`logs/`](logs/) - Validation run logs and test results
+- **Analysis Scripts**: [`scripts/`](scripts/) - Shell and Python analysis scripts
+- **BFS Analysis**: [`docs/bfs/`](docs/bfs/) - Comprehensive BFS performance reports
+- **Formula Derivation**: [`docs/validation/`](docs/validation/) - Formula derivation methodology and validation
+- **Bug Fixes**: [`docs/bugs_rca/`](docs/bugs_rca/) - Root cause analyses and fixes
 
 ## Quick Start
 
@@ -199,7 +204,7 @@ python code/agent_gpt_oss.py problems/imo06.txt \
   --log output.log
 ```
 
-See `agent_gpt_oss.md` for complete usage documentation.
+See [`agent_gpt_oss.md`](agent_gpt_oss.md) for complete usage documentation.
 
 ## Timeline
 
