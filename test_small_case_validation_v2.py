@@ -289,10 +289,12 @@ For context: 2025 = 45², so k = √2025 = 45.
 """
 
     # Priority 3: Multiple small-case validation points
-    # NOTE: Add more cases as they become available from exhaustive search
+    # Source: Official IMO 2025 Problem 6 solution
+    # Formula for perfect squares: n + 2k - 3 = k² + 2k - 3
     verified_cases = [
-        {"n": 4, "k": 2, "tiles": 5},  # Verified by exhaustive search
-        # {"n": 9, "k": 3, "tiles": TBD},  # Pending exhaustive search
+        {"n": 4, "k": 2, "tiles": 5},   # 4+4-3=5 (proven by IMO solution)
+        {"n": 9, "k": 3, "tiles": 12},  # 9+6-3=12 (proven by IMO solution)
+        # {"n": 16, "k": 4, "tiles": 21},  # 16+8-3=21 (optional additional validation)
     ]
 
     # Test 1: Baseline (no validation)
