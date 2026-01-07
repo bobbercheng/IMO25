@@ -127,7 +127,7 @@ All traditional methods failed:
 As a **strong engineer but not a mathematician**, I couldn't craft correct constructions manually. Instead, I combined my engineering skills with AI's pattern recognition:
 
 **My approach:**
-1. **Brute-force small cases** using CP-SAT constraint programming solver:
+1. **Brute-force small cases** using [CP-SAT constraint programming solver](scripts/cp_tiling_solver.py):
    - n=4 (k=2): Exhaustively verified → **5 tiles** (100% confidence)
    - n=9 (k=3): Official IMO answer → **12 tiles** (ground truth)
    - n=16 (k=4): Constraint solver → **21 tiles** (verified independently)
