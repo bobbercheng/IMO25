@@ -137,7 +137,7 @@ Add Option A constraints to agent_gpt_oss.py and create OpenRouter test infrastr
 **Test authentication:**
 ```bash
 curl https://openrouter.ai/api/v1/models \
-  -H "Authorization: Bearer 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"
+  -H "Authorization: Bearer sk-or-..."
 ```
 
 **Expected:**
