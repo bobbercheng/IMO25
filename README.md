@@ -110,7 +110,7 @@ Problem 6 was **SIGNIFICANTLY HARDER THAN EXPECTED**:
 - **Human success rate**: ~1% (even expert mathematicians struggled)
 - **AI success rate**: 0% (all frontier models failed)
 - **Model behavior**: `openai/gpt-oss-120b` always generates similar **wrong constructions** and **wrong answers**
-- **Gemini 3 Pro advantage**: With [luchadore_lunchables's reddit prompt](https://www.reddit.com/r/GeorgiesPodium/comments/1mpf144/leetcode_2407_is_just_imo25_p6_cosplaying_as_a/), only Gemini 3 Pro occasionally generates correct solutions; GPT-5 and Claude cannot
+- **Gemini 3 Pro advantage**: With [luchadore_lunchables's reddit prompt](https://www.reddit.com/r/accelerate/comments/1p3rgp3/gemini_3_pro_solves_imo_2025_p6_with_some/), only Gemini 3 Pro occasionally generates correct solutions; GPT-5 and Claude cannot
 
 ### Falling into a Black Hole
 
@@ -163,7 +163,7 @@ This work builds upon extensive research and community contributions:
 
 - **Official IMO Solutions**: [`papers/IMO-2025-notes.pdf`](papers/IMO-2025-notes.pdf) by Evan Chen
 - **Research Papers**: All papers in [`papers/`](papers/) folder
-- **Community Insights**: [luchadore_lunchables's reddit analysis](https://www.reddit.com/r/GeorgiesPodium/comments/1mpf144/leetcode_2407_is_just_imo25_p6_cosplaying_as_a/) on Problem 6
+- **Community Insights**: [luchadore_lunchables's reddit analysis](https://www.reddit.com/r/accelerate/comments/1p3rgp3/gemini_3_pro_solves_imo_2025_p6_with_some/) on Problem 6
 - **Original Repository**: [lyang36/IMO25](https://github.com/lyang36/IMO25) by Google Research Team
 
 ## Documentation
